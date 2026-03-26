@@ -132,15 +132,24 @@ class DriverTaskExecutionController extends Controller
 
     public function uploadDocument(Request $request): JsonResponse
     {
-        $payload = $request->validate([
-            'task_id' => ['required', 'integer', 'exists:dispatch_tasks,id'],
-            'waypoint_id' => ['required', 'integer', 'exists:task_waypoints,id'],
-            'document_type' => ['required', 'in:receipt,signoff,photo,exception'],
-            'document_file' => ['nullable', 'file', 'max:5120'],
-            'document_files' => ['nullable', 'array', 'min:1', 'max:9'],
-            'document_files.*' => ['file', 'max:5120'],
-            'remark' => ['nullable', 'string', 'max:255'],
-        ]);
+        $payload = $request->validate(
+            [
+                'task_id' => ['required', 'integer', 'exists:dispatch_tasks,id'],
+                'waypoint_id' => ['required', 'integer', 'exists:task_waypoints,id'],
+                'document_type' => ['required', 'in:receipt,signoff,photo,exception'],
+                'document_file' => ['nullable', 'file', 'max:5120'],
+                'document_files' => ['nullable', 'array', 'min:1', 'max:9'],
+                'document_files.*' => ['file', 'max:5120'],
+                'remark' => ['nullable', 'string', 'max:255'],
+            ],
+            [
+                'document_file.uploaded' => '文件上传失败，请检查单文件大小（建议小于 20MB）后重试',
+                'document_files.*.uploaded' => '存在文件上传失败，请检查每张图片大小（建议小于 20MB）后重试',
+                'document_file.max' => '单文件不能超过 5MB',
+                'document_files.*.max' => '每个文件不能超过 5MB',
+                'document_files.max' => '一次最多上传 9 张图片',
+            ]
+        );
 
         $task = DispatchTask::query()->findOrFail($payload['task_id']);
         if ((int) $task->driver_id !== (int) $request->user()->id) {
