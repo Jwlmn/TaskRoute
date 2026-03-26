@@ -82,6 +82,26 @@ npm run dev
 1. 先调用 `GET /api/v1/auth/captcha` 获取验证码 `key` 与图片。
 2. 调用 `POST /api/v1/auth/login` 时携带 `account`、`password`、`captcha_key`、`captcha_code`。
 
+## Seeder 结构
+
+已按模块拆分 Seeder，不再堆在 `DatabaseSeeder`：
+
+- `UserAccountSeeder`：系统账号基础数据
+- `CargoCategorySeeder`：货品分类基础数据
+- `VehicleResourceSeeder`：车辆资源基础数据
+- `LogisticsSiteSeeder`：站点资源基础数据
+- `CargoRuleSeeder`：禁混规则与承运规则
+- `PrePlanOrderSeeder`：预计划单基础样例
+- `MockDataSeeder`：通过 Factory 扩展 mock 数据
+
+对应 Factory：
+
+- `UserFactory`
+- `CargoCategoryFactory`
+- `VehicleFactory`
+- `LogisticsSiteFactory`
+- `PrePlanOrderFactory`
+
 ## 下一步建议
 
 - 接入认证（Sanctum/JWT）和 RBAC 中间件
