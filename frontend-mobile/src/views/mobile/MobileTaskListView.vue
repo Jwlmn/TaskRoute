@@ -280,20 +280,17 @@ const uploadDocument = async (waypointId) => {
 
   actionLoading.value = true
   try {
-    const formData = new FormData()
-    formData.append('task_id', String(detail.value.id))
-    formData.append('waypoint_id', String(waypointId))
-    formData.append('document_type', form.document_type)
     for (const file of form.files) {
-      formData.append('document_files[]', file)
+      const formData = new FormData()
+      formData.append('task_id', String(detail.value.id))
+      formData.append('waypoint_id', String(waypointId))
+      formData.append('document_type', form.document_type)
+      formData.append('document_file', file)
+      if (form.remark) {
+        formData.append('remark', form.remark)
+      }
+      await api.post('/driver-task/upload-document', formData)
     }
-    if (form.remark) {
-      formData.append('remark', form.remark)
-    }
-
-    await api.post('/driver-task/upload-document', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
     ElMessage.success('电子单据上传成功')
     resetPreviewUrls(form)
     form.files = []
