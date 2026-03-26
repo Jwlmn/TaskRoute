@@ -2,6 +2,11 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../../services/api'
+import {
+  dispatchModeLabelMap,
+  getLabel,
+  taskStatusLabelMap,
+} from '../../utils/labels'
 
 const prePlanOrders = ref([])
 const dispatchTasks = ref([])
@@ -35,14 +40,6 @@ const statusTypeMap = {
   in_progress: 'warning',
   completed: 'success',
   cancelled: 'danger',
-}
-
-const statusLabelMap = {
-  pending: '待调度',
-  scheduled: '已排程',
-  in_progress: '执行中',
-  completed: '已完成',
-  cancelled: '已取消',
 }
 
 const resetCreateForm = () => {
@@ -155,7 +152,7 @@ onMounted(async () => {
       <el-table-column label="状态" min-width="100">
         <template #default="{ row }">
           <el-tag :type="statusTypeMap[row.status] || 'info'">
-            {{ statusLabelMap[row.status] || row.status }}
+            {{ getLabel(taskStatusLabelMap, row.status) }}
           </el-tag>
         </template>
       </el-table-column>
@@ -168,7 +165,11 @@ onMounted(async () => {
     </template>
     <el-table :data="dispatchTasks" stripe v-loading="loadingTasks">
       <el-table-column prop="task_no" label="任务编号" min-width="180" />
-      <el-table-column prop="dispatch_mode" label="派单模式" min-width="180" />
+      <el-table-column label="派单模式" min-width="180">
+        <template #default="{ row }">
+          {{ getLabel(dispatchModeLabelMap, row.dispatch_mode) }}
+        </template>
+      </el-table-column>
       <el-table-column prop="vehicle_id" label="车辆ID" min-width="90" />
       <el-table-column prop="driver_id" label="司机ID" min-width="90" />
       <el-table-column label="计划开始" min-width="160">
@@ -181,7 +182,11 @@ onMounted(async () => {
           {{ formatDateTime(row.planned_end_at) }}
         </template>
       </el-table-column>
-      <el-table-column prop="status" label="状态" min-width="100" />
+      <el-table-column label="状态" min-width="100">
+        <template #default="{ row }">
+          {{ getLabel(taskStatusLabelMap, row.status) }}
+        </template>
+      </el-table-column>
     </el-table>
   </el-card>
 

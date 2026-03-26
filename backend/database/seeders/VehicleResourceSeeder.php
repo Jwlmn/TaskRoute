@@ -17,6 +17,13 @@ class VehicleResourceSeeder extends Seeder
                 'max_weight_kg' => 18000,
                 'max_volume_m3' => 30,
                 'status' => 'idle',
+                'meta' => [
+                    'compartment_enabled' => true,
+                    'compartments' => [
+                        ['no' => 1, 'capacity_m3' => 15, 'allowed_cargo_category_ids' => [1]],
+                        ['no' => 2, 'capacity_m3' => 15, 'allowed_cargo_category_ids' => [2]],
+                    ],
+                ],
             ]
         );
 
@@ -28,6 +35,10 @@ class VehicleResourceSeeder extends Seeder
                 'max_weight_kg' => 8000,
                 'max_volume_m3' => 20,
                 'status' => 'idle',
+                'meta' => [
+                    'compartment_enabled' => false,
+                    'compartments' => [],
+                ],
             ]
         );
 
@@ -39,8 +50,14 @@ class VehicleResourceSeeder extends Seeder
                 'max_weight_kg' => 15000,
                 'max_volume_m3' => 25,
                 'status' => 'idle',
+                'meta' => [
+                    'compartment_enabled' => true,
+                    'compartments' => [
+                        ['no' => 1, 'capacity_m3' => 12, 'allowed_cargo_category_ids' => [1]],
+                        ['no' => 2, 'capacity_m3' => 13, 'allowed_cargo_category_ids' => [1]],
+                    ],
+                ],
             ]
         );
     }
 }
-

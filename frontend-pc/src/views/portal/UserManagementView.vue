@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../../services/api'
+import { getLabel, roleLabelMap, userStatusLabelMap } from '../../utils/labels'
 
 const loading = ref(false)
 const users = ref([])
@@ -107,8 +108,16 @@ onMounted(() => {
     <el-table :data="users" v-loading="loading" stripe>
       <el-table-column prop="account" label="账号" min-width="120" />
       <el-table-column prop="name" label="姓名" min-width="100" />
-      <el-table-column prop="role" label="角色" min-width="100" />
-      <el-table-column prop="status" label="状态" min-width="90" />
+      <el-table-column label="角色" min-width="100">
+        <template #default="{ row }">
+          {{ getLabel(roleLabelMap, row.role) }}
+        </template>
+      </el-table-column>
+      <el-table-column label="状态" min-width="90">
+        <template #default="{ row }">
+          {{ getLabel(userStatusLabelMap, row.status) }}
+        </template>
+      </el-table-column>
       <el-table-column label="操作" min-width="110" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
@@ -155,4 +164,3 @@ onMounted(() => {
     </template>
   </el-dialog>
 </template>
-

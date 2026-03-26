@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../../services/api'
+import { getLabel, siteTypeLabelMap, userStatusLabelMap } from '../../utils/labels'
 
 const loading = ref(false)
 const rows = ref([])
@@ -97,10 +98,19 @@ onMounted(() => {
     <el-table :data="rows" v-loading="loading" stripe>
       <el-table-column prop="site_no" label="站点编号" min-width="140" />
       <el-table-column prop="name" label="站点名称" min-width="120" />
-      <el-table-column prop="site_type" label="类型" min-width="100" />
+      <el-table-column label="站点类型" min-width="110">
+        <template #default="{ row }">
+          {{ getLabel(siteTypeLabelMap, row.site_type) }}
+        </template>
+      </el-table-column>
       <el-table-column prop="contact_person" label="联系人" min-width="100" />
       <el-table-column prop="contact_phone" label="联系电话" min-width="120" />
       <el-table-column prop="address" label="地址" min-width="200" />
+      <el-table-column label="状态" min-width="90">
+        <template #default="{ row }">
+          {{ getLabel(userStatusLabelMap, row.status) }}
+        </template>
+      </el-table-column>
       <el-table-column label="操作" min-width="110" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
@@ -147,4 +157,3 @@ onMounted(() => {
     </template>
   </el-dialog>
 </template>
-
