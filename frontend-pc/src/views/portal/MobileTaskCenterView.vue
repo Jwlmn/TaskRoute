@@ -24,6 +24,7 @@ let movingMarker = null
 let replayTimer = null
 
 const amapKey = import.meta.env.VITE_AMAP_WEB_KEY || ''
+const amapSecurityJsCode = import.meta.env.VITE_AMAP_SECURITY_JS_CODE || ''
 
 const formatDateTime = (value) => {
   if (!value) return '-'
@@ -121,6 +122,13 @@ const loadAmap = async () => {
   if (window.AMap) return window.AMap
   if (!amapKey) return null
 
+  if (amapSecurityJsCode) {
+    window._AMapSecurityConfig = {
+      ...(window._AMapSecurityConfig || {}),
+      securityJsCode: amapSecurityJsCode,
+    }
+  }
+
   await new Promise((resolve, reject) => {
     const existed = document.querySelector('script[data-amap="taskroute"]')
     if (existed) {
@@ -193,6 +201,7 @@ const renderMapTrajectory = async () => {
 
   amapInstance.add([trajectoryPolyline, movingMarker])
   amapInstance.setFitView([trajectoryPolyline], false, [60, 60, 60, 60])
+  amapInstance.resize()
 }
 
 const updateMapByReplayIndex = () => {
@@ -216,6 +225,9 @@ const openTrajectory = async (row) => {
     trajectory.value = Array.isArray(data) ? data : []
     await nextTick()
     await renderMapTrajectory()
+    window.setTimeout(() => {
+      amapInstance?.resize?.()
+    }, 60)
   } catch (error) {
     trajectoryDialogVisible.value = false
     ElMessage.error(error?.response?.data?.message || '获取轨迹失败')
