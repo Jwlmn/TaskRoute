@@ -60,6 +60,14 @@ const fetchLatestLocations = async () => {
   }
 }
 
+const openFirstTrajectory = async () => {
+  if (!latestLocations.value.length) {
+    ElMessage.warning('暂无可回放的轨迹数据，请先等待司机上报定位')
+    return
+  }
+  await openTrajectory(latestLocations.value[0])
+}
+
 const points = computed(() =>
   trajectory.value
     .map((row) => [Number(row.lng), Number(row.lat)])
@@ -247,10 +255,21 @@ onBeforeUnmount(() => {
   <el-card shadow="never" class="mb-12">
     <template #header>
       <div class="table-header">
-        <div class="card-title">移动任务中心</div>
+        <div class="card-title">司机定位与轨迹回放</div>
         <el-button type="primary" plain @click="fetchLatestLocations">刷新定位</el-button>
       </div>
     </template>
+    <el-alert
+      type="info"
+      :closable="false"
+      show-icon
+      class="mb-12"
+      title="轨迹回放模块：可在下方“司机实时定位”中查看单司机轨迹，或直接点击“打开轨迹回放”快速进入。"
+    />
+    <div class="table-header mb-12">
+      <span>当前可回放司机数：{{ latestLocations.length }}</span>
+      <el-button type="primary" @click="openFirstTrajectory">打开轨迹回放</el-button>
+    </div>
     <el-table :data="tasks" v-loading="loadingTasks" stripe>
       <el-table-column prop="task_no" label="任务编号" min-width="160" />
       <el-table-column label="派单模式" min-width="140">
