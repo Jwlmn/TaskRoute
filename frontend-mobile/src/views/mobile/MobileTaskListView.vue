@@ -73,6 +73,7 @@ const ensureUploadForm = (waypointId) => {
       document_type: 'photo',
       remark: '',
       file: null,
+      file_list: [],
     }
   }
 
@@ -210,10 +211,18 @@ const completeWaypoint = async (waypointId) => {
   }
 }
 
-const onFileChange = (waypointId, file) => {
+const onFileChange = (waypointId, file, fileList) => {
   const form = ensureUploadForm(waypointId)
   if (!form) return
   form.file = file.raw || null
+  form.file_list = Array.isArray(fileList) ? fileList.slice(-1) : []
+}
+
+const onFileRemove = (waypointId) => {
+  const form = ensureUploadForm(waypointId)
+  if (!form) return
+  form.file = null
+  form.file_list = []
 }
 
 const uploadDocument = async (waypointId) => {
@@ -244,6 +253,7 @@ const uploadDocument = async (waypointId) => {
     })
     ElMessage.success('电子单据上传成功')
     form.file = null
+    form.file_list = []
     form.remark = ''
     form.document_type = 'photo'
     await refreshCurrentDetail()
@@ -382,10 +392,15 @@ onUnmounted(() => {
                     :auto-upload="false"
                     :show-file-list="true"
                     :limit="1"
-                    :on-change="(file) => onFileChange(waypoint.id, file)"
+                    :file-list="ensureUploadForm(waypoint.id).file_list"
+                    :on-change="(file, fileList) => onFileChange(waypoint.id, file, fileList)"
+                    :on-remove="() => onFileRemove(waypoint.id)"
                   >
                     <el-button type="primary" plain>选择文件</el-button>
                   </el-upload>
+                  <div v-if="ensureUploadForm(waypoint.id).file?.name" class="mobile-file-tip">
+                    已选文件：{{ ensureUploadForm(waypoint.id).file.name }}
+                  </div>
                 </el-form-item>
                 <el-button type="primary" :loading="actionLoading" @click="uploadDocument(waypoint.id)">
                   上传该节点单据

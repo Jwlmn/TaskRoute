@@ -191,6 +191,13 @@ body {
   flex: 1;
 }
 
+.mobile-file-tip {
+  margin-top: 6px;
+  color: #5a687a;
+  font-size: 12px;
+  word-break: break-all;
+}
+
 .mobile-doc-list {
   display: flex;
   flex-direction: column;
