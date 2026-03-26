@@ -249,6 +249,23 @@ const onFileRemove = (waypointId, fileList) => {
   rebuildPreviewUrls(form)
 }
 
+const removePreviewAt = (waypointId, previewIndex) => {
+  const form = ensureUploadForm(waypointId)
+  if (!form) return
+
+  const imageFileListIndexes = (form.file_list || [])
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => String(item?.raw?.type || '').startsWith('image/'))
+    .map(({ index }) => index)
+
+  const targetFileListIndex = imageFileListIndexes[previewIndex]
+  if (targetFileListIndex === undefined) return
+
+  const nextFileList = [...(form.file_list || [])]
+  nextFileList.splice(targetFileListIndex, 1)
+  onFileRemove(waypointId, nextFileList)
+}
+
 const uploadDocument = async (waypointId) => {
   if (!detail.value?.id) return
   const form = ensureUploadForm(waypointId)
@@ -425,7 +442,7 @@ onUnmounted(() => {
                 <el-form-item label="文件">
                   <el-upload
                     :auto-upload="false"
-                    :show-file-list="true"
+                    :show-file-list="false"
                     multiple
                     :limit="9"
                     :file-list="ensureUploadForm(waypoint.id).file_list"
@@ -434,20 +451,30 @@ onUnmounted(() => {
                   >
                     <el-button type="primary" plain>选择文件</el-button>
                   </el-upload>
-                  <div v-if="ensureUploadForm(waypoint.id).files?.length" class="mobile-file-tip">
-                    已选文件：{{ ensureUploadForm(waypoint.id).files.length }} 个
-                  </div>
                   <div
                     v-if="ensureUploadForm(waypoint.id).preview_urls?.length"
                     class="mobile-image-preview-grid"
                   >
-                    <img
+                    <div
                       v-for="(url, idx) in ensureUploadForm(waypoint.id).preview_urls"
                       :key="`${waypoint.id}-preview-${idx}`"
-                      class="mobile-image-preview"
-                      :src="url"
-                      alt="图片预览"
-                    />
+                      class="mobile-image-preview-item"
+                    >
+                      <img
+                        class="mobile-image-preview"
+                        :src="url"
+                        alt="图片预览"
+                      />
+                      <el-button
+                        class="mobile-image-remove"
+                        size="small"
+                        type="danger"
+                        circle
+                        @click="removePreviewAt(waypoint.id, idx)"
+                      >
+                        ×
+                      </el-button>
+                    </div>
                   </div>
                 </el-form-item>
                 <el-button type="primary" :loading="actionLoading" @click="uploadDocument(waypoint.id)">
