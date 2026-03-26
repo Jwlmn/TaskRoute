@@ -1,7 +1,7 @@
 :root {
   font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
   color: #1f2d3d;
-  background-color: #f5f7fa;
+  background-color: #edf3ff;
 }
 
 * {
@@ -10,60 +10,147 @@
 
 body {
   margin: 0;
-  min-width: 1280px;
-  background: #f5f7fa;
+  background: linear-gradient(180deg, #eaf2ff 0%, #f5f8ff 100%);
 }
 
 #app {
-  min-height: 100vh;
+  min-height: 100dvh;
 }
 
-.portal-shell {
-  min-height: 100vh;
-}
-
-.portal-header {
-  height: 64px;
+.mobile-login {
+  min-height: 100dvh;
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 0 24px;
-  background: #ffffff;
-  border-bottom: 1px solid #dce5f2;
-}
-
-.title {
-  font-size: 20px;
-  font-weight: 600;
-  color: #1d3d8f;
-}
-
-.portal-main {
+  justify-content: center;
   padding: 16px;
 }
 
-.label {
-  font-size: 14px;
-  color: #5c6b7a;
+.mobile-login-card {
+  width: 100%;
+  max-width: 420px;
+  padding: 18px;
+  background: #ffffff;
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgba(33, 76, 156, 0.12);
 }
 
-.value {
-  margin-top: 12px;
-  font-size: 36px;
+.mobile-login-title {
+  font-size: 22px;
+  font-weight: 600;
+  color: #1d3d8f;
+  margin-bottom: 14px;
+}
+
+.mobile-captcha-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.mobile-captcha-image {
+  width: 140px;
+  height: 44px;
+  border: 1px solid #d4e1ff;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.mobile-submit {
+  width: 100%;
+}
+
+.mobile-shell {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.mobile-header {
+  height: 56px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 12px;
+  border-bottom: 1px solid #dce5f2;
+  background: #fff;
+}
+
+.mobile-title {
+  font-size: 17px;
   font-weight: 600;
   color: #1d3d8f;
 }
 
-.danger {
-  color: #d03050;
+.mobile-main {
+  flex: 1;
+  padding: 12px;
 }
 
-.table-title {
-  font-size: 16px;
+.mobile-footer {
+  height: 64px;
+  border-top: 1px solid #dce5f2;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mobile-user-name {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f3a8a;
+}
+
+.mobile-user-role {
+  margin-top: 6px;
+  color: #556274;
+}
+
+.mobile-stat-label {
+  font-size: 12px;
+  color: #5c6b7a;
+}
+
+.mobile-stat-value {
+  margin-top: 8px;
+  font-size: 24px;
+  font-weight: 600;
+  color: #1d3d8f;
+}
+
+.mobile-section-title {
+  font-size: 15px;
   font-weight: 600;
 }
 
-.mt-16 {
-  margin-top: 16px;
+.mobile-task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
+.mobile-task-item {
+  border: 1px solid #e1ebfb;
+  border-radius: 10px;
+  padding: 10px;
+  background: #f8fbff;
+}
+
+.mobile-task-no {
+  font-size: 14px;
+  font-weight: 600;
+  color: #2a3e73;
+}
+
+.mobile-task-meta {
+  margin-top: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #59687b;
+  font-size: 12px;
+}
+
+.mb-12 {
+  margin-bottom: 12px;
+}
