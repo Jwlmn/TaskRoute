@@ -74,6 +74,7 @@ const ensureUploadForm = (waypointId) => {
       remark: '',
       file: null,
       file_list: [],
+      preview_url: '',
     }
   }
 
@@ -211,16 +212,31 @@ const completeWaypoint = async (waypointId) => {
   }
 }
 
+const resetPreviewUrl = (form) => {
+  if (!form?.preview_url) return
+  try {
+    URL.revokeObjectURL(form.preview_url)
+  } catch {
+    // ignore
+  }
+  form.preview_url = ''
+}
+
 const onFileChange = (waypointId, file, fileList) => {
   const form = ensureUploadForm(waypointId)
   if (!form) return
+  resetPreviewUrl(form)
   form.file = file.raw || null
   form.file_list = Array.isArray(fileList) ? fileList.slice(-1) : []
+  if (form.file && String(form.file.type || '').startsWith('image/')) {
+    form.preview_url = URL.createObjectURL(form.file)
+  }
 }
 
 const onFileRemove = (waypointId) => {
   const form = ensureUploadForm(waypointId)
   if (!form) return
+  resetPreviewUrl(form)
   form.file = null
   form.file_list = []
 }
@@ -252,6 +268,7 @@ const uploadDocument = async (waypointId) => {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
     ElMessage.success('电子单据上传成功')
+    resetPreviewUrl(form)
     form.file = null
     form.file_list = []
     form.remark = ''
@@ -276,6 +293,9 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  for (const form of Object.values(uploadForms)) {
+    resetPreviewUrl(form)
+  }
   if (locationTimer) {
     window.clearInterval(locationTimer)
     locationTimer = null
@@ -401,6 +421,12 @@ onUnmounted(() => {
                   <div v-if="ensureUploadForm(waypoint.id).file?.name" class="mobile-file-tip">
                     已选文件：{{ ensureUploadForm(waypoint.id).file.name }}
                   </div>
+                  <img
+                    v-if="ensureUploadForm(waypoint.id).preview_url"
+                    class="mobile-image-preview"
+                    :src="ensureUploadForm(waypoint.id).preview_url"
+                    alt="图片预览"
+                  />
                 </el-form-item>
                 <el-button type="primary" :loading="actionLoading" @click="uploadDocument(waypoint.id)">
                   上传该节点单据
