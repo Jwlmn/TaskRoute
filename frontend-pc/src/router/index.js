@@ -3,9 +3,11 @@ import LoginView from '../views/LoginView.vue'
 import PortalLayoutView from '../views/portal/PortalLayoutView.vue'
 import DashboardHomeView from '../views/portal/DashboardHomeView.vue'
 import DispatchWorkbenchView from '../views/portal/DispatchWorkbenchView.vue'
-import ResourceManagementView from '../views/portal/ResourceManagementView.vue'
 import MobileTaskCenterView from '../views/portal/MobileTaskCenterView.vue'
 import UserManagementView from '../views/portal/UserManagementView.vue'
+import VehicleManagementView from '../views/portal/VehicleManagementView.vue'
+import PersonnelManagementView from '../views/portal/PersonnelManagementView.vue'
+import SiteManagementView from '../views/portal/SiteManagementView.vue'
 import { hasPermission, readCurrentUser } from '../utils/auth'
 
 const router = createRouter({
@@ -39,9 +41,21 @@ const router = createRouter({
           meta: { permission: 'dispatch' },
         },
         {
-          path: 'resources',
-          name: 'resource-management',
-          component: ResourceManagementView,
+          path: 'resources/vehicles',
+          name: 'vehicle-management',
+          component: VehicleManagementView,
+          meta: { permission: 'resources' },
+        },
+        {
+          path: 'resources/personnel',
+          name: 'personnel-management',
+          component: PersonnelManagementView,
+          meta: { permission: 'resources' },
+        },
+        {
+          path: 'resources/sites',
+          name: 'site-management',
+          component: SiteManagementView,
           meta: { permission: 'resources' },
         },
         {

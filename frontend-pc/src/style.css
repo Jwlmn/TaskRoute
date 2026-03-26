@@ -61,6 +61,13 @@ body {
   padding: 16px;
 }
 
+.table-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .layout-header {
   height: 64px;
   display: flex;
@@ -114,6 +121,10 @@ body {
 
 .mb-12 {
   margin-bottom: 12px;
+}
+
+.mr-8 {
+  margin-right: 8px;
 }
 
 .login-page {

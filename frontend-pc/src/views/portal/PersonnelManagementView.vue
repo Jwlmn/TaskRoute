@@ -1,12 +1,15 @@
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../../services/api'
+import { readCurrentUser } from '../../utils/auth'
 
 const loading = ref(false)
-const users = ref([])
+const rows = ref([])
 const dialogVisible = ref(false)
 const dialogMode = ref('create')
+const user = computed(() => readCurrentUser())
+const isAdmin = computed(() => user.value?.role === 'admin')
 
 const form = reactive({
   id: null,
@@ -28,23 +31,25 @@ const resetForm = () => {
   form.password = ''
 }
 
-const fetchUsers = async () => {
+const fetchRows = async () => {
   loading.value = true
   try {
-    const { data } = await api.post('/user/list', {})
-    users.value = data.data || []
+    const { data } = await api.post('/resource/personnel/list', {})
+    rows.value = data.data || []
   } finally {
     loading.value = false
   }
 }
 
 const openCreate = () => {
+  if (!isAdmin.value) return
   dialogMode.value = 'create'
   resetForm()
   dialogVisible.value = true
 }
 
 const openEdit = (row) => {
+  if (!isAdmin.value) return
   dialogMode.value = 'edit'
   form.id = row.id
   form.account = row.account
@@ -57,9 +62,10 @@ const openEdit = (row) => {
 }
 
 const submit = async () => {
+  if (!isAdmin.value) return
   try {
     if (dialogMode.value === 'create') {
-      await api.post('/user/create', {
+      await api.post('/resource/personnel/create', {
         account: form.account,
         name: form.name,
         role: form.role,
@@ -67,7 +73,7 @@ const submit = async () => {
         phone: form.phone,
         password: form.password,
       })
-      ElMessage.success('账号创建成功')
+      ElMessage.success('人员创建成功')
     } else {
       const payload = {
         id: form.id,
@@ -77,21 +83,19 @@ const submit = async () => {
         status: form.status,
         phone: form.phone,
       }
-      if (form.password) {
-        payload.password = form.password
-      }
-      await api.post('/user/update', payload)
-      ElMessage.success('账号更新成功')
+      if (form.password) payload.password = form.password
+      await api.post('/resource/personnel/update', payload)
+      ElMessage.success('人员更新成功')
     }
     dialogVisible.value = false
-    await fetchUsers()
+    await fetchRows()
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '保存失败')
   }
 }
 
 onMounted(() => {
-  fetchUsers()
+  fetchRows()
 })
 </script>
 
@@ -99,19 +103,23 @@ onMounted(() => {
   <el-card shadow="never">
     <template #header>
       <div class="table-header">
-        <span class="card-title">账号管理</span>
-        <el-button type="primary" @click="openCreate">新增账号</el-button>
+        <span class="card-title">人员资源管理</span>
+        <div>
+          <el-tag v-if="!isAdmin" type="warning" class="mr-8">仅管理员可新增/编辑</el-tag>
+          <el-button type="primary" :disabled="!isAdmin" @click="openCreate">新增人员</el-button>
+        </div>
       </div>
     </template>
 
-    <el-table :data="users" v-loading="loading" stripe>
+    <el-table :data="rows" v-loading="loading" stripe>
       <el-table-column prop="account" label="账号" min-width="120" />
       <el-table-column prop="name" label="姓名" min-width="100" />
       <el-table-column prop="role" label="角色" min-width="100" />
+      <el-table-column prop="phone" label="手机号" min-width="120" />
       <el-table-column prop="status" label="状态" min-width="90" />
       <el-table-column label="操作" min-width="110" fixed="right">
         <template #default="{ row }">
-          <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
+          <el-button link type="primary" :disabled="!isAdmin" @click="openEdit(row)">编辑</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -119,7 +127,7 @@ onMounted(() => {
 
   <el-dialog
     v-model="dialogVisible"
-    :title="dialogMode === 'create' ? '新增账号' : '编辑账号'"
+    :title="dialogMode === 'create' ? '新增人员' : '编辑人员'"
     width="520px"
   >
     <el-form label-position="top">

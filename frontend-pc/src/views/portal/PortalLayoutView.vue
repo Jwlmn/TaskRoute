@@ -10,21 +10,64 @@ const router = useRouter()
 
 const user = computed(() => readCurrentUser())
 
-const menuItems = computed(() => {
-  const list = [
-    { label: '首页概览', routeName: 'dashboard-home', permission: 'dashboard' },
-    { label: '调度工作台', routeName: 'dispatch-workbench', permission: 'dispatch' },
-    { label: '资源维护', routeName: 'resource-management', permission: 'resources' },
-    { label: '移动任务中心', routeName: 'mobile-task-center', permission: 'mobile_tasks' },
-    { label: '账号管理', routeName: 'user-management', permission: 'users' },
+const menuTree = computed(() => {
+  const tree = [
+    {
+      index: 'ops-center',
+      label: '运营中心',
+      children: [
+        { index: 'dashboard-home', label: '首页概览', permission: 'dashboard' },
+        { index: 'dispatch-workbench', label: '调度工作台', permission: 'dispatch' },
+        { index: 'mobile-task-center', label: '移动任务中心', permission: 'mobile_tasks' },
+      ],
+    },
+    {
+      index: 'resource-center',
+      label: '资源维护',
+      children: [
+        {
+          index: 'resource-catalog',
+          label: '资源台账',
+          children: [
+            { index: 'vehicle-management', label: '车辆资源管理', permission: 'resources' },
+            { index: 'personnel-management', label: '人员资源管理', permission: 'resources' },
+            { index: 'site-management', label: '站点资源管理', permission: 'resources' },
+          ],
+        },
+      ],
+    },
+    {
+      index: 'system-center',
+      label: '系统管理',
+      children: [
+        { index: 'user-management', label: '账号管理', permission: 'users' },
+      ],
+    },
   ]
-  return list.filter((item) => hasPermission(user.value, item.permission))
+
+  const filterNodes = (nodes) => {
+    return nodes
+      .map((node) => {
+        if (node.children) {
+          const children = filterNodes(node.children)
+          return { ...node, children }
+        }
+        return node
+      })
+      .filter((node) => {
+        if (node.children) return node.children.length > 0
+        return hasPermission(user.value, node.permission)
+      })
+  }
+
+  return filterNodes(tree)
 })
 
 const activeMenu = computed(() => route.name)
 
-const goMenu = async (name) => {
-  await router.push({ name })
+const goMenu = async (index) => {
+  if (!router.hasRoute(index)) return
+  await router.push({ name: index })
 }
 
 const logout = async () => {
@@ -54,14 +97,31 @@ const logout = async () => {
 
     <el-container>
       <el-aside class="portal-aside">
-        <el-menu :default-active="activeMenu" @select="goMenu">
-          <el-menu-item
-            v-for="item in menuItems"
-            :key="item.routeName"
-            :index="item.routeName"
-          >
-            {{ item.label }}
-          </el-menu-item>
+        <el-menu
+          :default-active="activeMenu"
+          :default-openeds="['ops-center', 'resource-center', 'resource-catalog', 'system-center']"
+          @select="goMenu"
+        >
+          <template v-for="item in menuTree" :key="item.index">
+            <el-sub-menu :index="item.index">
+              <template #title>{{ item.label }}</template>
+              <template v-for="child in item.children" :key="child.index">
+                <el-menu-item v-if="!child.children" :index="child.index">
+                  {{ child.label }}
+                </el-menu-item>
+                <el-sub-menu v-else :index="child.index">
+                  <template #title>{{ child.label }}</template>
+                  <el-menu-item
+                    v-for="grand in child.children"
+                    :key="grand.index"
+                    :index="grand.index"
+                  >
+                    {{ grand.label }}
+                  </el-menu-item>
+                </el-sub-menu>
+              </template>
+            </el-sub-menu>
+          </template>
         </el-menu>
       </el-aside>
 
