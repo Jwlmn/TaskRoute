@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Vehicle;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class ResourceVehicleController extends Controller
 {
@@ -17,6 +18,7 @@ class ResourceVehicleController extends Controller
         ]);
 
         $data = Vehicle::query()
+            ->with(['driver:id,account,name,status'])
             ->when($payload['keyword'] ?? null, function ($query, $keyword): void {
                 $query->where(function ($sub) use ($keyword): void {
                     $sub->where('name', 'like', "%{$keyword}%")
@@ -36,6 +38,11 @@ class ResourceVehicleController extends Controller
             'plate_number' => ['required', 'string', 'max:64', 'unique:vehicles,plate_number'],
             'name' => ['required', 'string', 'max:255'],
             'vehicle_type' => ['required', 'string', 'max:64'],
+            'driver_id' => [
+                'required',
+                'integer',
+                Rule::exists('users', 'id')->where(fn ($query) => $query->where('role', 'driver')->where('status', 'active')),
+            ],
             'max_weight_kg' => ['nullable', 'numeric', 'min:0'],
             'max_volume_m3' => ['nullable', 'numeric', 'min:0'],
             'status' => ['nullable', 'in:idle,busy,maintenance'],
@@ -45,7 +52,7 @@ class ResourceVehicleController extends Controller
         $payload['status'] ??= 'idle';
         $vehicle = Vehicle::query()->create($payload);
 
-        return response()->json($vehicle, 201);
+        return response()->json($vehicle->fresh(['driver:id,account,name,status']), 201);
     }
 
     public function detail(Request $request): JsonResponse
@@ -64,6 +71,11 @@ class ResourceVehicleController extends Controller
             'plate_number' => ['sometimes', 'string', 'max:64'],
             'name' => ['sometimes', 'string', 'max:255'],
             'vehicle_type' => ['sometimes', 'string', 'max:64'],
+            'driver_id' => [
+                'sometimes',
+                'integer',
+                Rule::exists('users', 'id')->where(fn ($query) => $query->where('role', 'driver')->where('status', 'active')),
+            ],
             'max_weight_kg' => ['sometimes', 'numeric', 'min:0'],
             'max_volume_m3' => ['sometimes', 'numeric', 'min:0'],
             'status' => ['sometimes', 'in:idle,busy,maintenance'],
@@ -81,7 +93,6 @@ class ResourceVehicleController extends Controller
         unset($payload['id']);
         $vehicle->update($payload);
 
-        return response()->json($vehicle->fresh());
+        return response()->json($vehicle->fresh(['driver:id,account,name,status']));
     }
 }
-

@@ -13,6 +13,7 @@ return new class extends Migration
             $table->string('plate_number')->unique();
             $table->string('name');
             $table->string('vehicle_type');
+            $table->foreignId('driver_id')->nullable()->constrained('users')->nullOnDelete();
             $table->decimal('max_weight_kg', 10, 2)->default(0);
             $table->decimal('max_volume_m3', 10, 2)->default(0);
             $table->enum('status', ['idle', 'busy', 'maintenance'])->default('idle');
@@ -26,4 +27,3 @@ return new class extends Migration
         Schema::dropIfExists('vehicles');
     }
 };
-

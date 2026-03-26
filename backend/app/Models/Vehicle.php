@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Model;
 
@@ -14,6 +15,7 @@ class Vehicle extends Model
         'plate_number',
         'name',
         'vehicle_type',
+        'driver_id',
         'max_weight_kg',
         'max_volume_m3',
         'status',
@@ -30,5 +32,10 @@ class Vehicle extends Model
     public function dispatchTasks(): HasMany
     {
         return $this->hasMany(DispatchTask::class);
+    }
+
+    public function driver(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'driver_id');
     }
 }

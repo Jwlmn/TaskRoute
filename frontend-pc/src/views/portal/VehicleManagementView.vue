@@ -13,12 +13,14 @@ const rows = ref([])
 const dialogVisible = ref(false)
 const dialogMode = ref('create')
 const cargoCategoryOptions = ref([])
+const driverOptions = ref([])
 
 const form = reactive({
   id: null,
   plate_number: '',
   name: '',
   vehicle_type: 'van',
+  driver_id: null,
   max_weight_kg: 0,
   max_volume_m3: 0,
   status: 'idle',
@@ -48,6 +50,7 @@ const resetForm = () => {
   form.plate_number = ''
   form.name = ''
   form.vehicle_type = 'van'
+  form.driver_id = null
   form.max_weight_kg = 0
   form.max_volume_m3 = 0
   form.status = 'idle'
@@ -74,6 +77,18 @@ const fetchCargoCategories = async () => {
   }
 }
 
+const fetchDriverOptions = async () => {
+  try {
+    const { data } = await api.post('/resource/personnel/list', {
+      role: 'driver',
+      status: 'active',
+    })
+    driverOptions.value = Array.isArray(data?.data) ? data.data : []
+  } catch {
+    driverOptions.value = []
+  }
+}
+
 const openCreate = () => {
   dialogMode.value = 'create'
   resetForm()
@@ -86,6 +101,7 @@ const openEdit = (row) => {
   form.plate_number = row.plate_number
   form.name = row.name
   form.vehicle_type = row.vehicle_type
+  form.driver_id = row.driver_id || null
   form.max_weight_kg = Number(row.max_weight_kg || 0)
   form.max_volume_m3 = Number(row.max_volume_m3 || 0)
   form.status = row.status
@@ -120,6 +136,7 @@ const submit = async () => {
       plate_number: form.plate_number,
       name: form.name,
       vehicle_type: form.vehicle_type,
+      driver_id: form.driver_id,
       max_weight_kg: form.max_weight_kg,
       max_volume_m3: form.max_volume_m3,
       status: form.status,
@@ -146,7 +163,7 @@ const submit = async () => {
 }
 
 onMounted(async () => {
-  await Promise.all([fetchRows(), fetchCargoCategories()])
+  await Promise.all([fetchRows(), fetchCargoCategories(), fetchDriverOptions()])
 })
 </script>
 
@@ -165,6 +182,11 @@ onMounted(async () => {
       <el-table-column label="车辆类型" min-width="110">
         <template #default="{ row }">
           {{ getLabel(vehicleTypeLabelMap, row.vehicle_type) }}
+        </template>
+      </el-table-column>
+      <el-table-column label="绑定司机" min-width="150">
+        <template #default="{ row }">
+          {{ row.driver?.name ? `${row.driver.name}（${row.driver.account}）` : '未绑定' }}
         </template>
       </el-table-column>
       <el-table-column prop="max_weight_kg" label="载重(kg)" min-width="100" />
@@ -219,6 +241,21 @@ onMounted(async () => {
           </el-form-item>
         </el-col>
         <el-col :span="12">
+          <el-form-item label="绑定司机">
+            <el-select v-model="form.driver_id" style="width: 100%" placeholder="请选择司机">
+              <el-option
+                v-for="item in driverOptions"
+                :key="item.id"
+                :label="`${item.name}（${item.account}）`"
+                :value="item.id"
+              />
+            </el-select>
+          </el-form-item>
+        </el-col>
+      </el-row>
+
+      <el-row :gutter="12">
+        <el-col :span="12">
           <el-form-item label="状态">
             <el-select v-model="form.status" style="width: 100%">
               <el-option label="空闲" value="idle" />
@@ -227,6 +264,7 @@ onMounted(async () => {
             </el-select>
           </el-form-item>
         </el-col>
+        <el-col :span="12" />
       </el-row>
 
       <el-row :gutter="12">

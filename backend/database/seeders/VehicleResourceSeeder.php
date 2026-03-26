@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Database\Seeder;
 
@@ -9,11 +10,15 @@ class VehicleResourceSeeder extends Seeder
 {
     public function run(): void
     {
+        $driverAId = User::query()->where('account', 'driver')->value('id');
+        $driverBId = User::query()->where('account', 'driver2')->value('id');
+
         Vehicle::query()->updateOrCreate(
             ['plate_number' => '沪A12345'],
             [
                 'name' => '油品罐车1号',
                 'vehicle_type' => 'tank',
+                'driver_id' => $driverAId,
                 'max_weight_kg' => 18000,
                 'max_volume_m3' => 30,
                 'status' => 'idle',
@@ -32,6 +37,7 @@ class VehicleResourceSeeder extends Seeder
             [
                 'name' => '冷链车1号',
                 'vehicle_type' => 'coldchain',
+                'driver_id' => $driverBId,
                 'max_weight_kg' => 8000,
                 'max_volume_m3' => 20,
                 'status' => 'idle',
@@ -47,6 +53,7 @@ class VehicleResourceSeeder extends Seeder
             [
                 'name' => '油品罐车2号',
                 'vehicle_type' => 'tank',
+                'driver_id' => $driverBId,
                 'max_weight_kg' => 15000,
                 'max_volume_m3' => 25,
                 'status' => 'idle',

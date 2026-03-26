@@ -46,6 +46,7 @@ class SmartDispatchApiTest extends TestCase
             'plate_number' => '沪Z90001',
             'name' => '测试分仓罐车',
             'vehicle_type' => 'tank',
+            'driver_id' => User::query()->where('role', 'driver')->value('id'),
             'max_weight_kg' => 20000,
             'max_volume_m3' => 30,
             'status' => 'idle',
@@ -189,6 +190,7 @@ class SmartDispatchApiTest extends TestCase
         $taskId = (int) $response->json('created_task_ids.0');
         $task = DispatchTask::query()->findOrFail($taskId);
         $this->assertSame($vehicle->id, (int) $task->vehicle_id);
+        $this->assertSame((int) $vehicle->driver_id, (int) $task->driver_id);
         $this->assertSame('single_vehicle_multi_order', $task->dispatch_mode);
         $this->assertSame(true, (bool) ($task->route_meta['manual_adjusted'] ?? false));
 

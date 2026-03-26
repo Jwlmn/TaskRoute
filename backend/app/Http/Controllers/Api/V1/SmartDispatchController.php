@@ -105,6 +105,8 @@ class SmartDispatchController extends Controller
     {
         return Vehicle::query()
             ->where('status', 'idle')
+            ->whereNotNull('driver_id')
+            ->whereHas('driver', fn ($query) => $query->where('role', 'driver')->where('status', 'active'))
             ->when($vehicleIds, fn ($query) => $query->whereIn('id', $vehicleIds))
             ->orderByDesc('max_weight_kg')
             ->get();
@@ -137,9 +139,11 @@ class SmartDispatchController extends Controller
         $idleVehicleCount = Vehicle::query()
             ->whereIn('id', $vehicleIds->all())
             ->where('status', 'idle')
+            ->whereNotNull('driver_id')
+            ->whereHas('driver', fn ($query) => $query->where('role', 'driver')->where('status', 'active'))
             ->count();
         if ($idleVehicleCount !== $vehicleIds->count()) {
-            abort(422, '存在不可用车辆（非空闲状态）');
+            abort(422, '存在不可用车辆（车辆未绑定可用司机或非空闲状态）');
         }
     }
 
@@ -160,6 +164,7 @@ class SmartDispatchController extends Controller
                 $task = DispatchTask::query()->create([
                     'task_no' => 'DT-'.now()->format('Ymd').'-'.Str::upper(Str::random(6)),
                     'vehicle_id' => (int) $assignment['vehicle_id'],
+                    'driver_id' => Vehicle::query()->where('id', (int) $assignment['vehicle_id'])->value('driver_id'),
                     'dispatcher_id' => $dispatcherId,
                     'dispatch_mode' => $dispatchMode,
                     'status' => 'assigned',
