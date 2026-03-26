@@ -3,6 +3,7 @@ import LoginView from '../views/LoginView.vue'
 import MobileLayoutView from '../views/mobile/MobileLayoutView.vue'
 import MobileHomeView from '../views/mobile/MobileHomeView.vue'
 import MobileTaskListView from '../views/mobile/MobileTaskListView.vue'
+import MobileTaskDetailView from '../views/mobile/MobileTaskDetailView.vue'
 import MobileAccountView from '../views/mobile/MobileAccountView.vue'
 import { readCurrentUser } from '../utils/auth'
 
@@ -22,6 +23,7 @@ const router = createRouter({
       children: [
         { path: '', name: 'mobile-home', component: MobileHomeView },
         { path: 'tasks', name: 'mobile-tasks', component: MobileTaskListView },
+        { path: 'tasks/:id', name: 'mobile-task-detail', component: MobileTaskDetailView },
         { path: 'account', name: 'mobile-account', component: MobileAccountView },
       ],
     },
@@ -44,4 +46,3 @@ router.beforeEach((to) => {
 })
 
 export default router
-

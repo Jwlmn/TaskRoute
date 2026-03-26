@@ -18,7 +18,10 @@ const tabs = computed(() => {
   return list.filter((item) => hasPermission(user.value, item.permission))
 })
 
-const activeTab = computed(() => route.name)
+const activeTab = computed(() => {
+  if (route.name === 'mobile-task-detail') return 'mobile-tasks'
+  return route.name
+})
 
 const switchTab = async (name) => {
   await router.push({ name })
@@ -58,4 +61,3 @@ const logout = async () => {
     </footer>
   </div>
 </template>
-
