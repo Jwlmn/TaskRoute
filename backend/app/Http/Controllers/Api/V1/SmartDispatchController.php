@@ -188,6 +188,7 @@ class SmartDispatchController extends Controller
                     $syncData[$orderId] = ['sequence' => $index + 1];
                 }
                 $task->orders()->sync($syncData);
+                $this->buildTaskWaypoints($task->id, $orderIds);
 
                 PrePlanOrder::query()
                     ->whereIn('id', $orderIds)
@@ -198,5 +199,47 @@ class SmartDispatchController extends Controller
 
             return $taskIds;
         });
+    }
+
+    private function buildTaskWaypoints(int $taskId, array $orderIds): void
+    {
+        $orders = PrePlanOrder::query()
+            ->whereIn('id', $orderIds)
+            ->get()
+            ->keyBy('id');
+
+        DB::table('task_waypoints')->where('dispatch_task_id', $taskId)->delete();
+
+        $rows = [];
+        $sequence = 1;
+        foreach ($orderIds as $orderId) {
+            $order = $orders->get($orderId);
+            if (! $order) {
+                continue;
+            }
+
+            $rows[] = [
+                'dispatch_task_id' => $taskId,
+                'node_type' => 'pickup',
+                'sequence' => $sequence++,
+                'address' => $order->pickup_address,
+                'status' => 'pending',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ];
+            $rows[] = [
+                'dispatch_task_id' => $taskId,
+                'node_type' => 'dropoff',
+                'sequence' => $sequence++,
+                'address' => $order->dropoff_address,
+                'status' => 'pending',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ];
+        }
+
+        if ($rows !== []) {
+            DB::table('task_waypoints')->insert($rows);
+        }
     }
 }

@@ -151,6 +151,50 @@ body {
   font-size: 12px;
 }
 
+.mobile-task-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+}
+
+.mobile-waypoint-item {
+  border: 1px solid #e1ebfb;
+  border-radius: 10px;
+  padding: 10px;
+  margin-bottom: 10px;
+  background: #f8fbff;
+}
+
+.mobile-waypoint-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.mobile-waypoint-address {
+  margin-top: 6px;
+  color: #59687b;
+  font-size: 12px;
+}
+
+.mobile-doc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mobile-doc-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px;
+  border: 1px solid #e1ebfb;
+  border-radius: 8px;
+  background: #f8fbff;
+  font-size: 12px;
+}
+
 .mb-12 {
   margin-bottom: 12px;
 }

@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Model;
 
 class DispatchTask extends Model
@@ -54,5 +55,15 @@ class DispatchTask extends Model
         return $this->belongsToMany(PrePlanOrder::class, 'dispatch_task_orders')
             ->withPivot('sequence')
             ->withTimestamps();
+    }
+
+    public function waypoints(): HasMany
+    {
+        return $this->hasMany(TaskWaypoint::class)->orderBy('sequence');
+    }
+
+    public function documents(): HasMany
+    {
+        return $this->hasMany(ElectronicDocument::class)->latest('uploaded_at');
     }
 }

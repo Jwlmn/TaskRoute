@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\DispatchTaskController;
+use App\Http\Controllers\Api\V1\DriverTaskExecutionController;
 use App\Http\Controllers\Api\V1\MetaController;
 use App\Http\Controllers\Api\V1\PrePlanOrderController;
 use App\Http\Controllers\Api\V1\Resource\ResourcePersonnelController;
@@ -60,6 +61,14 @@ Route::prefix('v1')->group(function (): void {
 
             Route::post('/resource/personnel/create', [ResourcePersonnelController::class, 'create']);
             Route::post('/resource/personnel/update', [ResourcePersonnelController::class, 'update']);
+        });
+
+        Route::middleware('role:driver')->group(function (): void {
+            Route::post('/driver-task/detail', [DriverTaskExecutionController::class, 'detail']);
+            Route::post('/driver-task/start', [DriverTaskExecutionController::class, 'start']);
+            Route::post('/driver-task/waypoint-arrive', [DriverTaskExecutionController::class, 'arriveWaypoint']);
+            Route::post('/driver-task/waypoint-complete', [DriverTaskExecutionController::class, 'completeWaypoint']);
+            Route::post('/driver-task/upload-document', [DriverTaskExecutionController::class, 'uploadDocument']);
         });
     });
 });
