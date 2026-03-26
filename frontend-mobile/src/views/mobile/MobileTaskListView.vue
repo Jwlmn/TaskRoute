@@ -465,15 +465,13 @@ onUnmounted(() => {
                         :src="url"
                         alt="图片预览"
                       />
-                      <el-button
+                      <button
+                        type="button"
                         class="mobile-image-remove"
-                        size="small"
-                        type="danger"
-                        circle
                         @click="removePreviewAt(waypoint.id, idx)"
                       >
                         ×
-                      </el-button>
+                      </button>
                     </div>
                   </div>
                 </el-form-item>
