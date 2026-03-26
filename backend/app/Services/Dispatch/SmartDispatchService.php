@@ -27,6 +27,7 @@ class SmartDispatchService
                     'vehicle_name' => $vehicle->name,
                     'plate_number' => $vehicle->plate_number,
                     'order_ids' => $packResult['orders']->pluck('id')->values(),
+                    'compartment_plan' => $packResult['compartment_plan'],
                     'estimated_distance_km' => $this->estimateDistance($packResult['orders']->count()),
                     'estimated_fuel_l' => $this->estimateFuel($packResult['orders']->sum('cargo_weight_kg')),
                     'dispatch_mode' => $packResult['orders']->count() > 1
@@ -58,6 +59,8 @@ class SmartDispatchService
         $selected = collect();
         $weight = 0.0;
         $volume = 0.0;
+        $compartments = $this->resolveVehicleCompartments($vehicle);
+        $compartmentPlan = [];
 
         foreach ($orders as $order) {
             if (! $this->isVehicleAllowedCargo($vehicle->id, (int) $order->cargo_category_id)) {
@@ -71,16 +74,101 @@ class SmartDispatchService
             $nextWeight = $weight + (float) $order->cargo_weight_kg;
             $nextVolume = $volume + (float) $order->cargo_volume_m3;
 
-            if ($nextWeight > (float) $vehicle->max_weight_kg || $nextVolume > (float) $vehicle->max_volume_m3) {
+            if ($nextWeight > (float) $vehicle->max_weight_kg) {
+                continue;
+            }
+
+            $assignedCompartmentNo = null;
+            if ($compartments->isNotEmpty()) {
+                $targetIndex = $this->resolveCompartmentIndexForOrder(
+                    $compartments,
+                    (int) $order->cargo_category_id,
+                    (float) $order->cargo_volume_m3
+                );
+                if ($targetIndex === null) {
+                    continue;
+                }
+
+                $targetCompartment = $compartments->get($targetIndex);
+                $targetCompartment['remaining_m3'] = max(
+                    0,
+                    (float) $targetCompartment['remaining_m3'] - (float) $order->cargo_volume_m3
+                );
+                $compartments->put($targetIndex, $targetCompartment);
+                $assignedCompartmentNo = (int) $targetCompartment['no'];
+            } elseif ($nextVolume > (float) $vehicle->max_volume_m3) {
                 continue;
             }
 
             $selected->push($order);
             $weight = $nextWeight;
             $volume = $nextVolume;
+            if ($assignedCompartmentNo !== null) {
+                $compartmentPlan[] = [
+                    'order_id' => (int) $order->id,
+                    'compartment_no' => $assignedCompartmentNo,
+                    'cargo_category_id' => (int) $order->cargo_category_id,
+                    'volume_m3' => (float) $order->cargo_volume_m3,
+                ];
+            }
         }
 
-        return ['orders' => $selected];
+        return [
+            'orders' => $selected,
+            'compartment_plan' => $compartmentPlan,
+        ];
+    }
+
+    private function resolveVehicleCompartments(Vehicle $vehicle): Collection
+    {
+        $meta = $vehicle->meta ?? [];
+        $enabled = (bool) ($meta['compartment_enabled'] ?? false);
+        if (! $enabled) {
+            return collect();
+        }
+
+        $rawCompartments = $meta['compartments'] ?? [];
+        if (! is_array($rawCompartments) || $rawCompartments === []) {
+            return collect();
+        }
+
+        return collect($rawCompartments)
+            ->map(function ($item, $index): array {
+                $allowedIds = collect($item['allowed_cargo_category_ids'] ?? [])
+                    ->map(fn ($id) => (int) $id)
+                    ->filter(fn ($id) => $id > 0)
+                    ->values()
+                    ->all();
+
+                return [
+                    'no' => (int) ($item['no'] ?? ($index + 1)),
+                    'remaining_m3' => (float) ($item['capacity_m3'] ?? 0),
+                    'allowed_cargo_category_ids' => $allowedIds,
+                ];
+            })
+            ->filter(fn ($item) => $item['remaining_m3'] > 0)
+            ->values();
+    }
+
+    private function resolveCompartmentIndexForOrder(
+        Collection $compartments,
+        int $cargoCategoryId,
+        float $volumeM3
+    ): ?int {
+        foreach ($compartments as $index => $compartment) {
+            if ((float) $compartment['remaining_m3'] < $volumeM3) {
+                continue;
+            }
+
+            $allowedIds = $compartment['allowed_cargo_category_ids'] ?? [];
+            if ($allowedIds !== [] && ! in_array($cargoCategoryId, $allowedIds, true)) {
+                continue;
+            }
+
+            return (int) $index;
+        }
+
+        return null;
     }
 
     private function isVehicleAllowedCargo(int $vehicleId, int $cargoCategoryId): bool
@@ -140,4 +228,3 @@ class SmartDispatchService
         return max(8, round(8 + ($weightKg / 1000) * 1.5, 2));
     }
 }
-

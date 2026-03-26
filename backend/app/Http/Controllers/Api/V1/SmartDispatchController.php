@@ -70,6 +70,7 @@ class SmartDispatchController extends Controller
                     'route_meta' => [
                         'strategy' => 'rule_based_v1',
                         'optimizer' => 'amap_pending',
+                        'compartment_plan' => $assignment['compartment_plan'] ?? [],
                     ],
                 ]);
 
@@ -113,4 +114,3 @@ class SmartDispatchController extends Controller
             ->get();
     }
 }
-
