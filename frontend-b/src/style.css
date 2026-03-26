@@ -1,0 +1,70 @@
+:root {
+  font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  line-height: 1.5;
+  color: #1f2d3d;
+  background-color: #f5f7fa;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 1280px;
+  background: linear-gradient(180deg, #eaf2ff 0%, #f5f7fa 40%);
+}
+
+#app {
+  min-height: 100vh;
+}
+
+.layout-shell {
+  min-height: 100vh;
+}
+
+.layout-header {
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  border-bottom: 1px solid #dce5f2;
+  background: #ffffff;
+}
+
+.brand {
+  font-size: 20px;
+  font-weight: 600;
+  color: #1d3d8f;
+}
+
+.layout-main {
+  padding: 16px;
+}
+
+.metric-card {
+  min-height: 120px;
+}
+
+.metric-label {
+  color: #5c6b7a;
+  font-size: 14px;
+}
+
+.metric-value {
+  margin-top: 12px;
+  font-size: 36px;
+  color: #1d3d8f;
+  font-weight: 600;
+}
+
+.card-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.mt-16 {
+  margin-top: 16px;
+}
+
