@@ -33,6 +33,12 @@ body {
   background: #ffffff;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .brand {
   font-size: 20px;
   font-weight: 600;
@@ -68,3 +74,47 @@ body {
   margin-top: 16px;
 }
 
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(145deg, #dbeafe 0%, #eff6ff 52%, #f8fafc 100%);
+}
+
+.login-card {
+  width: 440px;
+}
+
+.login-title {
+  font-size: 22px;
+  font-weight: 600;
+  color: #1d3d8f;
+}
+
+.captcha-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.captcha-image {
+  width: 160px;
+  height: 50px;
+  border: 1px solid #d4e1ff;
+  border-radius: 6px;
+  cursor: pointer;
+  background: #f3f8ff;
+}
+
+.captcha-tip {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #5c6b7a;
+}
+
+.login-tip {
+  margin-top: 16px;
+  font-size: 13px;
+  color: #546275;
+}

@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
 
 class AuthApiTest extends TestCase
@@ -14,9 +15,14 @@ class AuthApiTest extends TestCase
     {
         $this->seed(DatabaseSeeder::class);
 
+        $captchaResponse = $this->getJson('/api/v1/auth/captcha');
+        $captchaResponse->assertOk();
+
         $response = $this->postJson('/api/v1/auth/login', [
             'email' => 'dispatcher@taskroute.local',
             'password' => 'TaskRoute@123',
+            'captcha_key' => $captchaResponse->json('key'),
+            'captcha_code' => $this->readCaptchaAnswerFromKey($captchaResponse->json('key')),
         ]);
 
         $response->assertOk()
@@ -25,5 +31,10 @@ class AuthApiTest extends TestCase
                 'token_type',
                 'user' => ['id', 'role', 'email'],
             ]);
+    }
+
+    private function readCaptchaAnswerFromKey(string $key): string
+    {
+        return (string) Cache::get($key);
     }
 }

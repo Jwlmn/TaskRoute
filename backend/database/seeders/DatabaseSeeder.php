@@ -52,6 +52,16 @@ class DatabaseSeeder extends Seeder
                 'password' => Hash::make('TaskRoute@123'),
             ]
         );
+        User::query()->updateOrCreate(
+            ['email' => 'driver2@taskroute.local'],
+            [
+                'name' => '司机B',
+                'phone' => '13800000004',
+                'role' => 'driver',
+                'status' => 'active',
+                'password' => Hash::make('TaskRoute@123'),
+            ]
+        );
 
         $gasoline = CargoCategory::query()->updateOrCreate(
             ['code' => 'gasoline'],
@@ -99,6 +109,16 @@ class DatabaseSeeder extends Seeder
                 'status' => 'idle',
             ]
         );
+        $oilVehicle2 = Vehicle::query()->updateOrCreate(
+            ['plate_number' => '沪A77778'],
+            [
+                'name' => '油品罐车2号',
+                'vehicle_type' => 'tank',
+                'max_weight_kg' => 15000,
+                'max_volume_m3' => 25,
+                'status' => 'idle',
+            ]
+        );
 
         DB::table('vehicle_cargo_rules')->updateOrInsert(
             ['vehicle_id' => $oilVehicle->id, 'cargo_category_id' => $gasoline->id],
@@ -116,35 +136,35 @@ class DatabaseSeeder extends Seeder
             ['vehicle_id' => $coldVehicle->id, 'cargo_category_id' => $vegetable->id],
             ['rule_type' => 'deny', 'reason' => '当前车辆只拉海鲜', 'updated_at' => now(), 'created_at' => now()]
         );
-
-        PrePlanOrder::query()->updateOrCreate(
-            ['order_no' => 'PO-INIT-0001'],
-            [
-                'cargo_category_id' => $gasoline->id,
-                'client_name' => '中石化示例客户',
-                'pickup_address' => '上海油库A',
-                'dropoff_address' => '上海加油站B',
-                'cargo_weight_kg' => 5000,
-                'cargo_volume_m3' => 7,
-                'expected_pickup_at' => now()->addHour(),
-                'expected_delivery_at' => now()->addHours(3),
-                'status' => 'pending',
-            ]
+        DB::table('vehicle_cargo_rules')->updateOrInsert(
+            ['vehicle_id' => $oilVehicle2->id, 'cargo_category_id' => $diesel->id],
+            ['rule_type' => 'allow', 'reason' => '柴油专车', 'updated_at' => now(), 'created_at' => now()]
         );
 
-        PrePlanOrder::query()->updateOrCreate(
-            ['order_no' => 'PO-INIT-0002'],
-            [
-                'cargo_category_id' => $seafood->id,
-                'client_name' => '商超配送中心',
-                'pickup_address' => '上海冷链仓C',
-                'dropoff_address' => '上海商超门店D',
-                'cargo_weight_kg' => 2000,
-                'cargo_volume_m3' => 5,
-                'expected_pickup_at' => now()->addHour(),
-                'expected_delivery_at' => now()->addHours(2),
-                'status' => 'pending',
-            ]
-        );
+        $mockOrders = [
+            ['PO-INIT-0001', $gasoline->id, '中石化示例客户', '上海油库A', '上海加油站B', 5000, 7, 1, 3],
+            ['PO-INIT-0002', $seafood->id, '商超配送中心', '上海冷链仓C', '上海商超门店D', 2000, 5, 1, 2],
+            ['PO-INIT-0003', $gasoline->id, '中石化示例客户', '上海油库A', '上海加油站E', 4500, 6, 2, 4],
+            ['PO-INIT-0004', $diesel->id, '中石化示例客户', '上海油库F', '上海工地G', 3500, 5, 2, 5],
+            ['PO-INIT-0005', $seafood->id, '商超配送中心', '上海冷链仓C', '上海商超门店H', 1800, 4, 3, 5],
+            ['PO-INIT-0006', $vegetable->id, '商超配送中心', '上海分拣仓I', '上海商超门店J', 2200, 6, 3, 6],
+        ];
+
+        foreach ($mockOrders as [$no, $cargoId, $client, $pickup, $dropoff, $weight, $volume, $start, $end]) {
+            PrePlanOrder::query()->updateOrCreate(
+                ['order_no' => $no],
+                [
+                    'cargo_category_id' => $cargoId,
+                    'client_name' => $client,
+                    'pickup_address' => $pickup,
+                    'dropoff_address' => $dropoff,
+                    'cargo_weight_kg' => $weight,
+                    'cargo_volume_m3' => $volume,
+                    'expected_pickup_at' => now()->addHours($start),
+                    'expected_delivery_at' => now()->addHours($end),
+                    'status' => 'pending',
+                ]
+            );
+        }
     }
 }

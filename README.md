@@ -61,13 +61,19 @@ npm run dev
 - 禁混与承运规则：`cargo_incompatibilities`、`vehicle_cargo_rules`
 - API 入口：`/api/v1/meta`、`/api/v1/pre-plan-orders`、`/api/v1/dispatch-tasks`
 - 鉴权与权限：Sanctum Token + `role` 中间件（`admin`/`dispatcher`/`driver`）
+- 登录安全：图片验证码登录（不开放注册）
 - 智能派单：`/api/v1/dispatch/preview`、`/api/v1/dispatch/create-tasks`
+- 用户管理：管理员账号分配与维护（`/api/v1/users`）
 
 ## 默认测试账号
 
 - 管理员：`admin@taskroute.local` / `TaskRoute@123`
 - 调度员：`dispatcher@taskroute.local` / `TaskRoute@123`
 - 司机：`driver@taskroute.local` / `TaskRoute@123`
+
+登录流程：
+1. 先调用 `GET /api/v1/auth/captcha` 获取验证码 `key` 与图片。
+2. 调用 `POST /api/v1/auth/login` 时携带 `email`、`password`、`captcha_key`、`captcha_code`。
 
 ## 下一步建议
 

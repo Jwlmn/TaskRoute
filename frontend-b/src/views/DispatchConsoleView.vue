@@ -1,4 +1,11 @@
 <script setup>
+import { computed } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import api from '../services/api'
+
+const router = useRouter()
+
 const metrics = [
   { label: '待调度计划单', value: 128 },
   { label: '执行中任务', value: 54 },
@@ -22,13 +29,42 @@ const upcomingTasks = [
     status: '执行中',
   },
 ]
+
+const currentUser = computed(() => {
+  const raw = localStorage.getItem('taskroute_user')
+  if (!raw) {
+    return null
+  }
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+})
+
+const logout = async () => {
+  try {
+    await api.post('/auth/logout')
+  } catch {
+    // ignore network errors on logout
+  } finally {
+    localStorage.removeItem('taskroute_token')
+    localStorage.removeItem('taskroute_user')
+    ElMessage.success('已退出登录')
+    await router.push({ name: 'login' })
+  }
+}
 </script>
 
 <template>
   <el-container class="layout-shell">
     <el-header class="layout-header">
       <div class="brand">TaskRoute B端 智能调度台</div>
-      <el-tag type="primary" effect="dark">Element Plus 默认蓝白主题</el-tag>
+      <div class="header-actions">
+        <el-tag type="primary" effect="dark">Element Plus 默认蓝白主题</el-tag>
+        <el-tag type="info" effect="plain">{{ currentUser?.name || '未登录用户' }}</el-tag>
+        <el-button type="danger" plain @click="logout">退出登录</el-button>
+      </div>
     </el-header>
 
     <el-main class="layout-main">
@@ -56,4 +92,3 @@ const upcomingTasks = [
     </el-main>
   </el-container>
 </template>
-
