@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Model;
 
 class PrePlanOrder extends Model
@@ -31,5 +33,16 @@ class PrePlanOrder extends Model
             'meta' => 'array',
         ];
     }
-}
 
+    public function cargoCategory(): BelongsTo
+    {
+        return $this->belongsTo(CargoCategory::class);
+    }
+
+    public function dispatchTasks(): BelongsToMany
+    {
+        return $this->belongsToMany(DispatchTask::class, 'dispatch_task_orders')
+            ->withPivot('sequence')
+            ->withTimestamps();
+    }
+}

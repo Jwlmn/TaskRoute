@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Model;
 
 class Vehicle extends Model
@@ -25,5 +26,9 @@ class Vehicle extends Model
             'meta' => 'array',
         ];
     }
-}
 
+    public function dispatchTasks(): HasMany
+    {
+        return $this->hasMany(DispatchTask::class);
+    }
+}

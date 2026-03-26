@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Model;
 
 class DispatchTask extends Model
@@ -31,5 +33,26 @@ class DispatchTask extends Model
             'planned_end_at' => 'datetime',
         ];
     }
-}
 
+    public function vehicle(): BelongsTo
+    {
+        return $this->belongsTo(Vehicle::class);
+    }
+
+    public function driver(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'driver_id');
+    }
+
+    public function dispatcher(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'dispatcher_id');
+    }
+
+    public function orders(): BelongsToMany
+    {
+        return $this->belongsToMany(PrePlanOrder::class, 'dispatch_task_orders')
+            ->withPivot('sequence')
+            ->withTimestamps();
+    }
+}
