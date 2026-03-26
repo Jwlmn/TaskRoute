@@ -84,15 +84,22 @@ body {
 .mobile-main {
   flex: 1;
   padding: 12px;
+  padding-bottom: 84px;
 }
 
 .mobile-footer {
   height: 64px;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
   border-top: 1px solid #dce5f2;
   background: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding-bottom: env(safe-area-inset-bottom, 0);
 }
 
 .mobile-user-name {
