@@ -61,6 +61,17 @@ body {
   padding: 16px;
 }
 
+.portal-aside .el-menu-item.is-active {
+  background-color: #eaf3ff;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+.portal-aside .el-sub-menu.is-active > .el-sub-menu__title {
+  background-color: #f2f7ff;
+  color: #1d4ed8;
+}
+
 .table-header {
   display: flex;
   align-items: center;

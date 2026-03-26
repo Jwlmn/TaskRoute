@@ -99,7 +99,6 @@ const logout = async () => {
       <el-aside class="portal-aside">
         <el-menu
           :default-active="activeMenu"
-          :default-openeds="['ops-center', 'resource-center', 'resource-catalog', 'system-center']"
           @select="goMenu"
         >
           <template v-for="item in menuTree" :key="item.index">
