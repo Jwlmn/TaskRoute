@@ -104,6 +104,10 @@ class SmartDispatchService
 
             $assignedCompartmentNo = null;
             if ($compartments->isNotEmpty()) {
+                if ($selected->count() >= $compartments->count()) {
+                    continue;
+                }
+
                 $targetIndex = $this->resolveCompartmentIndexForOrder(
                     $compartments,
                     (int) $order->cargo_category_id,
@@ -114,10 +118,8 @@ class SmartDispatchService
                 }
 
                 $targetCompartment = $compartments->get($targetIndex);
-                $targetCompartment['remaining_m3'] = max(
-                    0,
-                    (float) $targetCompartment['remaining_m3'] - (float) $order->cargo_volume_m3
-                );
+                // 分仓车辆约束：一个仓仅承接一个订单，杜绝同仓多单混装风险。
+                $targetCompartment['remaining_m3'] = 0;
                 $compartments->put($targetIndex, $targetCompartment);
                 $assignedCompartmentNo = (int) $targetCompartment['no'];
             } elseif ($nextVolume > (float) $vehicle->max_volume_m3) {

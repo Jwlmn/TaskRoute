@@ -158,6 +158,20 @@ onMounted(async () => {
       </el-table-column>
       <el-table-column prop="estimated_distance_km" label="里程(km)" min-width="100" />
       <el-table-column prop="estimated_fuel_l" label="油耗(L)" min-width="100" />
+      <el-table-column label="订单详情" min-width="300">
+        <template #default="{ row }">
+          <el-space wrap>
+            <el-tag
+              v-for="order in row.orders || []"
+              :key="order.id"
+              size="small"
+              type="info"
+            >
+              {{ order.order_no }}｜{{ order.client_name }}
+            </el-tag>
+          </el-space>
+        </template>
+      </el-table-column>
       <el-table-column label="状态" min-width="100">
         <template #default="{ row }">
           {{ getLabel(taskStatusLabelMap, row.status) }}

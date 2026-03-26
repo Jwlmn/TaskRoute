@@ -49,7 +49,7 @@ class DriverTaskExecutionApiTest extends TestCase
         Sanctum::actingAs($driver);
         $detailResponse = $this->postJson('/api/v1/driver-task/detail', ['task_id' => $taskId]);
         $detailResponse->assertOk();
-        $this->assertCount(2, $detailResponse->json('waypoints'));
+        $this->assertCount(1, $detailResponse->json('waypoints'));
 
         $startResponse = $this->postJson('/api/v1/driver-task/start', ['task_id' => $taskId]);
         $startResponse->assertOk()->assertJsonPath('status', 'accepted');
@@ -83,6 +83,6 @@ class DriverTaskExecutionApiTest extends TestCase
             'uploaded_by' => $driver->id,
             'document_type' => 'photo',
         ]);
-        $this->assertSame('in_progress', DispatchTask::query()->findOrFail($taskId)->status);
+        $this->assertSame('completed', DispatchTask::query()->findOrFail($taskId)->status);
     }
 }

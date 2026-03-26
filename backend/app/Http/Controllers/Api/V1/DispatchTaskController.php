@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\DispatchTask;
+use App\Models\Vehicle;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -17,6 +18,7 @@ class DispatchTaskController extends Controller
         $query = DispatchTask::query()->with([
             'vehicle:id,plate_number,name',
             'driver:id,account,name',
+            'orders:id,order_no,client_name,pickup_address,dropoff_address,cargo_category_id',
         ]);
         if ($user && $user->role === 'driver') {
             $query->where('driver_id', $user->id);
@@ -89,8 +91,16 @@ class DispatchTaskController extends Controller
 
     public function update(Request $request, DispatchTask $dispatchTask): JsonResponse
     {
+        if (! in_array($request->user()?->role, ['admin', 'dispatcher'], true)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
         if (! $this->canAccessTask($request, $dispatchTask)) {
             return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        if (! $this->canModifyTask($dispatchTask)) {
+            return response()->json(['message' => '任务节点已到达/完成，当前任务不可修改'], 422);
         }
 
         $payload = $request->validate([
@@ -106,6 +116,12 @@ class DispatchTaskController extends Controller
             'planned_end_at' => ['sometimes', 'nullable', 'date'],
         ]);
 
+        if (array_key_exists('vehicle_id', $payload) && ! array_key_exists('driver_id', $payload)) {
+            $payload['driver_id'] = $payload['vehicle_id']
+                ? Vehicle::query()->where('id', (int) $payload['vehicle_id'])->value('driver_id')
+                : null;
+        }
+
         $dispatchTask->update($payload);
 
         return response()->json($dispatchTask->fresh());
@@ -113,6 +129,10 @@ class DispatchTaskController extends Controller
 
     public function updateByPayload(Request $request): JsonResponse
     {
+        if (! in_array($request->user()?->role, ['admin', 'dispatcher'], true)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
         $payload = $request->validate([
             'id' => ['required', 'integer', 'exists:dispatch_tasks,id'],
             'vehicle_id' => ['sometimes', 'nullable', 'integer', 'exists:vehicles,id'],
@@ -131,8 +151,16 @@ class DispatchTaskController extends Controller
         if (! $this->canAccessTask($request, $dispatchTask)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
+        if (! $this->canModifyTask($dispatchTask)) {
+            return response()->json(['message' => '任务节点已到达/完成，当前任务不可修改'], 422);
+        }
 
         unset($payload['id']);
+        if (array_key_exists('vehicle_id', $payload) && ! array_key_exists('driver_id', $payload)) {
+            $payload['driver_id'] = $payload['vehicle_id']
+                ? Vehicle::query()->where('id', (int) $payload['vehicle_id'])->value('driver_id')
+                : null;
+        }
         $dispatchTask->update($payload);
 
         return response()->json($dispatchTask->fresh());
@@ -154,5 +182,12 @@ class DispatchTaskController extends Controller
         }
 
         return false;
+    }
+
+    private function canModifyTask(DispatchTask $dispatchTask): bool
+    {
+        return ! $dispatchTask->waypoints()
+            ->whereIn('status', ['arrived', 'completed'])
+            ->exists();
     }
 }

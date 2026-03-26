@@ -56,6 +56,10 @@ class PrePlanOrderController extends Controller
 
     public function update(Request $request, PrePlanOrder $prePlanOrder): JsonResponse
     {
+        if (! $this->canModifyOrder($prePlanOrder)) {
+            return response()->json(['message' => '关联任务节点已到达/完成，预计划单不可修改'], 422);
+        }
+
         $payload = $request->validate([
             'cargo_category_id' => ['sometimes', 'integer', 'exists:cargo_categories,id'],
             'client_name' => ['sometimes', 'string', 'max:255'],
@@ -91,9 +95,19 @@ class PrePlanOrderController extends Controller
         ]);
 
         $prePlanOrder = PrePlanOrder::query()->findOrFail($payload['id']);
+        if (! $this->canModifyOrder($prePlanOrder)) {
+            return response()->json(['message' => '关联任务节点已到达/完成，预计划单不可修改'], 422);
+        }
         unset($payload['id']);
         $prePlanOrder->update($payload);
 
         return response()->json($prePlanOrder->fresh());
+    }
+
+    private function canModifyOrder(PrePlanOrder $prePlanOrder): bool
+    {
+        return ! $prePlanOrder->dispatchTasks()
+            ->whereHas('waypoints', fn ($query) => $query->whereIn('status', ['arrived', 'completed']))
+            ->exists();
     }
 }

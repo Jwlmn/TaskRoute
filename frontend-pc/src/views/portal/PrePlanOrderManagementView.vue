@@ -4,16 +4,31 @@ import { ElMessage } from 'element-plus'
 import api from '../../services/api'
 import { getLabel, taskStatusLabelMap } from '../../utils/labels'
 
+const tableRef = ref()
 const prePlanOrders = ref([])
+const selectedOrders = ref([])
 const cargoCategories = ref([])
 const sites = ref([])
+const vehicles = ref([])
+
 const loadingOrders = ref(false)
-const createDialogVisible = ref(false)
-const creating = ref(false)
 const loadingMeta = ref(false)
 const loadingSites = ref(false)
+const loadingVehicles = ref(false)
+
+const createDialogVisible = ref(false)
+const editDialogVisible = ref(false)
+const manualDispatchDialogVisible = ref(false)
+
+const creating = ref(false)
+const editing = ref(false)
+const dispatching = ref(false)
+
+const currentEditId = ref(null)
 
 const createFormRef = ref()
+const editFormRef = ref()
+
 const createForm = reactive({
   cargo_category_id: null,
   client_name: '',
@@ -25,7 +40,26 @@ const createForm = reactive({
   expected_delivery_at: '',
 })
 
-const rules = {
+const editForm = reactive({
+  cargo_category_id: null,
+  client_name: '',
+  pickup_address: '',
+  dropoff_address: '',
+  cargo_weight_kg: null,
+  cargo_volume_m3: null,
+  expected_pickup_at: '',
+  expected_delivery_at: '',
+  status: '',
+})
+
+const manualDispatchForm = reactive({
+  vehicle_id: null,
+  estimated_distance_km: null,
+  estimated_fuel_l: null,
+  estimated_duration_min: null,
+})
+
+const formRules = {
   cargo_category_id: [{ required: true, message: '请选择货品分类', trigger: 'change' }],
   client_name: [{ required: true, message: '请输入客户名称', trigger: 'blur' }],
   pickup_address: [{ required: true, message: '请输入装货地', trigger: 'blur' }],
@@ -40,6 +74,9 @@ const statusTypeMap = {
   cancelled: 'danger',
 }
 
+const editableStatusSet = new Set(['pending', 'scheduled', 'in_progress'])
+const dispatchableStatusSet = new Set(['pending', 'scheduled'])
+
 const cargoCategoryMap = computed(() => {
   const map = {}
   for (const item of cargoCategories.value) {
@@ -47,6 +84,8 @@ const cargoCategoryMap = computed(() => {
   }
   return map
 })
+
+const selectedOrderIds = computed(() => selectedOrders.value.map((item) => item.id))
 
 const formatDateTime = (value) => {
   if (!value) return '-'
@@ -72,10 +111,56 @@ const resetCreateForm = () => {
   createFormRef.value?.clearValidate()
 }
 
-const openCreateDialog = () => {
-  resetCreateForm()
-  createDialogVisible.value = true
+const resetEditForm = () => {
+  editForm.cargo_category_id = null
+  editForm.client_name = ''
+  editForm.pickup_address = ''
+  editForm.dropoff_address = ''
+  editForm.cargo_weight_kg = null
+  editForm.cargo_volume_m3 = null
+  editForm.expected_pickup_at = ''
+  editForm.expected_delivery_at = ''
+  editForm.status = ''
+  currentEditId.value = null
+  editFormRef.value?.clearValidate()
 }
+
+const resetManualDispatchForm = () => {
+  manualDispatchForm.vehicle_id = null
+  manualDispatchForm.estimated_distance_km = null
+  manualDispatchForm.estimated_fuel_l = null
+  manualDispatchForm.estimated_duration_min = null
+}
+
+const fillOrderForm = (target, row) => {
+  target.cargo_category_id = row.cargo_category_id
+  target.client_name = row.client_name || ''
+  target.pickup_address = row.pickup_address || ''
+  target.dropoff_address = row.dropoff_address || ''
+  target.cargo_weight_kg = row.cargo_weight_kg
+  target.cargo_volume_m3 = row.cargo_volume_m3
+  target.expected_pickup_at = row.expected_pickup_at ? formatDateTime(row.expected_pickup_at).replace(' ', 'T') : ''
+  target.expected_delivery_at = row.expected_delivery_at ? formatDateTime(row.expected_delivery_at).replace(' ', 'T') : ''
+}
+
+const normalizeDate = (value) => {
+  if (!value) return null
+  if (typeof value === 'string' && value.includes('T')) {
+    return value.replace('T', ' ')
+  }
+  return value
+}
+
+const buildOrderPayload = (form) => ({
+  cargo_category_id: Number(form.cargo_category_id),
+  client_name: form.client_name,
+  pickup_address: form.pickup_address,
+  dropoff_address: form.dropoff_address,
+  cargo_weight_kg: form.cargo_weight_kg,
+  cargo_volume_m3: form.cargo_volume_m3,
+  expected_pickup_at: normalizeDate(form.expected_pickup_at),
+  expected_delivery_at: normalizeDate(form.expected_delivery_at),
+})
 
 const loadMeta = async () => {
   loadingMeta.value = true
@@ -92,14 +177,24 @@ const loadMeta = async () => {
 const loadSites = async () => {
   loadingSites.value = true
   try {
-    const { data } = await api.post('/resource/site/list', {
-      status: 'active',
-    })
+    const { data } = await api.post('/resource/site/list', { status: 'active' })
     sites.value = Array.isArray(data?.data) ? data.data : []
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '获取站点列表失败')
   } finally {
     loadingSites.value = false
+  }
+}
+
+const loadVehicles = async () => {
+  loadingVehicles.value = true
+  try {
+    const { data } = await api.post('/resource/vehicle/list', { status: 'idle' })
+    vehicles.value = Array.isArray(data?.data) ? data.data : []
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '获取车辆列表失败')
+  } finally {
+    loadingVehicles.value = false
   }
 }
 
@@ -115,6 +210,19 @@ const loadPrePlanOrders = async () => {
   }
 }
 
+const openCreateDialog = () => {
+  resetCreateForm()
+  createDialogVisible.value = true
+}
+
+const openEditDialog = (row) => {
+  resetEditForm()
+  currentEditId.value = row.id
+  fillOrderForm(editForm, row)
+  editForm.status = row.status
+  editDialogVisible.value = true
+}
+
 const createPrePlanOrder = async () => {
   if (!createFormRef.value) return
   const valid = await createFormRef.value.validate().catch(() => false)
@@ -122,17 +230,7 @@ const createPrePlanOrder = async () => {
 
   creating.value = true
   try {
-    const payload = {
-      cargo_category_id: Number(createForm.cargo_category_id),
-      client_name: createForm.client_name,
-      pickup_address: createForm.pickup_address,
-      dropoff_address: createForm.dropoff_address,
-      cargo_weight_kg: createForm.cargo_weight_kg,
-      cargo_volume_m3: createForm.cargo_volume_m3,
-      expected_pickup_at: createForm.expected_pickup_at || null,
-      expected_delivery_at: createForm.expected_delivery_at || null,
-    }
-    await api.post('/pre-plan-order/create', payload)
+    await api.post('/pre-plan-order/create', buildOrderPayload(createForm))
     ElMessage.success('预计划单创建成功')
     createDialogVisible.value = false
     await loadPrePlanOrders()
@@ -140,6 +238,94 @@ const createPrePlanOrder = async () => {
     ElMessage.error(error?.response?.data?.message || '创建预计划单失败')
   } finally {
     creating.value = false
+  }
+}
+
+const updatePrePlanOrder = async () => {
+  if (!editFormRef.value || !currentEditId.value) return
+  const valid = await editFormRef.value.validate().catch(() => false)
+  if (!valid) return
+
+  editing.value = true
+  try {
+    await api.post('/pre-plan-order/update', {
+      id: currentEditId.value,
+      ...buildOrderPayload(editForm),
+    })
+    ElMessage.success('预计划单修改成功')
+    editDialogVisible.value = false
+    await loadPrePlanOrders()
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '修改失败')
+  } finally {
+    editing.value = false
+  }
+}
+
+const onSelectionChange = (rows) => {
+  selectedOrders.value = rows
+}
+
+const selectableOrder = (row) => dispatchableStatusSet.has(row.status)
+
+const clearSelection = () => {
+  tableRef.value?.clearSelection?.()
+  selectedOrders.value = []
+}
+
+const openManualDispatchDialog = async () => {
+  if (selectedOrders.value.length === 0) {
+    ElMessage.warning('请先勾选至少一条预计划单')
+    return
+  }
+
+  const invalid = selectedOrders.value.find((item) => !dispatchableStatusSet.has(item.status))
+  if (invalid) {
+    ElMessage.warning(`存在不可派单状态订单：${invalid.order_no}`)
+    return
+  }
+
+  resetManualDispatchForm()
+  manualDispatchDialogVisible.value = true
+  await loadVehicles()
+}
+
+const submitManualDispatch = async () => {
+  if (!manualDispatchForm.vehicle_id) {
+    ElMessage.warning('请选择派单车辆')
+    return
+  }
+  if (selectedOrderIds.value.length === 0) {
+    ElMessage.warning('没有可派单的订单')
+    return
+  }
+
+  dispatching.value = true
+  try {
+    await api.post('/dispatch/manual-create-tasks', {
+      assignments: [
+        {
+          vehicle_id: manualDispatchForm.vehicle_id,
+          order_ids: selectedOrderIds.value,
+          estimated_distance_km: manualDispatchForm.estimated_distance_km,
+          estimated_fuel_l: manualDispatchForm.estimated_fuel_l,
+          estimated_duration_min: manualDispatchForm.estimated_duration_min,
+          route_meta: {
+            strategy: 'pre_plan_manual_dispatch',
+            source: 'pre_plan_order',
+          },
+        },
+      ],
+    })
+
+    ElMessage.success('手动派单成功')
+    manualDispatchDialogVisible.value = false
+    clearSelection()
+    await loadPrePlanOrders()
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '手动派单失败')
+  } finally {
+    dispatching.value = false
   }
 }
 
@@ -155,10 +341,14 @@ onMounted(() => {
     <template #header>
       <div class="table-header">
         <div class="card-title">预计划单管理</div>
-        <el-button type="primary" @click="openCreateDialog">新建预计划单</el-button>
+        <div>
+          <el-button class="mr-8" plain type="primary" @click="openManualDispatchDialog">手动派单</el-button>
+          <el-button type="primary" @click="openCreateDialog">新建预计划单</el-button>
+        </div>
       </div>
     </template>
-    <el-table :data="prePlanOrders" stripe v-loading="loadingOrders">
+    <el-table ref="tableRef" :data="prePlanOrders" stripe v-loading="loadingOrders" @selection-change="onSelectionChange">
+      <el-table-column type="selection" width="50" :selectable="selectableOrder" />
       <el-table-column prop="order_no" label="预计划单号" min-width="180" />
       <el-table-column prop="client_name" label="客户" min-width="120" />
       <el-table-column prop="pickup_address" label="装货地" min-width="180" />
@@ -182,25 +372,20 @@ onMounted(() => {
           </el-tag>
         </template>
       </el-table-column>
+      <el-table-column label="操作" width="100" fixed="right">
+        <template #default="{ row }">
+          <el-button link type="primary" :disabled="!editableStatusSet.has(row.status)" @click="openEditDialog(row)">编辑</el-button>
+        </template>
+      </el-table-column>
     </el-table>
   </el-card>
 
-  <el-dialog
-    v-model="createDialogVisible"
-    title="新建预计划单"
-    width="680px"
-    destroy-on-close
-  >
-    <el-form ref="createFormRef" :model="createForm" :rules="rules" label-width="120px">
+  <el-dialog v-model="createDialogVisible" title="新建预计划单" width="680px" destroy-on-close>
+    <el-form ref="createFormRef" :model="createForm" :rules="formRules" label-width="120px">
       <el-row :gutter="12">
         <el-col :span="12">
           <el-form-item label="货品分类" prop="cargo_category_id">
-            <el-select
-              v-model="createForm.cargo_category_id"
-              :loading="loadingMeta"
-              placeholder="请选择货品分类"
-              style="width: 100%"
-            >
+            <el-select v-model="createForm.cargo_category_id" :loading="loadingMeta" placeholder="请选择货品分类" style="width: 100%">
               <el-option
                 v-for="item in cargoCategories"
                 :key="item.id"
@@ -227,12 +412,7 @@ onMounted(() => {
           placeholder="请选择或输入装货地地址"
           style="width: 100%"
         >
-          <el-option
-            v-for="site in sites"
-            :key="site.id"
-            :label="`${site.name}｜${site.address}`"
-            :value="site.address"
-          />
+          <el-option v-for="site in sites" :key="site.id" :label="`${site.name}｜${site.address}`" :value="site.address" />
         </el-select>
       </el-form-item>
       <el-form-item label="卸货地" prop="dropoff_address">
@@ -246,12 +426,7 @@ onMounted(() => {
           placeholder="请选择或输入卸货地地址"
           style="width: 100%"
         >
-          <el-option
-            v-for="site in sites"
-            :key="`dropoff-${site.id}`"
-            :label="`${site.name}｜${site.address}`"
-            :value="site.address"
-          />
+          <el-option v-for="site in sites" :key="`dropoff-${site.id}`" :label="`${site.name}｜${site.address}`" :value="site.address" />
         </el-select>
       </el-form-item>
       <el-row :gutter="12">
@@ -294,6 +469,141 @@ onMounted(() => {
     <template #footer>
       <el-button @click="createDialogVisible = false">取消</el-button>
       <el-button type="primary" :loading="creating" @click="createPrePlanOrder">创建</el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog v-model="editDialogVisible" title="编辑预计划单" width="680px" destroy-on-close>
+    <el-form ref="editFormRef" :model="editForm" :rules="formRules" label-width="120px">
+      <el-row :gutter="12">
+        <el-col :span="12">
+          <el-form-item label="货品分类" prop="cargo_category_id">
+            <el-select v-model="editForm.cargo_category_id" :loading="loadingMeta" placeholder="请选择货品分类" style="width: 100%">
+              <el-option
+                v-for="item in cargoCategories"
+                :key="`edit-${item.id}`"
+                :label="`${item.name}（${item.code}）`"
+                :value="item.id"
+              />
+            </el-select>
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="客户名称" prop="client_name">
+            <el-input v-model="editForm.client_name" placeholder="请输入客户名称" />
+          </el-form-item>
+        </el-col>
+      </el-row>
+      <el-form-item label="装货地" prop="pickup_address">
+        <el-select
+          v-model="editForm.pickup_address"
+          filterable
+          allow-create
+          default-first-option
+          clearable
+          :loading="loadingSites"
+          placeholder="请选择或输入装货地地址"
+          style="width: 100%"
+        >
+          <el-option v-for="site in sites" :key="`edit-p-${site.id}`" :label="`${site.name}｜${site.address}`" :value="site.address" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="卸货地" prop="dropoff_address">
+        <el-select
+          v-model="editForm.dropoff_address"
+          filterable
+          allow-create
+          default-first-option
+          clearable
+          :loading="loadingSites"
+          placeholder="请选择或输入卸货地地址"
+          style="width: 100%"
+        >
+          <el-option v-for="site in sites" :key="`edit-d-${site.id}`" :label="`${site.name}｜${site.address}`" :value="site.address" />
+        </el-select>
+      </el-form-item>
+      <el-row :gutter="12">
+        <el-col :span="12">
+          <el-form-item label="重量(kg)">
+            <el-input-number v-model="editForm.cargo_weight_kg" :min="0" :precision="2" :controls="false" style="width: 100%" />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="体积(m³)">
+            <el-input-number v-model="editForm.cargo_volume_m3" :min="0" :precision="3" :controls="false" style="width: 100%" />
+          </el-form-item>
+        </el-col>
+      </el-row>
+      <el-row :gutter="12">
+        <el-col :span="12">
+          <el-form-item label="预计提货时间">
+            <el-date-picker
+              v-model="editForm.expected_pickup_at"
+              type="datetime"
+              value-format="YYYY-MM-DD HH:mm:ss"
+              placeholder="请选择预计提货时间"
+              style="width: 100%"
+            />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="预计送达时间">
+            <el-date-picker
+              v-model="editForm.expected_delivery_at"
+              type="datetime"
+              value-format="YYYY-MM-DD HH:mm:ss"
+              placeholder="请选择预计送达时间"
+              style="width: 100%"
+            />
+          </el-form-item>
+        </el-col>
+      </el-row>
+    </el-form>
+    <template #footer>
+      <el-button @click="editDialogVisible = false">取消</el-button>
+      <el-button type="primary" :loading="editing" @click="updatePrePlanOrder">保存修改</el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog v-model="manualDispatchDialogVisible" title="预计划单手动派单" width="720px" destroy-on-close>
+    <el-alert type="info" :closable="false" show-icon class="mb-12" title="仅可派发待调度/已排程的订单。若任务节点已到达或完成，后续将禁止修改。" />
+    <el-table :data="selectedOrders" size="small" stripe class="mb-12">
+      <el-table-column prop="order_no" label="订单号" min-width="170" />
+      <el-table-column prop="client_name" label="客户" min-width="120" />
+      <el-table-column prop="pickup_address" label="装货地" min-width="160" />
+      <el-table-column prop="dropoff_address" label="卸货地" min-width="160" />
+    </el-table>
+    <el-form label-width="130px">
+      <el-form-item label="派单车辆" required>
+        <el-select v-model="manualDispatchForm.vehicle_id" :loading="loadingVehicles" placeholder="请选择车辆" style="width: 100%">
+          <el-option
+            v-for="vehicle in vehicles"
+            :key="vehicle.id"
+            :label="`${vehicle.plate_number}｜${vehicle.name}｜司机:${vehicle.driver?.name || '-'}(${vehicle.driver?.account || '-'})`"
+            :value="vehicle.id"
+          />
+        </el-select>
+      </el-form-item>
+      <el-row :gutter="12">
+        <el-col :span="8">
+          <el-form-item label="预计里程(km)">
+            <el-input-number v-model="manualDispatchForm.estimated_distance_km" :min="0" :precision="2" style="width: 100%" />
+          </el-form-item>
+        </el-col>
+        <el-col :span="8">
+          <el-form-item label="预计油耗(L)">
+            <el-input-number v-model="manualDispatchForm.estimated_fuel_l" :min="0" :precision="2" style="width: 100%" />
+          </el-form-item>
+        </el-col>
+        <el-col :span="8">
+          <el-form-item label="预计时长(分钟)">
+            <el-input-number v-model="manualDispatchForm.estimated_duration_min" :min="1" :precision="0" style="width: 100%" />
+          </el-form-item>
+        </el-col>
+      </el-row>
+    </el-form>
+    <template #footer>
+      <el-button @click="manualDispatchDialogVisible = false">取消</el-button>
+      <el-button type="primary" :loading="dispatching" @click="submitManualDispatch">确认派单</el-button>
     </template>
   </el-dialog>
 </template>

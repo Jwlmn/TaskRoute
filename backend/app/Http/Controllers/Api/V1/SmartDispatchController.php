@@ -222,16 +222,12 @@ class SmartDispatchController extends Controller
                 'dispatch_task_id' => $taskId,
                 'node_type' => 'pickup',
                 'sequence' => $sequence++,
-                'address' => $order->pickup_address,
-                'status' => 'pending',
-                'created_at' => now(),
-                'updated_at' => now(),
-            ];
-            $rows[] = [
-                'dispatch_task_id' => $taskId,
-                'node_type' => 'dropoff',
-                'sequence' => $sequence++,
-                'address' => $order->dropoff_address,
+                'address' => sprintf(
+                    '订单%s｜装货:%s｜卸货:%s',
+                    $order->order_no,
+                    $order->pickup_address,
+                    $order->dropoff_address
+                ),
                 'status' => 'pending',
                 'created_at' => now(),
                 'updated_at' => now(),

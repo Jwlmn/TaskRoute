@@ -39,6 +39,20 @@ const waypointStatusLabelMap = {
   completed: '已完成',
 }
 
+const getWaypointTypeLabel = (waypoint) => {
+  if (!waypoint) return '节点'
+  if ((waypoint.address || '').includes('装货:') && (waypoint.address || '').includes('卸货:')) {
+    return '订单节点'
+  }
+  const map = {
+    pickup: '装货点',
+    dropoff: '卸货点',
+    checkpoint: '途经点',
+    finish: '收车点',
+  }
+  return map[waypoint.node_type] || '节点'
+}
+
 const documentTypeOptions = [
   { label: '回单', value: 'receipt' },
   { label: '签收单', value: 'signoff' },
@@ -317,7 +331,7 @@ onUnmounted(() => {
           <div v-else>
             <div v-for="waypoint in detail.waypoints" :key="waypoint.id" class="mobile-waypoint-item">
               <div class="mobile-waypoint-main">
-                <strong>{{ waypoint.sequence }}. {{ waypoint.node_type === 'pickup' ? '装货点' : '卸货点' }}</strong>
+                <strong>{{ waypoint.sequence }}. {{ getWaypointTypeLabel(waypoint) }}</strong>
                 <el-tag size="small">{{ getLabel(waypointStatusLabelMap, waypoint.status) }}</el-tag>
               </div>
               <div class="mobile-waypoint-address">{{ waypoint.address }}</div>

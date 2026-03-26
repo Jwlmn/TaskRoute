@@ -109,6 +109,55 @@ class SmartDispatchApiTest extends TestCase
         $this->assertSame(1, $response->json('assignments.0.compartment_plan.0.compartment_no'));
     }
 
+    public function test_compartment_vehicle_cannot_carry_more_orders_than_compartments(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        Sanctum::actingAs($dispatcher);
+
+        $gasoline = CargoCategory::query()->where('code', 'gasoline')->firstOrFail();
+        $vehicle = Vehicle::query()->create([
+            'plate_number' => '沪Z81234',
+            'name' => '双仓油罐车',
+            'vehicle_type' => 'tank',
+            'driver_id' => User::query()->where('role', 'driver')->value('id'),
+            'max_weight_kg' => 26000,
+            'max_volume_m3' => 40,
+            'status' => 'idle',
+            'meta' => [
+                'compartment_enabled' => true,
+                'compartments' => [
+                    ['no' => 1, 'capacity_m3' => 20, 'allowed_cargo_category_ids' => [$gasoline->id]],
+                    ['no' => 2, 'capacity_m3' => 20, 'allowed_cargo_category_ids' => [$gasoline->id]],
+                ],
+            ],
+        ]);
+
+        $orders = collect([1, 2, 3])->map(function ($index) use ($gasoline) {
+            return PrePlanOrder::query()->create([
+                'order_no' => "PO-TEST-SLOT-{$index}",
+                'cargo_category_id' => $gasoline->id,
+                'client_name' => "测试客户{$index}",
+                'pickup_address' => "测试装货地{$index}",
+                'dropoff_address' => "测试卸货地{$index}",
+                'cargo_weight_kg' => 800,
+                'cargo_volume_m3' => 2.5,
+                'expected_pickup_at' => now()->addHours($index),
+                'expected_delivery_at' => now()->addHours($index + 1),
+                'status' => 'pending',
+            ]);
+        });
+
+        $response = $this->postJson('/api/v1/dispatch/preview', [
+            'vehicle_ids' => [$vehicle->id],
+            'order_ids' => $orders->pluck('id')->all(),
+        ]);
+
+        $response->assertOk();
+        $this->assertCount(2, $response->json('assignments.0.order_ids'));
+        $this->assertCount(1, $response->json('unassigned'));
+    }
+
     public function test_preview_uses_amap_route_when_enabled(): void
     {
         $this->seed(DatabaseSeeder::class);
