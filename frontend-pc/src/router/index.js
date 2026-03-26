@@ -3,6 +3,7 @@ import LoginView from '../views/LoginView.vue'
 import PortalLayoutView from '../views/portal/PortalLayoutView.vue'
 import DashboardHomeView from '../views/portal/DashboardHomeView.vue'
 import DispatchWorkbenchView from '../views/portal/DispatchWorkbenchView.vue'
+import PrePlanOrderManagementView from '../views/portal/PrePlanOrderManagementView.vue'
 import MobileTaskCenterView from '../views/portal/MobileTaskCenterView.vue'
 import UserManagementView from '../views/portal/UserManagementView.vue'
 import VehicleManagementView from '../views/portal/VehicleManagementView.vue'
@@ -33,6 +34,12 @@ const router = createRouter({
           name: 'dashboard-home',
           component: DashboardHomeView,
           meta: { permission: 'dashboard' },
+        },
+        {
+          path: 'pre-plan-orders',
+          name: 'pre-plan-order-management',
+          component: PrePlanOrderManagementView,
+          meta: { permission: 'dispatch' },
         },
         {
           path: 'dispatch',

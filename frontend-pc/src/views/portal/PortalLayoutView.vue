@@ -17,7 +17,8 @@ const menuTree = computed(() => {
       label: '运营中心',
       children: [
         { index: 'dashboard-home', label: '首页概览', permission: 'dashboard' },
-        { index: 'dispatch-workbench', label: '调度工作台', permission: 'dispatch' },
+        { index: 'pre-plan-order-management', label: '预计划单管理', permission: 'dispatch' },
+        { index: 'dispatch-workbench', label: '调度任务管理', permission: 'dispatch' },
         { index: 'mobile-task-center', label: '司机定位与轨迹回放', permission: 'mobile_tasks' },
       ],
     },
