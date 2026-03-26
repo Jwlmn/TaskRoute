@@ -70,6 +70,7 @@ class DriverTaskExecutionApiTest extends TestCase
         Storage::fake('public');
         $uploadResponse = $this->post('/api/v1/driver-task/upload-document', [
             'task_id' => $taskId,
+            'waypoint_id' => $waypointId,
             'document_type' => 'photo',
             'remark' => '装货完成留存',
             'document_file' => UploadedFile::fake()->image('proof.jpg'),
@@ -78,6 +79,7 @@ class DriverTaskExecutionApiTest extends TestCase
 
         $this->assertDatabaseHas('electronic_documents', [
             'dispatch_task_id' => $taskId,
+            'task_waypoint_id' => $waypointId,
             'uploaded_by' => $driver->id,
             'document_type' => 'photo',
         ]);

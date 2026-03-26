@@ -20,7 +20,7 @@ class DriverTaskExecutionController extends Controller
         ]);
 
         $task = DispatchTask::query()
-            ->with(['orders', 'waypoints', 'documents'])
+            ->with(['orders', 'waypoints.documents', 'documents.waypoint'])
             ->findOrFail($payload['task_id']);
 
         if ((int) $task->driver_id !== (int) $request->user()->id) {
@@ -134,6 +134,7 @@ class DriverTaskExecutionController extends Controller
     {
         $payload = $request->validate([
             'task_id' => ['required', 'integer', 'exists:dispatch_tasks,id'],
+            'waypoint_id' => ['required', 'integer', 'exists:task_waypoints,id'],
             'document_type' => ['required', 'in:receipt,signoff,photo,exception'],
             'document_file' => ['required', 'file', 'max:5120'],
             'remark' => ['nullable', 'string', 'max:255'],
@@ -144,11 +145,27 @@ class DriverTaskExecutionController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
+        $waypoint = TaskWaypoint::query()
+            ->where('dispatch_task_id', $task->id)
+            ->where('id', $payload['waypoint_id'])
+            ->first();
+        if (! $waypoint) {
+            return response()->json(['message' => '节点不属于当前任务'], 422);
+        }
+
+        $alreadyUploaded = ElectronicDocument::query()
+            ->where('task_waypoint_id', $waypoint->id)
+            ->exists();
+        if ($alreadyUploaded) {
+            return response()->json(['message' => '该节点已上传单据，请勿重复上传'], 422);
+        }
+
         $path = $request->file('document_file')->store('electronic-documents', 'public');
 
-        $document = DB::transaction(function () use ($payload, $task, $request, $path) {
+        $document = DB::transaction(function () use ($payload, $task, $waypoint, $request, $path) {
             return ElectronicDocument::query()->create([
                 'dispatch_task_id' => $task->id,
+                'task_waypoint_id' => $waypoint->id,
                 'uploaded_by' => $request->user()->id,
                 'document_type' => $payload['document_type'],
                 'file_path' => $path,
@@ -160,6 +177,6 @@ class DriverTaskExecutionController extends Controller
             ]);
         });
 
-        return response()->json($document, 201);
+        return response()->json($document->loadMissing('waypoint:id,dispatch_task_id,sequence,node_type,address'), 201);
     }
 }

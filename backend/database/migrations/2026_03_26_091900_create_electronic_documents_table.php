@@ -11,12 +11,15 @@ return new class extends Migration
         Schema::create('electronic_documents', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('dispatch_task_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('task_waypoint_id')->constrained('task_waypoints')->cascadeOnDelete();
             $table->foreignId('uploaded_by')->constrained('users')->cascadeOnDelete();
             $table->enum('document_type', ['receipt', 'signoff', 'photo', 'exception']);
             $table->string('file_path');
             $table->json('meta')->nullable();
             $table->timestamp('uploaded_at');
             $table->timestamps();
+
+            $table->unique('task_waypoint_id');
         });
     }
 
@@ -25,4 +28,3 @@ return new class extends Migration
         Schema::dropIfExists('electronic_documents');
     }
 };
-

@@ -12,6 +12,7 @@ class ElectronicDocument extends Model
 
     protected $fillable = [
         'dispatch_task_id',
+        'task_waypoint_id',
         'uploaded_by',
         'document_type',
         'file_path',
@@ -30,6 +31,11 @@ class ElectronicDocument extends Model
     public function task(): BelongsTo
     {
         return $this->belongsTo(DispatchTask::class, 'dispatch_task_id');
+    }
+
+    public function waypoint(): BelongsTo
+    {
+        return $this->belongsTo(TaskWaypoint::class, 'task_waypoint_id');
     }
 
     public function uploader(): BelongsTo

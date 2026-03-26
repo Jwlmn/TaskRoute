@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class TaskWaypoint extends Model
 {
@@ -33,5 +34,10 @@ class TaskWaypoint extends Model
     public function task(): BelongsTo
     {
         return $this->belongsTo(DispatchTask::class, 'dispatch_task_id');
+    }
+
+    public function documents(): HasMany
+    {
+        return $this->hasMany(ElectronicDocument::class, 'task_waypoint_id')->latest('uploaded_at');
     }
 }
