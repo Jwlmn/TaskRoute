@@ -134,6 +134,11 @@ body {
   margin-bottom: 12px;
 }
 
+.text-secondary {
+  color: #7a8597;
+  font-size: 12px;
+}
+
 .mr-8 {
   margin-right: 8px;
 }

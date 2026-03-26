@@ -14,7 +14,10 @@ class DispatchTaskController extends Controller
     {
         $user = $request->user();
 
-        $query = DispatchTask::query();
+        $query = DispatchTask::query()->with([
+            'vehicle:id,plate_number,name',
+            'driver:id,account,name',
+        ]);
         if ($user && $user->role === 'driver') {
             $query->where('driver_id', $user->id);
         }
@@ -55,6 +58,12 @@ class DispatchTaskController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
+        $dispatchTask->loadMissing([
+            'vehicle:id,plate_number,name',
+            'driver:id,account,name',
+            'orders:id,order_no,client_name',
+        ]);
+
         return response()->json($dispatchTask);
     }
 
@@ -68,6 +77,12 @@ class DispatchTaskController extends Controller
         if (! $this->canAccessTask($request, $dispatchTask)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
+
+        $dispatchTask->loadMissing([
+            'vehicle:id,plate_number,name',
+            'driver:id,account,name',
+            'orders:id,order_no,client_name',
+        ]);
 
         return response()->json($dispatchTask);
     }

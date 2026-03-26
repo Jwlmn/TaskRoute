@@ -282,7 +282,18 @@ onBeforeUnmount(() => {
           {{ getLabel(taskStatusLabelMap, row.status) }}
         </template>
       </el-table-column>
-      <el-table-column prop="driver_id" label="司机ID" min-width="90" />
+      <el-table-column label="车辆" min-width="170">
+        <template #default="{ row }">
+          {{ row.vehicle?.plate_number || '-' }} {{ row.vehicle?.name || '' }}
+          <span class="text-secondary">（ID: {{ row.vehicle_id || '-' }}）</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="司机" min-width="170">
+        <template #default="{ row }">
+          {{ row.driver?.name || '-' }}（{{ row.driver?.account || '-' }}）
+          <span class="text-secondary">（ID: {{ row.driver_id || '-' }}）</span>
+        </template>
+      </el-table-column>
       <el-table-column prop="estimated_distance_km" label="里程(km)" min-width="100" />
       <el-table-column prop="estimated_fuel_l" label="油耗(L)" min-width="100" />
     </el-table>
