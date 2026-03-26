@@ -21,10 +21,12 @@ Route::prefix('v1')->group(function (): void {
         Route::get('/auth/me', [AuthController::class, 'me']);
         Route::post('/auth/logout', [AuthController::class, 'logout']);
 
-        Route::post('/pre-plan-order/list', [PrePlanOrderController::class, 'index']);
-        Route::post('/pre-plan-order/create', [PrePlanOrderController::class, 'store']);
-        Route::post('/pre-plan-order/detail', [PrePlanOrderController::class, 'showByPayload']);
-        Route::post('/pre-plan-order/update', [PrePlanOrderController::class, 'updateByPayload']);
+        Route::middleware('role:admin,dispatcher')->group(function (): void {
+            Route::post('/pre-plan-order/list', [PrePlanOrderController::class, 'index']);
+            Route::post('/pre-plan-order/create', [PrePlanOrderController::class, 'store']);
+            Route::post('/pre-plan-order/detail', [PrePlanOrderController::class, 'showByPayload']);
+            Route::post('/pre-plan-order/update', [PrePlanOrderController::class, 'updateByPayload']);
+        });
 
         Route::post('/dispatch-task/list', [DispatchTaskController::class, 'index']);
         Route::post('/dispatch-task/create', [DispatchTaskController::class, 'store']);
