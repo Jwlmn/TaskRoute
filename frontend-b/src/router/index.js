@@ -1,6 +1,11 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import DispatchConsoleView from '../views/DispatchConsoleView.vue'
 import LoginView from '../views/LoginView.vue'
+import PortalLayoutView from '../views/portal/PortalLayoutView.vue'
+import DashboardHomeView from '../views/portal/DashboardHomeView.vue'
+import DispatchWorkbenchView from '../views/portal/DispatchWorkbenchView.vue'
+import MobileTaskCenterView from '../views/portal/MobileTaskCenterView.vue'
+import UserManagementView from '../views/portal/UserManagementView.vue'
+import { hasPermission, readCurrentUser } from '../utils/auth'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -15,22 +20,53 @@ const router = createRouter({
     },
     {
       path: '/',
-      name: 'dispatch-console',
-      component: DispatchConsoleView,
+      component: PortalLayoutView,
       meta: {
         requiresAuth: true,
       },
+      children: [
+        {
+          path: '',
+          name: 'dashboard-home',
+          component: DashboardHomeView,
+          meta: { permission: 'dashboard' },
+        },
+        {
+          path: 'dispatch',
+          name: 'dispatch-workbench',
+          component: DispatchWorkbenchView,
+          meta: { permission: 'dispatch' },
+        },
+        {
+          path: 'mobile-tasks',
+          name: 'mobile-task-center',
+          component: MobileTaskCenterView,
+          meta: { permission: 'mobile_tasks' },
+        },
+        {
+          path: 'users',
+          name: 'user-management',
+          component: UserManagementView,
+          meta: { permission: 'users' },
+        },
+      ],
     },
   ],
 })
 
 router.beforeEach((to) => {
   const token = localStorage.getItem('taskroute_token')
+  const user = readCurrentUser()
+
   if (to.meta.requiresAuth && !token) {
     return { name: 'login' }
   }
   if (to.meta.guestOnly && token) {
-    return { name: 'dispatch-console' }
+    return { name: 'dashboard-home' }
+  }
+
+  if (to.meta.permission && !hasPermission(user, to.meta.permission)) {
+    return { name: 'dashboard-home' }
   }
   return true
 })

@@ -10,15 +10,26 @@ use Illuminate\Support\Str;
 
 class DispatchTaskController extends Controller
 {
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
+        $user = $request->user();
+
+        $query = DispatchTask::query();
+        if ($user && $user->role === 'driver') {
+            $query->where('driver_id', $user->id);
+        }
+
         return response()->json(
-            DispatchTask::query()->latest()->paginate(20)
+            $query->latest()->paginate(20)
         );
     }
 
     public function store(Request $request): JsonResponse
     {
+        if (! in_array($request->user()?->role, ['admin', 'dispatcher'], true)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
         $payload = $request->validate([
             'vehicle_id' => ['nullable', 'integer', 'exists:vehicles,id'],
             'driver_id' => ['nullable', 'integer', 'exists:users,id'],
@@ -38,13 +49,21 @@ class DispatchTaskController extends Controller
         return response()->json($task, 201);
     }
 
-    public function show(DispatchTask $dispatchTask): JsonResponse
+    public function show(Request $request, DispatchTask $dispatchTask): JsonResponse
     {
+        if (! $this->canAccessTask($request, $dispatchTask)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
         return response()->json($dispatchTask);
     }
 
     public function update(Request $request, DispatchTask $dispatchTask): JsonResponse
     {
+        if (! $this->canAccessTask($request, $dispatchTask)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
         $payload = $request->validate([
             'vehicle_id' => ['sometimes', 'nullable', 'integer', 'exists:vehicles,id'],
             'driver_id' => ['sometimes', 'nullable', 'integer', 'exists:users,id'],
@@ -62,5 +81,22 @@ class DispatchTaskController extends Controller
 
         return response()->json($dispatchTask->fresh());
     }
-}
 
+    private function canAccessTask(Request $request, DispatchTask $dispatchTask): bool
+    {
+        $user = $request->user();
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->role === 'admin' || $user->role === 'dispatcher') {
+            return true;
+        }
+
+        if ($user->role === 'driver') {
+            return (int) $dispatchTask->driver_id === (int) $user->id;
+        }
+
+        return false;
+    }
+}

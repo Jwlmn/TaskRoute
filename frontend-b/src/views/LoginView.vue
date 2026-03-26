@@ -28,7 +28,7 @@ const submit = async () => {
     localStorage.setItem('taskroute_token', data.token)
     localStorage.setItem('taskroute_user', JSON.stringify(data.user))
     ElMessage.success('登录成功')
-    await router.push({ name: 'dispatch-console' })
+    await router.push({ name: 'dashboard-home' })
   } catch (error) {
     const message = error?.response?.data?.message || '登录失败，请检查输入'
     ElMessage.error(message)
@@ -47,7 +47,7 @@ onMounted(() => {
   <div class="login-page">
     <el-card class="login-card" shadow="hover">
       <template #header>
-        <div class="login-title">TaskRoute B端 登录</div>
+        <div class="login-title">TaskRoute 统一门户登录</div>
       </template>
       <el-form label-position="top" @submit.prevent="submit">
         <el-form-item label="账号">
