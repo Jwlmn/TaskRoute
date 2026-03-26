@@ -4,11 +4,16 @@ namespace App\Services\Dispatch;
 
 use App\Models\PrePlanOrder;
 use App\Models\Vehicle;
+use App\Services\Map\AmapRouteService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 class SmartDispatchService
 {
+    public function __construct(private readonly AmapRouteService $amapRouteService)
+    {
+    }
+
     public function preview(Collection $orders, Collection $vehicles): array
     {
         $remainingOrders = $orders->values();
@@ -22,14 +27,33 @@ class SmartDispatchService
 
             $packResult = $this->packOrdersForVehicle($remainingOrders, $vehicle);
             if ($packResult['orders']->isNotEmpty()) {
+                $estimatedDistanceKm = $this->estimateDistance($packResult['orders']->count());
+                $estimatedDurationMin = max(10, (int) round($estimatedDistanceKm * 2.5));
+                $optimizer = 'rule_based';
+                $routeMeta = [
+                    'optimizer' => $optimizer,
+                    'strategy' => 'rule_based_v1',
+                ];
+
+                $optimized = $this->amapRouteService->optimize($packResult['orders']);
+                if ($optimized !== null) {
+                    $estimatedDistanceKm = (float) $optimized['estimated_distance_km'];
+                    $estimatedDurationMin = (int) $optimized['estimated_duration_min'];
+                    $optimizer = 'amap';
+                    $routeMeta = array_merge($routeMeta, $optimized['route_meta'] ?? []);
+                }
+
                 $assignments[] = [
                     'vehicle_id' => $vehicle->id,
                     'vehicle_name' => $vehicle->name,
                     'plate_number' => $vehicle->plate_number,
                     'order_ids' => $packResult['orders']->pluck('id')->values(),
                     'compartment_plan' => $packResult['compartment_plan'],
-                    'estimated_distance_km' => $this->estimateDistance($packResult['orders']->count()),
+                    'estimated_distance_km' => $estimatedDistanceKm,
+                    'estimated_duration_min' => $estimatedDurationMin,
                     'estimated_fuel_l' => $this->estimateFuel($packResult['orders']->sum('cargo_weight_kg')),
+                    'route_meta' => $routeMeta,
+                    'optimizer' => $optimizer,
                     'dispatch_mode' => $packResult['orders']->count() > 1
                         ? 'single_vehicle_multi_order'
                         : 'single_vehicle_single_order',

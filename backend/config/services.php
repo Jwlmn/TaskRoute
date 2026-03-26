@@ -37,6 +37,7 @@ return [
 
     'amap' => [
         'web_key' => env('AMAP_WEB_KEY'),
+        'enable_in_testing' => env('AMAP_ENABLE_IN_TESTING', false),
     ],
 
 ];

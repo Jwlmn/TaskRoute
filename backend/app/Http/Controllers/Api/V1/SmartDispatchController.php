@@ -67,11 +67,16 @@ class SmartDispatchController extends Controller
                     'status' => 'assigned',
                     'estimated_distance_km' => $assignment['estimated_distance_km'],
                     'estimated_fuel_l' => $assignment['estimated_fuel_l'],
-                    'route_meta' => [
-                        'strategy' => 'rule_based_v1',
-                        'optimizer' => 'amap_pending',
-                        'compartment_plan' => $assignment['compartment_plan'] ?? [],
-                    ],
+                    'route_meta' => array_merge(
+                        $assignment['route_meta'] ?? [
+                            'strategy' => 'rule_based_v1',
+                            'optimizer' => 'rule_based',
+                        ],
+                        [
+                            'compartment_plan' => $assignment['compartment_plan'] ?? [],
+                            'estimated_duration_min' => $assignment['estimated_duration_min'] ?? null,
+                        ]
+                    ),
                 ]);
 
                 $syncData = [];
