@@ -8,7 +8,7 @@ const tasks = ref([])
 const fetchTasks = async () => {
   loading.value = true
   try {
-    const { data } = await api.get('/dispatch-tasks')
+    const { data } = await api.post('/dispatch-task/list', {})
     tasks.value = data.data || []
   } finally {
     loading.value = false
@@ -34,4 +34,3 @@ onMounted(() => {
     </el-table>
   </el-card>
 </template>
-

@@ -18,7 +18,7 @@ class UserManagementApiTest extends TestCase
         $admin = User::query()->where('role', 'admin')->firstOrFail();
         Sanctum::actingAs($admin);
 
-        $response = $this->postJson('/api/v1/users', [
+        $response = $this->postJson('/api/v1/user/create', [
             'account' => 'ops_new',
             'name' => '测试调度员',
             'phone' => '13810000000',
@@ -37,7 +37,7 @@ class UserManagementApiTest extends TestCase
         $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
         Sanctum::actingAs($dispatcher);
 
-        $response = $this->postJson('/api/v1/users', [
+        $response = $this->postJson('/api/v1/user/create', [
             'account' => 'blocked_user',
             'name' => '非法创建',
             'role' => 'driver',

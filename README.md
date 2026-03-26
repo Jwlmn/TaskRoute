@@ -59,11 +59,11 @@ npm run dev
 - 任务节点与轨迹：`task_waypoints`、`driver_locations`
 - 电子单据：`electronic_documents`
 - 禁混与承运规则：`cargo_incompatibilities`、`vehicle_cargo_rules`
-- API 入口：`/api/v1/meta`、`/api/v1/pre-plan-orders`、`/api/v1/dispatch-tasks`
+- API 入口：`/api/v1/meta`、`/api/v1/pre-plan-order/list`、`/api/v1/dispatch-task/list`
 - 鉴权与权限：Sanctum Token + `role` 中间件（`admin`/`dispatcher`/`driver`）
 - 登录安全：图片验证码登录（不开放注册）
 - 智能派单：`/api/v1/dispatch/preview`、`/api/v1/dispatch/create-tasks`
-- 用户管理：管理员账号分配与维护（`/api/v1/users`）
+- 用户管理：管理员账号分配与维护（`/api/v1/user/list`、`/api/v1/user/create`）
 - 统一权限体系：PC 与移动端使用同一账号、同一权限模型
 - PC 端：面向管理与调度操作（`frontend-pc`）
 - 移动端：面向任务执行与移动场景操作（`frontend-mobile`）

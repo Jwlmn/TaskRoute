@@ -32,7 +32,7 @@ class DispatchTaskPermissionTest extends TestCase
         ]);
 
         Sanctum::actingAs($driverA);
-        $response = $this->getJson('/api/v1/dispatch-tasks');
+        $response = $this->postJson('/api/v1/dispatch-task/list', []);
 
         $response->assertOk();
         $taskNos = collect($response->json('data'))->pluck('task_no')->all();
@@ -40,4 +40,3 @@ class DispatchTaskPermissionTest extends TestCase
         $this->assertNotContains('DT-TEST-OTHER', $taskNos);
     }
 }
-

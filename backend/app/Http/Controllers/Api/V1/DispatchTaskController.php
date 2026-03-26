@@ -58,6 +58,20 @@ class DispatchTaskController extends Controller
         return response()->json($dispatchTask);
     }
 
+    public function showByPayload(Request $request): JsonResponse
+    {
+        $payload = $request->validate([
+            'id' => ['required', 'integer', 'exists:dispatch_tasks,id'],
+        ]);
+
+        $dispatchTask = DispatchTask::query()->findOrFail($payload['id']);
+        if (! $this->canAccessTask($request, $dispatchTask)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        return response()->json($dispatchTask);
+    }
+
     public function update(Request $request, DispatchTask $dispatchTask): JsonResponse
     {
         if (! $this->canAccessTask($request, $dispatchTask)) {
@@ -77,6 +91,33 @@ class DispatchTaskController extends Controller
             'planned_end_at' => ['sometimes', 'nullable', 'date'],
         ]);
 
+        $dispatchTask->update($payload);
+
+        return response()->json($dispatchTask->fresh());
+    }
+
+    public function updateByPayload(Request $request): JsonResponse
+    {
+        $payload = $request->validate([
+            'id' => ['required', 'integer', 'exists:dispatch_tasks,id'],
+            'vehicle_id' => ['sometimes', 'nullable', 'integer', 'exists:vehicles,id'],
+            'driver_id' => ['sometimes', 'nullable', 'integer', 'exists:users,id'],
+            'dispatcher_id' => ['sometimes', 'nullable', 'integer', 'exists:users,id'],
+            'dispatch_mode' => ['sometimes', 'in:single_vehicle_single_order,single_vehicle_multi_order,multi_vehicle_single_order,multi_vehicle_multi_order'],
+            'status' => ['sometimes', 'in:draft,assigned,accepted,in_progress,completed,cancelled'],
+            'estimated_distance_km' => ['sometimes', 'nullable', 'numeric', 'min:0'],
+            'estimated_fuel_l' => ['sometimes', 'nullable', 'numeric', 'min:0'],
+            'route_meta' => ['sometimes', 'nullable', 'array'],
+            'planned_start_at' => ['sometimes', 'nullable', 'date'],
+            'planned_end_at' => ['sometimes', 'nullable', 'date'],
+        ]);
+
+        $dispatchTask = DispatchTask::query()->findOrFail($payload['id']);
+        if (! $this->canAccessTask($request, $dispatchTask)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        unset($payload['id']);
         $dispatchTask->update($payload);
 
         return response()->json($dispatchTask->fresh());

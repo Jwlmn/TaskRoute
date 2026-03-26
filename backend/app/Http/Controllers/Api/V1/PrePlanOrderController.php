@@ -43,6 +43,17 @@ class PrePlanOrderController extends Controller
         return response()->json($prePlanOrder);
     }
 
+    public function showByPayload(Request $request): JsonResponse
+    {
+        $payload = $request->validate([
+            'id' => ['required', 'integer', 'exists:pre_plan_orders,id'],
+        ]);
+
+        $prePlanOrder = PrePlanOrder::query()->findOrFail($payload['id']);
+
+        return response()->json($prePlanOrder);
+    }
+
     public function update(Request $request, PrePlanOrder $prePlanOrder): JsonResponse
     {
         $payload = $request->validate([
@@ -62,5 +73,27 @@ class PrePlanOrderController extends Controller
 
         return response()->json($prePlanOrder->fresh());
     }
-}
 
+    public function updateByPayload(Request $request): JsonResponse
+    {
+        $payload = $request->validate([
+            'id' => ['required', 'integer', 'exists:pre_plan_orders,id'],
+            'cargo_category_id' => ['sometimes', 'integer', 'exists:cargo_categories,id'],
+            'client_name' => ['sometimes', 'string', 'max:255'],
+            'pickup_address' => ['sometimes', 'string', 'max:255'],
+            'dropoff_address' => ['sometimes', 'string', 'max:255'],
+            'cargo_weight_kg' => ['sometimes', 'numeric', 'min:0'],
+            'cargo_volume_m3' => ['sometimes', 'numeric', 'min:0'],
+            'expected_pickup_at' => ['sometimes', 'date'],
+            'expected_delivery_at' => ['sometimes', 'date'],
+            'status' => ['sometimes', 'in:pending,scheduled,in_progress,completed,cancelled'],
+            'meta' => ['sometimes', 'array'],
+        ]);
+
+        $prePlanOrder = PrePlanOrder::query()->findOrFail($payload['id']);
+        unset($payload['id']);
+        $prePlanOrder->update($payload);
+
+        return response()->json($prePlanOrder->fresh());
+    }
+}

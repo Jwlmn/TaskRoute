@@ -17,7 +17,7 @@ const form = ref({
 const fetchUsers = async () => {
   loading.value = true
   try {
-    const { data } = await api.get('/users')
+    const { data } = await api.post('/user/list', {})
     users.value = data.data || []
   } finally {
     loading.value = false
@@ -26,7 +26,7 @@ const fetchUsers = async () => {
 
 const createUser = async () => {
   try {
-    await api.post('/users', form.value)
+    await api.post('/user/create', form.value)
     ElMessage.success('账号创建成功')
     form.value = { account: '', name: '', role: 'driver', password: '', phone: '' }
     await fetchUsers()
@@ -86,4 +86,3 @@ onMounted(() => {
     </el-col>
   </el-row>
 </template>
-

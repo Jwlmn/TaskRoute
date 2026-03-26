@@ -47,6 +47,17 @@ class UserManagementController extends Controller
         return response()->json($user);
     }
 
+    public function showByPayload(Request $request): JsonResponse
+    {
+        $payload = $request->validate([
+            'id' => ['required', 'integer', 'exists:users,id'],
+        ]);
+
+        $user = User::query()->findOrFail($payload['id']);
+
+        return response()->json($user);
+    }
+
     public function update(Request $request, User $user): JsonResponse
     {
         $payload = $request->validate([
@@ -62,6 +73,35 @@ class UserManagementController extends Controller
             $payload['password'] = Hash::make($payload['password']);
         }
 
+        $user->update($payload);
+
+        return response()->json($user->fresh());
+    }
+
+    public function updateByPayload(Request $request): JsonResponse
+    {
+        $payload = $request->validate([
+            'id' => ['required', 'integer', 'exists:users,id'],
+            'account' => ['sometimes', 'string', 'max:64'],
+            'name' => ['sometimes', 'string', 'max:255'],
+            'phone' => ['sometimes', 'nullable', 'string', 'max:32'],
+            'role' => ['sometimes', Rule::in(['admin', 'dispatcher', 'driver'])],
+            'status' => ['sometimes', Rule::in(['active', 'inactive'])],
+            'password' => ['sometimes', 'string', 'min:8'],
+        ]);
+
+        $user = User::query()->findOrFail($payload['id']);
+        if (array_key_exists('account', $payload)) {
+            validator(
+                ['account' => $payload['account']],
+                ['account' => [Rule::unique('users', 'account')->ignore($user->id)]]
+            )->validate();
+        }
+        if (array_key_exists('password', $payload)) {
+            $payload['password'] = Hash::make($payload['password']);
+        }
+
+        unset($payload['id']);
         $user->update($payload);
 
         return response()->json($user->fresh());
