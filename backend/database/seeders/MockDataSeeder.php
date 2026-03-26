@@ -18,12 +18,12 @@ class MockDataSeeder extends Seeder
         User::factory()->count(2)->create([
             'role' => 'dispatcher',
             'status' => 'active',
-            'password' => Hash::make('TaskRoute@123'),
+            'password' => Hash::make('password'),
         ]);
         User::factory()->count(6)->create([
             'role' => 'driver',
             'status' => 'active',
-            'password' => Hash::make('TaskRoute@123'),
+            'password' => Hash::make('password'),
         ]);
 
         // 扩展资源 mock 数据：车辆、站点、货品、计划单
@@ -33,4 +33,3 @@ class MockDataSeeder extends Seeder
         PrePlanOrder::factory()->count(20)->create(['status' => 'pending']);
     }
 }
-

@@ -17,7 +17,7 @@ class UserAccountSeeder extends Seeder
                 'phone' => '13800000001',
                 'role' => 'admin',
                 'status' => 'active',
-                'password' => Hash::make('admin'),
+                'password' => Hash::make('password'),
             ]
         );
 
@@ -28,7 +28,7 @@ class UserAccountSeeder extends Seeder
                 'phone' => '13800000002',
                 'role' => 'dispatcher',
                 'status' => 'active',
-                'password' => Hash::make('TaskRoute@123'),
+                'password' => Hash::make('password'),
             ]
         );
 
@@ -39,7 +39,7 @@ class UserAccountSeeder extends Seeder
                 'phone' => '13800000003',
                 'role' => 'driver',
                 'status' => 'active',
-                'password' => Hash::make('TaskRoute@123'),
+                'password' => Hash::make('password'),
             ]
         );
 
@@ -50,9 +50,8 @@ class UserAccountSeeder extends Seeder
                 'phone' => '13800000004',
                 'role' => 'driver',
                 'status' => 'active',
-                'password' => Hash::make('TaskRoute@123'),
+                'password' => Hash::make('password'),
             ]
         );
     }
 }
-

@@ -15,7 +15,7 @@ class AuthApiTest extends TestCase
     {
         $this->seed(DatabaseSeeder::class);
 
-        $response = $this->loginAndGetResponse('dispatcher', 'TaskRoute@123', 'pc');
+        $response = $this->loginAndGetResponse('dispatcher', 'password', 'pc');
 
         $response->assertOk()
             ->assertJsonStructure([
@@ -29,8 +29,8 @@ class AuthApiTest extends TestCase
     {
         $this->seed(DatabaseSeeder::class);
 
-        $firstLogin = $this->loginAndGetResponse('dispatcher', 'TaskRoute@123', 'pc')->assertOk();
-        $secondLogin = $this->loginAndGetResponse('dispatcher', 'TaskRoute@123', 'pc')->assertOk();
+        $firstLogin = $this->loginAndGetResponse('dispatcher', 'password', 'pc')->assertOk();
+        $secondLogin = $this->loginAndGetResponse('dispatcher', 'password', 'pc')->assertOk();
 
         $oldToken = $firstLogin->json('token');
         $newToken = $secondLogin->json('token');
@@ -48,8 +48,8 @@ class AuthApiTest extends TestCase
     {
         $this->seed(DatabaseSeeder::class);
 
-        $pcLogin = $this->loginAndGetResponse('dispatcher', 'TaskRoute@123', 'pc')->assertOk();
-        $mobileLogin = $this->loginAndGetResponse('dispatcher', 'TaskRoute@123', 'mobile')->assertOk();
+        $pcLogin = $this->loginAndGetResponse('dispatcher', 'password', 'pc')->assertOk();
+        $mobileLogin = $this->loginAndGetResponse('dispatcher', 'password', 'mobile')->assertOk();
 
         $pcToken = $pcLogin->json('token');
         $mobileToken = $mobileLogin->json('token');
