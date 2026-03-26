@@ -64,6 +64,10 @@ npm run dev
 - 登录安全：图片验证码登录（不开放注册）
 - 智能派单：`/api/v1/dispatch/preview`、`/api/v1/dispatch/create-tasks`
 - 用户管理：管理员账号分配与维护（`/api/v1/user/list`、`/api/v1/user/create`）
+- 资源维护模块：
+- 车辆资源：`/api/v1/resource/vehicle/list|create|detail|update`
+- 人员资源：`/api/v1/resource/personnel/list|create|detail|update`
+- 站点资源（提货点/收货点）：`/api/v1/resource/site/list|create|detail|update`
 - 统一权限体系：PC 与移动端使用同一账号、同一权限模型
 - PC 端：面向管理与调度操作（`frontend-pc`）
 - 移动端：面向任务执行与移动场景操作（`frontend-mobile`）

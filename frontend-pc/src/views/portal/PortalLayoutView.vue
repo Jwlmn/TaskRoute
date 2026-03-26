@@ -14,6 +14,7 @@ const menuItems = computed(() => {
   const list = [
     { label: '首页概览', routeName: 'dashboard-home', permission: 'dashboard' },
     { label: '调度工作台', routeName: 'dispatch-workbench', permission: 'dispatch' },
+    { label: '资源维护', routeName: 'resource-management', permission: 'resources' },
     { label: '移动任务中心', routeName: 'mobile-task-center', permission: 'mobile_tasks' },
     { label: '账号管理', routeName: 'user-management', permission: 'users' },
   ]
@@ -70,4 +71,3 @@ const logout = async () => {
     </el-container>
   </el-container>
 </template>
-

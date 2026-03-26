@@ -4,6 +4,9 @@ use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\DispatchTaskController;
 use App\Http\Controllers\Api\V1\MetaController;
 use App\Http\Controllers\Api\V1\PrePlanOrderController;
+use App\Http\Controllers\Api\V1\Resource\ResourcePersonnelController;
+use App\Http\Controllers\Api\V1\Resource\ResourceSiteController;
+use App\Http\Controllers\Api\V1\Resource\ResourceVehicleController;
 use App\Http\Controllers\Api\V1\SmartDispatchController;
 use App\Http\Controllers\Api\V1\UserManagementController;
 use Illuminate\Support\Facades\Route;
@@ -31,6 +34,19 @@ Route::prefix('v1')->group(function (): void {
         Route::middleware('role:admin,dispatcher')->group(function (): void {
             Route::post('/dispatch/preview', [SmartDispatchController::class, 'preview']);
             Route::post('/dispatch/create-tasks', [SmartDispatchController::class, 'createTasks']);
+
+            Route::post('/resource/vehicle/list', [ResourceVehicleController::class, 'list']);
+            Route::post('/resource/vehicle/create', [ResourceVehicleController::class, 'create']);
+            Route::post('/resource/vehicle/detail', [ResourceVehicleController::class, 'detail']);
+            Route::post('/resource/vehicle/update', [ResourceVehicleController::class, 'update']);
+
+            Route::post('/resource/site/list', [ResourceSiteController::class, 'list']);
+            Route::post('/resource/site/create', [ResourceSiteController::class, 'create']);
+            Route::post('/resource/site/detail', [ResourceSiteController::class, 'detail']);
+            Route::post('/resource/site/update', [ResourceSiteController::class, 'update']);
+
+            Route::post('/resource/personnel/list', [ResourcePersonnelController::class, 'list']);
+            Route::post('/resource/personnel/detail', [ResourcePersonnelController::class, 'detail']);
         });
 
         Route::middleware('role:admin')->group(function (): void {
@@ -38,6 +54,9 @@ Route::prefix('v1')->group(function (): void {
             Route::post('/user/create', [UserManagementController::class, 'store']);
             Route::post('/user/detail', [UserManagementController::class, 'showByPayload']);
             Route::post('/user/update', [UserManagementController::class, 'updateByPayload']);
+
+            Route::post('/resource/personnel/create', [ResourcePersonnelController::class, 'create']);
+            Route::post('/resource/personnel/update', [ResourcePersonnelController::class, 'update']);
         });
     });
 });

@@ -3,6 +3,7 @@ import LoginView from '../views/LoginView.vue'
 import PortalLayoutView from '../views/portal/PortalLayoutView.vue'
 import DashboardHomeView from '../views/portal/DashboardHomeView.vue'
 import DispatchWorkbenchView from '../views/portal/DispatchWorkbenchView.vue'
+import ResourceManagementView from '../views/portal/ResourceManagementView.vue'
 import MobileTaskCenterView from '../views/portal/MobileTaskCenterView.vue'
 import UserManagementView from '../views/portal/UserManagementView.vue'
 import { hasPermission, readCurrentUser } from '../utils/auth'
@@ -36,6 +37,12 @@ const router = createRouter({
           name: 'dispatch-workbench',
           component: DispatchWorkbenchView,
           meta: { permission: 'dispatch' },
+        },
+        {
+          path: 'resources',
+          name: 'resource-management',
+          component: ResourceManagementView,
+          meta: { permission: 'resources' },
         },
         {
           path: 'mobile-tasks',

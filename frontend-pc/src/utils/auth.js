@@ -1,6 +1,6 @@
 export const rolePermissions = {
-  admin: ['dashboard', 'dispatch', 'users', 'mobile_tasks'],
-  dispatcher: ['dashboard', 'dispatch', 'mobile_tasks'],
+  admin: ['dashboard', 'dispatch', 'users', 'mobile_tasks', 'resources'],
+  dispatcher: ['dashboard', 'dispatch', 'mobile_tasks', 'resources'],
   driver: ['dashboard', 'mobile_tasks'],
 }
 
@@ -23,4 +23,3 @@ export const hasPermission = (user, permission) => {
   const permissions = rolePermissions[user.role] || []
   return permissions.includes(permission)
 }
-
