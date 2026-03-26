@@ -36,6 +36,7 @@ Route::prefix('v1')->group(function (): void {
         Route::middleware('role:admin,dispatcher')->group(function (): void {
             Route::post('/dispatch/preview', [SmartDispatchController::class, 'preview']);
             Route::post('/dispatch/create-tasks', [SmartDispatchController::class, 'createTasks']);
+            Route::post('/dispatch/manual-create-tasks', [SmartDispatchController::class, 'manualCreateTasks']);
 
             Route::post('/resource/vehicle/list', [ResourceVehicleController::class, 'list']);
             Route::post('/resource/vehicle/create', [ResourceVehicleController::class, 'create']);

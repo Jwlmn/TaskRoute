@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\CargoCategory;
+use App\Models\DispatchTask;
 use App\Models\PrePlanOrder;
 use App\Models\User;
 use App\Models\Vehicle;
@@ -149,5 +150,57 @@ class SmartDispatchApiTest extends TestCase
             ->assertJsonPath('assignments.0.estimated_distance_km', 20)
             ->assertJsonPath('assignments.0.estimated_duration_min', 40)
             ->assertJsonPath('assignments.0.route_meta.optimizer', 'amap');
+    }
+
+    public function test_dispatcher_can_manual_adjust_and_create_tasks(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        Sanctum::actingAs($dispatcher);
+
+        $vehicle = Vehicle::query()->where('status', 'idle')->firstOrFail();
+        $gasoline = CargoCategory::query()->where('code', 'gasoline')->firstOrFail();
+        $orders = PrePlanOrder::query()
+            ->whereIn('status', ['pending', 'scheduled'])
+            ->where('cargo_category_id', $gasoline->id)
+            ->limit(2)
+            ->get();
+        $this->assertCount(2, $orders);
+
+        $response = $this->postJson('/api/v1/dispatch/manual-create-tasks', [
+            'assignments' => [
+                [
+                    'vehicle_id' => $vehicle->id,
+                    'order_ids' => [$orders[1]->id, $orders[0]->id],
+                    'estimated_distance_km' => 22.5,
+                    'estimated_fuel_l' => 12.8,
+                    'estimated_duration_min' => 48,
+                    'route_meta' => [
+                        'optimizer' => 'amap',
+                        'strategy' => 'manual_adjusted',
+                    ],
+                ],
+            ],
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonCount(1, 'created_task_ids');
+
+        $taskId = (int) $response->json('created_task_ids.0');
+        $task = DispatchTask::query()->findOrFail($taskId);
+        $this->assertSame($vehicle->id, (int) $task->vehicle_id);
+        $this->assertSame('single_vehicle_multi_order', $task->dispatch_mode);
+        $this->assertSame(true, (bool) ($task->route_meta['manual_adjusted'] ?? false));
+
+        $this->assertDatabaseHas('dispatch_task_orders', [
+            'dispatch_task_id' => $taskId,
+            'pre_plan_order_id' => $orders[1]->id,
+            'sequence' => 1,
+        ]);
+        $this->assertDatabaseHas('dispatch_task_orders', [
+            'dispatch_task_id' => $taskId,
+            'pre_plan_order_id' => $orders[0]->id,
+            'sequence' => 2,
+        ]);
     }
 }

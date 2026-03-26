@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../../services/api'
 import {
@@ -10,9 +10,17 @@ import {
 
 const prePlanOrders = ref([])
 const dispatchTasks = ref([])
+const vehicles = ref([])
+const unassignedOrders = ref([])
+const previewAssignments = ref([])
+
 const loadingOrders = ref(false)
 const loadingTasks = ref(false)
+const previewLoading = ref(false)
+const creatingTasks = ref(false)
+
 const createDialogVisible = ref(false)
+const previewDialogVisible = ref(false)
 const creating = ref(false)
 
 const createFormRef = ref()
@@ -41,6 +49,14 @@ const statusTypeMap = {
   completed: 'success',
   cancelled: 'danger',
 }
+
+const orderMap = computed(() => {
+  const map = {}
+  for (const item of prePlanOrders.value) {
+    map[item.id] = item
+  }
+  return map
+})
 
 const resetCreateForm = () => {
   createForm.cargo_category_id = ''
@@ -95,6 +111,11 @@ const loadDispatchTasks = async () => {
   }
 }
 
+const loadVehicles = async () => {
+  const { data } = await api.post('/resource/vehicle/list', {})
+  vehicles.value = Array.isArray(data?.data) ? data.data : []
+}
+
 const createPrePlanOrder = async () => {
   if (!createFormRef.value) return
   const valid = await createFormRef.value.validate().catch(() => false)
@@ -123,6 +144,81 @@ const createPrePlanOrder = async () => {
   }
 }
 
+const getOrderText = (orderId) => {
+  const order = orderMap.value[orderId]
+  if (!order) return `订单#${orderId}`
+  return `${order.order_no}｜${order.client_name}`
+}
+
+const moveOrder = (assignment, index, delta) => {
+  const target = index + delta
+  if (target < 0 || target >= assignment.order_ids.length) return
+  const nextOrderIds = [...assignment.order_ids]
+  const current = nextOrderIds[index]
+  nextOrderIds[index] = nextOrderIds[target]
+  nextOrderIds[target] = current
+  assignment.order_ids = nextOrderIds
+}
+
+const removeOrder = (assignment, index) => {
+  assignment.order_ids.splice(index, 1)
+}
+
+const openManualAdjustDialog = async () => {
+  previewLoading.value = true
+  previewDialogVisible.value = true
+  try {
+    await Promise.all([loadPrePlanOrders(), loadVehicles()])
+    const { data } = await api.post('/dispatch/preview', {})
+    previewAssignments.value = (data?.assignments || []).map((item) => ({
+      vehicle_id: item.vehicle_id,
+      order_ids: [...(item.order_ids || [])],
+      estimated_distance_km: item.estimated_distance_km,
+      estimated_fuel_l: item.estimated_fuel_l,
+      estimated_duration_min: item.estimated_duration_min,
+      route_meta: item.route_meta || {},
+      compartment_plan: item.compartment_plan || [],
+    }))
+    unassignedOrders.value = data?.unassigned || []
+  } catch (error) {
+    previewDialogVisible.value = false
+    ElMessage.error(error?.response?.data?.message || '生成智能预览失败')
+  } finally {
+    previewLoading.value = false
+  }
+}
+
+const submitManualAdjustedTasks = async () => {
+  const assignments = previewAssignments.value
+    .filter((item) => Array.isArray(item.order_ids) && item.order_ids.length > 0)
+    .map((item) => ({
+      vehicle_id: item.vehicle_id,
+      order_ids: item.order_ids,
+      estimated_distance_km: item.estimated_distance_km,
+      estimated_fuel_l: item.estimated_fuel_l,
+      estimated_duration_min: item.estimated_duration_min,
+      route_meta: item.route_meta,
+      compartment_plan: item.compartment_plan,
+    }))
+
+  if (assignments.length === 0) {
+    ElMessage.warning('请至少保留一条有效派单')
+    return
+  }
+
+  creatingTasks.value = true
+  try {
+    await api.post('/dispatch/manual-create-tasks', { assignments })
+    ElMessage.success('任务下发成功')
+    previewDialogVisible.value = false
+    await Promise.all([loadPrePlanOrders(), loadDispatchTasks()])
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '下发失败，请检查调整结果')
+  } finally {
+    creatingTasks.value = false
+  }
+}
+
 onMounted(async () => {
   await Promise.all([loadPrePlanOrders(), loadDispatchTasks()])
 })
@@ -133,7 +229,12 @@ onMounted(async () => {
     <template #header>
       <div class="table-header">
         <div class="card-title">预计划单管理</div>
-        <el-button type="primary" @click="openCreateDialog">新建预计划单</el-button>
+        <div>
+          <el-button type="primary" plain class="mr-8" @click="openManualAdjustDialog">
+            智能预览并手工下发
+          </el-button>
+          <el-button type="primary" @click="openCreateDialog">新建预计划单</el-button>
+        </div>
       </div>
     </template>
     <el-table :data="prePlanOrders" stripe v-loading="loadingOrders">
@@ -172,16 +273,8 @@ onMounted(async () => {
       </el-table-column>
       <el-table-column prop="vehicle_id" label="车辆ID" min-width="90" />
       <el-table-column prop="driver_id" label="司机ID" min-width="90" />
-      <el-table-column label="计划开始" min-width="160">
-        <template #default="{ row }">
-          {{ formatDateTime(row.planned_start_at) }}
-        </template>
-      </el-table-column>
-      <el-table-column label="计划结束" min-width="160">
-        <template #default="{ row }">
-          {{ formatDateTime(row.planned_end_at) }}
-        </template>
-      </el-table-column>
+      <el-table-column prop="estimated_distance_km" label="里程(km)" min-width="100" />
+      <el-table-column prop="estimated_fuel_l" label="油耗(L)" min-width="100" />
       <el-table-column label="状态" min-width="100">
         <template #default="{ row }">
           {{ getLabel(taskStatusLabelMap, row.status) }}
@@ -255,6 +348,87 @@ onMounted(async () => {
     <template #footer>
       <el-button @click="createDialogVisible = false">取消</el-button>
       <el-button type="primary" :loading="creating" @click="createPrePlanOrder">创建</el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog
+    v-model="previewDialogVisible"
+    title="智能派单预览（可手工调整）"
+    width="980px"
+    destroy-on-close
+  >
+    <el-skeleton :loading="previewLoading" animated :count="2">
+      <template #template>
+        <el-skeleton-item variant="text" style="height: 88px; margin-bottom: 10px" />
+      </template>
+      <template #default>
+        <el-empty v-if="previewAssignments.length === 0" description="暂无可调整的派单结果" />
+        <div v-for="(assignment, index) in previewAssignments" :key="index" class="mb-12">
+          <el-card shadow="never">
+            <div class="table-header mb-12">
+              <strong>派单方案 {{ index + 1 }}</strong>
+              <el-tag type="primary">订单数：{{ assignment.order_ids.length }}</el-tag>
+            </div>
+            <el-row :gutter="12">
+              <el-col :span="10">
+                <el-form-item label="车辆">
+                  <el-select v-model="assignment.vehicle_id" style="width: 100%">
+                    <el-option
+                      v-for="vehicle in vehicles"
+                      :key="vehicle.id"
+                      :label="`${vehicle.plate_number}｜${vehicle.name}`"
+                      :value="vehicle.id"
+                    />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+              <el-col :span="7">
+                <el-form-item label="预计里程(km)">
+                  <el-input-number v-model="assignment.estimated_distance_km" :min="0" :precision="2" style="width: 100%" />
+                </el-form-item>
+              </el-col>
+              <el-col :span="7">
+                <el-form-item label="预计油耗(L)">
+                  <el-input-number v-model="assignment.estimated_fuel_l" :min="0" :precision="2" style="width: 100%" />
+                </el-form-item>
+              </el-col>
+            </el-row>
+
+            <el-table :data="assignment.order_ids.map((id) => ({ id }))" size="small" stripe>
+              <el-table-column label="顺序" width="70">
+                <template #default="{ $index }">{{ $index + 1 }}</template>
+              </el-table-column>
+              <el-table-column label="订单" min-width="260">
+                <template #default="{ row }">{{ getOrderText(row.id) }}</template>
+              </el-table-column>
+              <el-table-column label="操作" width="200">
+                <template #default="{ $index }">
+                  <el-button link type="primary" @click="moveOrder(assignment, $index, -1)">上移</el-button>
+                  <el-button link type="primary" @click="moveOrder(assignment, $index, 1)">下移</el-button>
+                  <el-button link type="danger" @click="removeOrder(assignment, $index)">移除</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </el-card>
+        </div>
+
+        <el-alert
+          v-if="unassignedOrders.length > 0"
+          type="warning"
+          show-icon
+          :closable="false"
+          title="以下订单仍未分配，请按资源规则补充车辆或调整计划"
+          class="mb-12"
+        />
+        <el-table v-if="unassignedOrders.length > 0" :data="unassignedOrders" size="small" stripe>
+          <el-table-column prop="order_no" label="订单号" min-width="160" />
+          <el-table-column prop="reason" label="未分配原因" min-width="260" />
+        </el-table>
+      </template>
+    </el-skeleton>
+    <template #footer>
+      <el-button @click="previewDialogVisible = false">取消</el-button>
+      <el-button type="primary" :loading="creatingTasks" @click="submitManualAdjustedTasks">确认下发</el-button>
     </template>
   </el-dialog>
 </template>
