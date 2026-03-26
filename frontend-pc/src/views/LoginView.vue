@@ -12,6 +12,7 @@ const form = reactive({
   password: '',
   captcha_key: '',
   captcha_code: '',
+  client_type: 'pc',
 })
 
 const fetchCaptcha = async () => {

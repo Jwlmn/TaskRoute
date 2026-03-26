@@ -12,6 +12,7 @@ const form = reactive({
   password: '',
   captcha_key: '',
   captcha_code: '',
+  client_type: 'mobile',
 })
 
 const fetchCaptcha = async () => {
@@ -66,4 +67,3 @@ onMounted(() => {
     </div>
   </div>
 </template>
-

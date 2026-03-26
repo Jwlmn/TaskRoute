@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Services\Auth\CaptchaService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Hash;
 
 class AuthController extends Controller
@@ -27,6 +28,7 @@ class AuthController extends Controller
             'password' => ['required', 'string'],
             'captcha_key' => ['required', 'string'],
             'captcha_code' => ['required', 'string', 'max:16'],
+            'client_type' => ['required', Rule::in(['pc', 'mobile'])],
         ]);
 
         $isCaptchaValid = $this->captchaService->verify(
@@ -47,8 +49,11 @@ class AuthController extends Controller
             return response()->json(['message' => '账号已禁用，请联系管理员'], 403);
         }
 
+        $tokenNamePrefix = 'taskroute-'.$credentials['client_type'].'-';
+        $user->tokens()->where('name', 'like', $tokenNamePrefix.'%')->delete();
+
         $token = $user->createToken(
-            'taskroute-'.now()->format('YmdHis'),
+            $tokenNamePrefix.now()->format('YmdHis'),
             [$user->role]
         )->plainTextToken;
 
