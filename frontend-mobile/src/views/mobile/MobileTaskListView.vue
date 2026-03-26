@@ -100,13 +100,28 @@ const isImageUrl = (url) => {
   return /\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?.*)?$/i.test(url)
 }
 
-const getWaypointImageUrls = (waypoint) =>
-  getWaypointDocuments(waypoint)
-    .map((doc) => doc?.meta?.url)
-    .filter((url) => isImageUrl(url))
+const getWaypointDocumentGroups = (waypoint) => {
+  const groups = {}
+  for (const doc of getWaypointDocuments(waypoint)) {
+    const key = doc?.document_type || 'unknown'
+    if (!groups[key]) {
+      groups[key] = {
+        key,
+        label: getDocumentTypeLabel(key),
+        docs: [],
+        imageUrls: [],
+      }
+    }
+    groups[key].docs.push(doc)
+    if (isImageUrl(doc?.meta?.url)) {
+      groups[key].imageUrls.push(doc.meta.url)
+    }
+  }
+  return Object.values(groups)
+}
 
-const getWaypointImageIndex = (waypoint, doc) =>
-  getWaypointImageUrls(waypoint).findIndex((url) => url === doc?.meta?.url)
+const getGroupImageIndex = (group, doc) =>
+  (group?.imageUrls || []).findIndex((url) => url === doc?.meta?.url)
 
 const fetchTasks = async () => {
   loading.value = true
@@ -425,31 +440,32 @@ onUnmounted(() => {
               <el-divider />
               <div v-if="getWaypointDocuments(waypoint)?.length" class="mobile-waypoint-doc-list">
                 <div
-                  v-for="doc in getWaypointDocuments(waypoint)"
-                  :key="doc.id"
-                  class="mobile-waypoint-doc"
+                  v-for="group in getWaypointDocumentGroups(waypoint)"
+                  :key="`${waypoint.id}-${group.key}`"
+                  class="mobile-waypoint-group"
                 >
-                  <div class="mobile-waypoint-doc-text">
-                    {{ getDocumentTypeLabel(doc.document_type) }} / {{ doc.uploaded_at || '-' }}
+                  <div class="mobile-waypoint-doc-title">
+                    {{ group.label }}（{{ group.docs.length }}）
                   </div>
-                  <a :href="doc.meta?.url" target="_blank" class="mobile-doc-link">查看文件</a>
-                </div>
-                <div class="mobile-uploaded-preview-grid">
                   <div
-                    v-for="doc in getWaypointDocuments(waypoint)"
-                    :key="`thumb-${doc.id}`"
-                    class="mobile-uploaded-preview-item"
+                    class="mobile-image-preview-grid"
                   >
-                    <el-image
-                      v-if="isImageUrl(doc.meta?.url)"
-                      class="mobile-uploaded-preview-img"
-                      :src="doc.meta?.url"
-                      fit="cover"
-                      :preview-src-list="getWaypointImageUrls(waypoint)"
-                      :initial-index="getWaypointImageIndex(waypoint, doc)"
-                      preview-teleported
-                    />
-                    <a v-else class="mobile-doc-link" :href="doc.meta?.url" target="_blank">查看文件</a>
+                    <div
+                      v-for="doc in group.docs"
+                      :key="`uploaded-thumb-${doc.id}`"
+                      class="mobile-image-preview-item"
+                    >
+                      <el-image
+                        v-if="isImageUrl(doc.meta?.url)"
+                        class="mobile-image-preview"
+                        :src="doc.meta?.url"
+                        fit="cover"
+                        :preview-src-list="group.imageUrls"
+                        :initial-index="getGroupImageIndex(group, doc)"
+                        preview-teleported
+                      />
+                      <div v-else class="mobile-image-preview-fallback">非图片</div>
+                    </div>
                   </div>
                 </div>
               </div>
