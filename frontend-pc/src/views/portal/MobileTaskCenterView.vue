@@ -350,27 +350,31 @@ onBeforeUnmount(() => {
     top="4vh"
     @closed="handleTrajectoryDialogClosed"
   >
-    <div class="trajectory-toolbar mb-12">
-      <el-button type="primary" plain @click="playReplay" :disabled="points.length <= 1 || replaying">播放</el-button>
-      <el-button plain @click="pauseReplay" :disabled="!replaying">暂停</el-button>
-      <el-button plain @click="resetReplay" :disabled="points.length === 0">重置</el-button>
-      <span class="trajectory-tip">当前点位：{{ points.length === 0 ? 0 : replayIndex + 1 }}/{{ points.length }}</span>
-    </div>
+    <div class="trajectory-dialog-content">
+      <div class="trajectory-toolbar mb-12">
+        <el-button type="primary" plain @click="playReplay" :disabled="points.length <= 1 || replaying">播放</el-button>
+        <el-button plain @click="pauseReplay" :disabled="!replaying">暂停</el-button>
+        <el-button plain @click="resetReplay" :disabled="points.length === 0">重置</el-button>
+        <span class="trajectory-tip">当前点位：{{ points.length === 0 ? 0 : replayIndex + 1 }}/{{ points.length }}</span>
+      </div>
 
-    <div ref="mapContainerRef" class="trajectory-map mb-12">
-      <div v-if="!mapReady" class="trajectory-map-empty">未配置高德JS Key，当前仅显示轨迹表格</div>
-    </div>
+      <div ref="mapContainerRef" class="trajectory-map mb-12">
+        <div v-if="!mapReady" class="trajectory-map-empty">未配置高德JS Key，当前仅显示轨迹表格</div>
+      </div>
 
-    <el-table :data="trajectory" v-loading="loadingTrajectory" size="small" stripe>
-      <el-table-column label="定位时间" min-width="170">
-        <template #default="{ row }">
-          {{ formatDateTime(row.located_at) }}
-        </template>
-      </el-table-column>
-      <el-table-column prop="lng" label="经度" min-width="120" />
-      <el-table-column prop="lat" label="纬度" min-width="120" />
-      <el-table-column prop="speed_kmh" label="速度(km/h)" min-width="110" />
-    </el-table>
+      <div class="trajectory-table-wrap">
+        <el-table :data="trajectory" v-loading="loadingTrajectory" size="small" stripe height="100%">
+          <el-table-column label="定位时间" min-width="170">
+            <template #default="{ row }">
+              {{ formatDateTime(row.located_at) }}
+            </template>
+          </el-table-column>
+          <el-table-column prop="lng" label="经度" min-width="120" />
+          <el-table-column prop="lat" label="纬度" min-width="120" />
+          <el-table-column prop="speed_kmh" label="速度(km/h)" min-width="110" />
+        </el-table>
+      </div>
+    </div>
     <template #footer>
       <el-button @click="trajectoryDialogVisible = false">关闭</el-button>
     </template>

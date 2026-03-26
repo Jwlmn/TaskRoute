@@ -175,13 +175,30 @@ body {
 
 .trajectory-dialog {
   margin-bottom: 0;
+}
+
+.trajectory-dialog .el-dialog {
   max-height: 92vh;
   display: flex;
   flex-direction: column;
 }
 
 .trajectory-dialog .el-dialog__body {
-  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.trajectory-dialog-content {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.trajectory-table-wrap {
+  flex: 1;
+  min-height: 0;
 }
 
 .login-page {
