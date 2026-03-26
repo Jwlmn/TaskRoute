@@ -345,7 +345,9 @@ onBeforeUnmount(() => {
   <el-dialog
     v-model="trajectoryDialogVisible"
     :title="`轨迹详情 - ${selectedDriverName}`"
+    class="trajectory-dialog"
     width="900px"
+    top="4vh"
     @closed="handleTrajectoryDialogClosed"
   >
     <div class="trajectory-toolbar mb-12">

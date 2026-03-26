@@ -173,6 +173,17 @@ body {
   font-size: 13px;
 }
 
+.trajectory-dialog {
+  margin-bottom: 0;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.trajectory-dialog .el-dialog__body {
+  overflow-y: auto;
+}
+
 .login-page {
   min-height: 100vh;
   display: flex;
