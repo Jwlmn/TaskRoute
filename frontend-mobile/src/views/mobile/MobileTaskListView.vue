@@ -462,6 +462,7 @@ onUnmounted(() => {
                         fit="cover"
                         :preview-src-list="group.imageUrls"
                         :initial-index="getGroupImageIndex(group, doc)"
+                        :hide-on-click-modal="true"
                         preview-teleported
                       />
                       <div v-else class="mobile-image-preview-fallback">非图片</div>
