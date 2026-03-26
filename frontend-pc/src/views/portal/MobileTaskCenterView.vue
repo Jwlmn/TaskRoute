@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../../services/api'
 import { dispatchModeLabelMap, getLabel, taskStatusLabelMap } from '../../utils/labels'
@@ -12,6 +12,18 @@ const latestLocations = ref([])
 const trajectory = ref([])
 const trajectoryDialogVisible = ref(false)
 const selectedDriverName = ref('')
+
+const mapContainerRef = ref(null)
+const mapReady = ref(false)
+const replayIndex = ref(0)
+const replaying = ref(false)
+
+let amapInstance = null
+let trajectoryPolyline = null
+let movingMarker = null
+let replayTimer = null
+
+const amapKey = import.meta.env.VITE_AMAP_WEB_KEY || ''
 
 const formatDateTime = (value) => {
   if (!value) return '-'
@@ -48,10 +60,145 @@ const fetchLatestLocations = async () => {
   }
 }
 
+const points = computed(() =>
+  trajectory.value
+    .map((row) => [Number(row.lng), Number(row.lat)])
+    .filter((item) => !Number.isNaN(item[0]) && !Number.isNaN(item[1])),
+)
+
+const currentPoint = computed(() => {
+  if (points.value.length === 0) return null
+  const idx = Math.min(replayIndex.value, points.value.length - 1)
+  return points.value[idx]
+})
+
+const clearReplayTimer = () => {
+  if (replayTimer) {
+    window.clearInterval(replayTimer)
+    replayTimer = null
+  }
+}
+
+const stopReplay = () => {
+  replaying.value = false
+  clearReplayTimer()
+}
+
+const resetReplay = () => {
+  stopReplay()
+  replayIndex.value = 0
+  updateMapByReplayIndex()
+}
+
+const playReplay = () => {
+  if (points.value.length <= 1) return
+  if (replaying.value) return
+  replaying.value = true
+  clearReplayTimer()
+  replayTimer = window.setInterval(() => {
+    if (replayIndex.value >= points.value.length - 1) {
+      stopReplay()
+      return
+    }
+    replayIndex.value += 1
+    updateMapByReplayIndex()
+  }, 1200)
+}
+
+const pauseReplay = () => {
+  stopReplay()
+}
+
+const loadAmap = async () => {
+  if (window.AMap) return window.AMap
+  if (!amapKey) return null
+
+  await new Promise((resolve, reject) => {
+    const existed = document.querySelector('script[data-amap="taskroute"]')
+    if (existed) {
+      existed.addEventListener('load', resolve, { once: true })
+      existed.addEventListener('error', reject, { once: true })
+      return
+    }
+
+    const script = document.createElement('script')
+    script.setAttribute('data-amap', 'taskroute')
+    script.src = `https://webapi.amap.com/maps?v=2.0&key=${amapKey}`
+    script.async = true
+    script.onload = () => resolve()
+    script.onerror = () => reject(new Error('高德JS SDK加载失败'))
+    document.head.appendChild(script)
+  })
+
+  return window.AMap || null
+}
+
+const ensureMap = async () => {
+  if (amapInstance) return true
+  const AMap = await loadAmap()
+  if (!AMap) {
+    mapReady.value = false
+    ElMessage.warning('未配置高德JS Key，轨迹地图不可用（仅显示表格）')
+    return false
+  }
+
+  if (!mapContainerRef.value) return false
+  amapInstance = new AMap.Map(mapContainerRef.value, {
+    zoom: 12,
+    center: [121.4737, 31.2304],
+    mapStyle: 'amap://styles/normal',
+  })
+  mapReady.value = true
+  return true
+}
+
+const renderMapTrajectory = async () => {
+  const ok = await ensureMap()
+  if (!ok || !amapInstance) return
+
+  const AMap = window.AMap
+  if (!AMap) return
+
+  if (trajectoryPolyline) {
+    amapInstance.remove(trajectoryPolyline)
+    trajectoryPolyline = null
+  }
+  if (movingMarker) {
+    amapInstance.remove(movingMarker)
+    movingMarker = null
+  }
+
+  if (points.value.length === 0) return
+
+  trajectoryPolyline = new AMap.Polyline({
+    path: points.value,
+    strokeColor: '#2563eb',
+    strokeWeight: 5,
+    lineJoin: 'round',
+    lineCap: 'round',
+  })
+  movingMarker = new AMap.Marker({
+    position: points.value[0],
+    zIndex: 110,
+    title: '当前位置',
+  })
+
+  amapInstance.add([trajectoryPolyline, movingMarker])
+  amapInstance.setFitView([trajectoryPolyline], false, [60, 60, 60, 60])
+}
+
+const updateMapByReplayIndex = () => {
+  if (!movingMarker || !currentPoint.value) return
+  movingMarker.setPosition(currentPoint.value)
+}
+
 const openTrajectory = async (row) => {
   loadingTrajectory.value = true
   trajectoryDialogVisible.value = true
   selectedDriverName.value = row?.driver?.name || '-'
+  stopReplay()
+  replayIndex.value = 0
+
   try {
     const { data } = await api.post('/driver-location/trajectory', {
       driver_id: row.driver_id,
@@ -59,6 +206,8 @@ const openTrajectory = async (row) => {
       limit: 200,
     })
     trajectory.value = Array.isArray(data) ? data : []
+    await nextTick()
+    await renderMapTrajectory()
   } catch (error) {
     trajectoryDialogVisible.value = false
     ElMessage.error(error?.response?.data?.message || '获取轨迹失败')
@@ -67,8 +216,30 @@ const openTrajectory = async (row) => {
   }
 }
 
+const handleTrajectoryDialogClosed = () => {
+  stopReplay()
+  trajectory.value = []
+  replayIndex.value = 0
+  if (amapInstance && trajectoryPolyline) {
+    amapInstance.remove(trajectoryPolyline)
+    trajectoryPolyline = null
+  }
+  if (amapInstance && movingMarker) {
+    amapInstance.remove(movingMarker)
+    movingMarker = null
+  }
+}
+
 onMounted(async () => {
   await Promise.all([fetchTasks(), fetchLatestLocations()])
+})
+
+onBeforeUnmount(() => {
+  stopReplay()
+  if (amapInstance) {
+    amapInstance.destroy()
+    amapInstance = null
+  }
 })
 </script>
 
@@ -132,8 +303,20 @@ onMounted(async () => {
   <el-dialog
     v-model="trajectoryDialogVisible"
     :title="`轨迹详情 - ${selectedDriverName}`"
-    width="760px"
+    width="900px"
+    @closed="handleTrajectoryDialogClosed"
   >
+    <div class="trajectory-toolbar mb-12">
+      <el-button type="primary" plain @click="playReplay" :disabled="points.length <= 1 || replaying">播放</el-button>
+      <el-button plain @click="pauseReplay" :disabled="!replaying">暂停</el-button>
+      <el-button plain @click="resetReplay" :disabled="points.length === 0">重置</el-button>
+      <span class="trajectory-tip">当前点位：{{ points.length === 0 ? 0 : replayIndex + 1 }}/{{ points.length }}</span>
+    </div>
+
+    <div ref="mapContainerRef" class="trajectory-map mb-12">
+      <div v-if="!mapReady" class="trajectory-map-empty">未配置高德JS Key，当前仅显示轨迹表格</div>
+    </div>
+
     <el-table :data="trajectory" v-loading="loadingTrajectory" size="small" stripe>
       <el-table-column label="定位时间" min-width="170">
         <template #default="{ row }">

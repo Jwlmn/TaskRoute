@@ -138,6 +138,36 @@ body {
   margin-right: 8px;
 }
 
+.trajectory-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.trajectory-tip {
+  margin-left: 8px;
+  color: #546275;
+  font-size: 12px;
+}
+
+.trajectory-map {
+  width: 100%;
+  height: 320px;
+  border: 1px solid #dce5f2;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #f6f9ff;
+}
+
+.trajectory-map-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #66778e;
+  font-size: 13px;
+}
+
 .login-page {
   min-height: 100vh;
   display: flex;
