@@ -23,7 +23,7 @@ class AuthController extends Controller
     public function login(Request $request): JsonResponse
     {
         $credentials = $request->validate([
-            'email' => ['required', 'email'],
+            'account' => ['required', 'string', 'max:64'],
             'password' => ['required', 'string'],
             'captcha_key' => ['required', 'string'],
             'captcha_code' => ['required', 'string', 'max:16'],
@@ -37,10 +37,10 @@ class AuthController extends Controller
             return response()->json(['message' => '验证码错误或已过期'], 422);
         }
 
-        $user = User::query()->where('email', $credentials['email'])->first();
+        $user = User::query()->where('account', $credentials['account'])->first();
 
         if (! $user || ! Hash::check($credentials['password'], $user->password)) {
-            return response()->json(['message' => '邮箱或密码错误'], 422);
+            return response()->json(['message' => '账号或密码错误'], 422);
         }
 
         if ($user->status !== 'active') {

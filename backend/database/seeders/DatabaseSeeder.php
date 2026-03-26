@@ -21,18 +21,18 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         User::query()->updateOrCreate(
-            ['email' => 'admin@taskroute.local'],
+            ['account' => 'admin'],
             [
                 'name' => '系统管理员',
                 'phone' => '13800000001',
                 'role' => 'admin',
                 'status' => 'active',
-                'password' => Hash::make('TaskRoute@123'),
+                'password' => Hash::make('admin'),
             ]
         );
 
         User::query()->updateOrCreate(
-            ['email' => 'dispatcher@taskroute.local'],
+            ['account' => 'dispatcher'],
             [
                 'name' => '调度员A',
                 'phone' => '13800000002',
@@ -43,7 +43,7 @@ class DatabaseSeeder extends Seeder
         );
 
         User::query()->updateOrCreate(
-            ['email' => 'driver@taskroute.local'],
+            ['account' => 'driver'],
             [
                 'name' => '司机A',
                 'phone' => '13800000003',
@@ -53,7 +53,7 @@ class DatabaseSeeder extends Seeder
             ]
         );
         User::query()->updateOrCreate(
-            ['email' => 'driver2@taskroute.local'],
+            ['account' => 'driver2'],
             [
                 'name' => '司机B',
                 'phone' => '13800000004',

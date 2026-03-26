@@ -26,8 +26,8 @@ class UserManagementController extends Controller
     public function store(Request $request): JsonResponse
     {
         $payload = $request->validate([
+            'account' => ['required', 'string', 'max:64', 'unique:users,account'],
             'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'email', 'max:255', 'unique:users,email'],
             'phone' => ['nullable', 'string', 'max:32'],
             'role' => ['required', Rule::in(['admin', 'dispatcher', 'driver'])],
             'status' => ['nullable', Rule::in(['active', 'inactive'])],
@@ -50,8 +50,8 @@ class UserManagementController extends Controller
     public function update(Request $request, User $user): JsonResponse
     {
         $payload = $request->validate([
+            'account' => ['sometimes', 'string', 'max:64', Rule::unique('users', 'account')->ignore($user->id)],
             'name' => ['sometimes', 'string', 'max:255'],
-            'email' => ['sometimes', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
             'phone' => ['sometimes', 'nullable', 'string', 'max:32'],
             'role' => ['sometimes', Rule::in(['admin', 'dispatcher', 'driver'])],
             'status' => ['sometimes', Rule::in(['active', 'inactive'])],
@@ -67,4 +67,3 @@ class UserManagementController extends Controller
         return response()->json($user->fresh());
     }
 }
-

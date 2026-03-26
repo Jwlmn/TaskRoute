@@ -19,7 +19,7 @@ class AuthApiTest extends TestCase
         $captchaResponse->assertOk();
 
         $response = $this->postJson('/api/v1/auth/login', [
-            'email' => 'dispatcher@taskroute.local',
+            'account' => 'dispatcher',
             'password' => 'TaskRoute@123',
             'captcha_key' => $captchaResponse->json('key'),
             'captcha_code' => $this->readCaptchaAnswerFromKey($captchaResponse->json('key')),
@@ -29,7 +29,7 @@ class AuthApiTest extends TestCase
             ->assertJsonStructure([
                 'token',
                 'token_type',
-                'user' => ['id', 'role', 'email'],
+                'user' => ['id', 'role', 'account'],
             ]);
     }
 

@@ -8,7 +8,7 @@ const router = useRouter()
 const loading = ref(false)
 const captchaImage = ref('')
 const form = reactive({
-  email: '',
+  account: '',
   password: '',
   captcha_key: '',
   captcha_code: '',
@@ -50,8 +50,8 @@ onMounted(() => {
         <div class="login-title">TaskRoute B端 登录</div>
       </template>
       <el-form label-position="top" @submit.prevent="submit">
-        <el-form-item label="邮箱">
-          <el-input v-model="form.email" placeholder="请输入管理员分配的邮箱" />
+        <el-form-item label="账号">
+          <el-input v-model="form.account" placeholder="请输入管理员分配的账号" />
         </el-form-item>
         <el-form-item label="密码">
           <el-input v-model="form.password" type="password" show-password placeholder="请输入密码" />
@@ -71,4 +71,3 @@ onMounted(() => {
     </el-card>
   </div>
 </template>
-

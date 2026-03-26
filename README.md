@@ -67,13 +67,13 @@ npm run dev
 
 ## 默认测试账号
 
-- 管理员：`admin@taskroute.local` / `TaskRoute@123`
-- 调度员：`dispatcher@taskroute.local` / `TaskRoute@123`
-- 司机：`driver@taskroute.local` / `TaskRoute@123`
+- 管理员：`admin` / `admin`
+- 调度员：`dispatcher` / `TaskRoute@123`
+- 司机：`driver` / `TaskRoute@123`
 
 登录流程：
 1. 先调用 `GET /api/v1/auth/captcha` 获取验证码 `key` 与图片。
-2. 调用 `POST /api/v1/auth/login` 时携带 `email`、`password`、`captcha_key`、`captcha_code`。
+2. 调用 `POST /api/v1/auth/login` 时携带 `account`、`password`、`captcha_key`、`captcha_code`。
 
 ## 下一步建议
 

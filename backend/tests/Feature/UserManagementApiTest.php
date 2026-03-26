@@ -19,8 +19,8 @@ class UserManagementApiTest extends TestCase
         Sanctum::actingAs($admin);
 
         $response = $this->postJson('/api/v1/users', [
+            'account' => 'ops_new',
             'name' => '测试调度员',
-            'email' => 'ops-new@taskroute.local',
             'phone' => '13810000000',
             'role' => 'dispatcher',
             'status' => 'active',
@@ -28,7 +28,7 @@ class UserManagementApiTest extends TestCase
         ]);
 
         $response->assertCreated()
-            ->assertJsonPath('email', 'ops-new@taskroute.local');
+            ->assertJsonPath('account', 'ops_new');
     }
 
     public function test_dispatcher_cannot_create_user_account(): void
@@ -38,8 +38,8 @@ class UserManagementApiTest extends TestCase
         Sanctum::actingAs($dispatcher);
 
         $response = $this->postJson('/api/v1/users', [
+            'account' => 'blocked_user',
             'name' => '非法创建',
-            'email' => 'blocked@taskroute.local',
             'role' => 'driver',
             'password' => 'TaskRoute@123',
         ]);
@@ -47,4 +47,3 @@ class UserManagementApiTest extends TestCase
         $response->assertForbidden();
     }
 }
-
