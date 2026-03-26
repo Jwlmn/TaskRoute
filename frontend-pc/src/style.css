@@ -178,14 +178,15 @@ body {
 }
 
 .trajectory-dialog .el-dialog {
+  margin: 0 auto;
   max-height: 92vh;
   display: flex;
   flex-direction: column;
 }
 
 .trajectory-dialog .el-dialog__body {
-  flex: 1;
-  min-height: 0;
+  height: calc(92vh - 124px);
+  min-height: 260px;
   overflow: hidden;
 }
 

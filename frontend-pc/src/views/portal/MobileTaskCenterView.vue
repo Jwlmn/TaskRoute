@@ -385,6 +385,7 @@ onBeforeUnmount(() => {
     class="trajectory-dialog"
     width="900px"
     top="4vh"
+    append-to-body
     @closed="handleTrajectoryDialogClosed"
   >
     <div class="trajectory-dialog-content">
