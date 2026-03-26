@@ -14,7 +14,6 @@ const trajectoryDialogVisible = ref(false)
 const selectedDriverName = ref('')
 
 const mapContainerRef = ref(null)
-const trajectoryTableRef = ref(null)
 const mapReady = ref(false)
 const replayIndex = ref(0)
 const replaying = ref(false)
@@ -23,7 +22,6 @@ let amapInstance = null
 let trajectoryPolyline = null
 let movingMarker = null
 let replayTimer = null
-let tableScrollEl = null
 
 const amapKey = import.meta.env.VITE_AMAP_WEB_KEY || ''
 const amapSecurityJsCode = import.meta.env.VITE_AMAP_SECURITY_JS_CODE || ''
@@ -88,37 +86,6 @@ const clearReplayTimer = () => {
     window.clearInterval(replayTimer)
     replayTimer = null
   }
-}
-
-const unbindTrajectoryTableScroll = () => {
-  if (!tableScrollEl) return
-  tableScrollEl.removeEventListener('scroll', handleTrajectoryTableScroll)
-  tableScrollEl = null
-}
-
-const handleTrajectoryTableScroll = () => {
-  if (!tableScrollEl || points.value.length === 0) return
-  if (replaying.value) {
-    stopReplay()
-  }
-
-  const row = trajectoryTableRef.value?.$el?.querySelector('.el-table__body tbody tr')
-  const rowHeight = row?.offsetHeight || 40
-  const nextIndex = Math.max(
-    0,
-    Math.min(points.value.length - 1, Math.round(tableScrollEl.scrollTop / Math.max(rowHeight, 1))),
-  )
-  if (nextIndex === replayIndex.value) return
-  replayIndex.value = nextIndex
-  updateMapByReplayIndex()
-}
-
-const bindTrajectoryTableScroll = () => {
-  unbindTrajectoryTableScroll()
-  const el = trajectoryTableRef.value?.$el?.querySelector('.el-scrollbar__wrap')
-  if (!el) return
-  tableScrollEl = el
-  tableScrollEl.addEventListener('scroll', handleTrajectoryTableScroll, { passive: true })
 }
 
 const stopReplay = () => {
@@ -258,10 +225,8 @@ const openTrajectory = async (row) => {
     trajectory.value = Array.isArray(data) ? data : []
     await nextTick()
     await renderMapTrajectory()
-    bindTrajectoryTableScroll()
     window.setTimeout(() => {
       amapInstance?.resize?.()
-      bindTrajectoryTableScroll()
     }, 60)
   } catch (error) {
     trajectoryDialogVisible.value = false
@@ -275,7 +240,6 @@ const handleTrajectoryDialogClosed = () => {
   stopReplay()
   trajectory.value = []
   replayIndex.value = 0
-  unbindTrajectoryTableScroll()
   if (amapInstance && trajectoryPolyline) {
     amapInstance.remove(trajectoryPolyline)
     trajectoryPolyline = null
@@ -292,7 +256,6 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   stopReplay()
-  unbindTrajectoryTableScroll()
   if (amapInstance) {
     amapInstance.destroy()
     amapInstance = null
@@ -401,7 +364,7 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="trajectory-table-wrap">
-        <el-table ref="trajectoryTableRef" :data="trajectory" v-loading="loadingTrajectory" size="small" stripe height="100%">
+        <el-table :data="trajectory" v-loading="loadingTrajectory" size="small" stripe height="100%">
           <el-table-column label="定位时间" min-width="170">
             <template #default="{ row }">
               {{ formatDateTime(row.located_at) }}
