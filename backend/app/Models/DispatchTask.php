@@ -66,4 +66,9 @@ class DispatchTask extends Model
     {
         return $this->hasMany(ElectronicDocument::class)->latest('uploaded_at');
     }
+
+    public function locations(): HasMany
+    {
+        return $this->hasMany(DriverLocation::class)->latest('located_at');
+    }
 }

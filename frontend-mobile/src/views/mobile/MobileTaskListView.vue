@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../../services/api'
 import { readCurrentUser } from '../../utils/auth'
@@ -11,6 +11,8 @@ const tasks = ref([])
 const detail = ref(null)
 const detailVisible = ref(false)
 const uploadFile = ref(null)
+const reportingLocation = ref(false)
+let locationTimer = null
 
 const uploadForm = reactive({
   document_type: 'photo',
@@ -60,6 +62,37 @@ const fetchTasks = async () => {
   }
 }
 
+const resolveCurrentTaskId = () => {
+  const task = tasks.value.find((item) => ['assigned', 'accepted', 'in_progress'].includes(item.status))
+  return task?.id || null
+}
+
+const reportCurrentLocation = async (taskId = null) => {
+  if (!isDriver.value || reportingLocation.value) return
+  if (!navigator.geolocation) return
+
+  reportingLocation.value = true
+  try {
+    const position = await new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true,
+        timeout: 8000,
+      })
+    })
+
+    await api.post('/driver-location/report', {
+      dispatch_task_id: taskId || resolveCurrentTaskId(),
+      lng: position.coords.longitude,
+      lat: position.coords.latitude,
+      speed_kmh: position.coords.speed ? Number(position.coords.speed) * 3.6 : null,
+    })
+  } catch {
+    // 定位失败不阻断任务流程
+  } finally {
+    reportingLocation.value = false
+  }
+}
+
 const openDetail = async (taskId) => {
   if (!isDriver.value) return
   detailLoading.value = true
@@ -87,6 +120,7 @@ const startTask = async (taskId) => {
     await api.post('/driver-task/start', { task_id: taskId })
     ElMessage.success('任务已开始')
     await fetchTasks()
+    await reportCurrentLocation(taskId)
     if (detail.value?.id === taskId) {
       await refreshCurrentDetail()
     }
@@ -107,6 +141,7 @@ const arriveWaypoint = async (waypointId) => {
     })
     ElMessage.success('节点已标记到达')
     await Promise.all([fetchTasks(), refreshCurrentDetail()])
+    await reportCurrentLocation(detail.value.id)
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '标记到达失败')
   } finally {
@@ -124,6 +159,7 @@ const completeWaypoint = async (waypointId) => {
     })
     ElMessage.success('节点已完成')
     await Promise.all([fetchTasks(), refreshCurrentDetail()])
+    await reportCurrentLocation(detail.value.id)
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '完成节点失败')
   } finally {
@@ -167,7 +203,21 @@ const uploadDocument = async () => {
 }
 
 onMounted(() => {
-  fetchTasks()
+  fetchTasks().then(() => {
+    reportCurrentLocation()
+  })
+  if (isDriver.value) {
+    locationTimer = window.setInterval(() => {
+      reportCurrentLocation()
+    }, 30000)
+  }
+})
+
+onUnmounted(() => {
+  if (locationTimer) {
+    window.clearInterval(locationTimer)
+    locationTimer = null
+  }
 })
 </script>
 

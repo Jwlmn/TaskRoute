@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\DispatchTaskController;
 use App\Http\Controllers\Api\V1\DriverTaskExecutionController;
+use App\Http\Controllers\Api\V1\DriverLocationController;
 use App\Http\Controllers\Api\V1\MetaController;
 use App\Http\Controllers\Api\V1\PrePlanOrderController;
 use App\Http\Controllers\Api\V1\Resource\ResourcePersonnelController;
@@ -38,6 +39,8 @@ Route::prefix('v1')->group(function (): void {
             Route::post('/dispatch/preview', [SmartDispatchController::class, 'preview']);
             Route::post('/dispatch/create-tasks', [SmartDispatchController::class, 'createTasks']);
             Route::post('/dispatch/manual-create-tasks', [SmartDispatchController::class, 'manualCreateTasks']);
+            Route::post('/driver-location/latest', [DriverLocationController::class, 'latest']);
+            Route::post('/driver-location/trajectory', [DriverLocationController::class, 'trajectory']);
 
             Route::post('/resource/vehicle/list', [ResourceVehicleController::class, 'list']);
             Route::post('/resource/vehicle/create', [ResourceVehicleController::class, 'create']);
@@ -69,6 +72,7 @@ Route::prefix('v1')->group(function (): void {
             Route::post('/driver-task/waypoint-arrive', [DriverTaskExecutionController::class, 'arriveWaypoint']);
             Route::post('/driver-task/waypoint-complete', [DriverTaskExecutionController::class, 'completeWaypoint']);
             Route::post('/driver-task/upload-document', [DriverTaskExecutionController::class, 'uploadDocument']);
+            Route::post('/driver-location/report', [DriverLocationController::class, 'report']);
         });
     });
 });

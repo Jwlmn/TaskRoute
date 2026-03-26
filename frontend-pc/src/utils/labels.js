@@ -10,6 +10,9 @@ export const userStatusLabelMap = {
 }
 
 export const taskStatusLabelMap = {
+  draft: '草稿',
+  assigned: '待接单',
+  accepted: '已接单',
   pending: '待调度',
   scheduled: '已排程',
   in_progress: '执行中',
