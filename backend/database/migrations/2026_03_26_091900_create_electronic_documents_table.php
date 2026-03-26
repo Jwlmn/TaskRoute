@@ -18,8 +18,6 @@ return new class extends Migration
             $table->json('meta')->nullable();
             $table->timestamp('uploaded_at');
             $table->timestamps();
-
-            $table->unique('task_waypoint_id');
         });
     }
 

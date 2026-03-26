@@ -187,6 +187,13 @@ body {
   color: #59687b;
 }
 
+.mobile-waypoint-doc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
 .mobile-waypoint-doc-text {
   flex: 1;
 }

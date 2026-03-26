@@ -85,4 +85,49 @@ class DriverTaskExecutionApiTest extends TestCase
         ]);
         $this->assertSame('completed', DispatchTask::query()->findOrFail($taskId)->status);
     }
+
+    public function test_driver_can_upload_multiple_documents_for_same_waypoint(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $driver = User::query()->where('account', 'driver')->firstOrFail();
+        $vehicle = Vehicle::query()->where('driver_id', $driver->id)->where('status', 'idle')->firstOrFail();
+        $order = PrePlanOrder::query()->whereIn('status', ['pending', 'scheduled'])->firstOrFail();
+
+        Sanctum::actingAs($dispatcher);
+        $createResponse = $this->postJson('/api/v1/dispatch/manual-create-tasks', [
+            'assignments' => [
+                [
+                    'vehicle_id' => $vehicle->id,
+                    'order_ids' => [$order->id],
+                ],
+            ],
+        ]);
+        $createResponse->assertCreated();
+        $taskId = (int) $createResponse->json('created_task_ids.0');
+
+        Sanctum::actingAs($driver);
+        $detailResponse = $this->postJson('/api/v1/driver-task/detail', ['task_id' => $taskId]);
+        $waypointId = (int) $detailResponse->json('waypoints.0.id');
+
+        Storage::fake('public');
+        $response = $this->post('/api/v1/driver-task/upload-document', [
+            'task_id' => $taskId,
+            'waypoint_id' => $waypointId,
+            'document_type' => 'photo',
+            'document_files' => [
+                UploadedFile::fake()->image('proof-1.jpg'),
+                UploadedFile::fake()->image('proof-2.jpg'),
+            ],
+        ]);
+
+        $response->assertCreated()->assertJsonPath('count', 2);
+        $this->assertDatabaseCount('electronic_documents', 2);
+        $this->assertDatabaseHas('electronic_documents', [
+            'dispatch_task_id' => $taskId,
+            'task_waypoint_id' => $waypointId,
+            'document_type' => 'photo',
+        ]);
+    }
 }

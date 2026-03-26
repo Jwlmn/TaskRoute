@@ -136,7 +136,9 @@ class DriverTaskExecutionController extends Controller
             'task_id' => ['required', 'integer', 'exists:dispatch_tasks,id'],
             'waypoint_id' => ['required', 'integer', 'exists:task_waypoints,id'],
             'document_type' => ['required', 'in:receipt,signoff,photo,exception'],
-            'document_file' => ['required', 'file', 'max:5120'],
+            'document_file' => ['nullable', 'file', 'max:5120'],
+            'document_files' => ['nullable', 'array', 'min:1', 'max:9'],
+            'document_files.*' => ['file', 'max:5120'],
             'remark' => ['nullable', 'string', 'max:255'],
         ]);
 
@@ -153,30 +155,49 @@ class DriverTaskExecutionController extends Controller
             return response()->json(['message' => '节点不属于当前任务'], 422);
         }
 
-        $alreadyUploaded = ElectronicDocument::query()
-            ->where('task_waypoint_id', $waypoint->id)
-            ->exists();
-        if ($alreadyUploaded) {
-            return response()->json(['message' => '该节点已上传单据，请勿重复上传'], 422);
+        $files = [];
+        if ($request->hasFile('document_files')) {
+            $files = $request->file('document_files');
+        } elseif ($request->hasFile('document_file')) {
+            $files = [$request->file('document_file')];
         }
 
-        $path = $request->file('document_file')->store('electronic-documents', 'public');
+        if ($files === []) {
+            return response()->json(['message' => '请至少上传一个文件'], 422);
+        }
 
-        $document = DB::transaction(function () use ($payload, $task, $waypoint, $request, $path) {
-            return ElectronicDocument::query()->create([
-                'dispatch_task_id' => $task->id,
-                'task_waypoint_id' => $waypoint->id,
-                'uploaded_by' => $request->user()->id,
-                'document_type' => $payload['document_type'],
-                'file_path' => $path,
-                'meta' => [
-                    'url' => Storage::disk('public')->url($path),
-                    'remark' => $payload['remark'] ?? null,
-                ],
-                'uploaded_at' => now(),
-            ]);
+        $documents = DB::transaction(function () use ($payload, $task, $waypoint, $request, $files) {
+            $created = [];
+            foreach ($files as $file) {
+                $path = $file->store('electronic-documents', 'public');
+                $created[] = ElectronicDocument::query()->create([
+                    'dispatch_task_id' => $task->id,
+                    'task_waypoint_id' => $waypoint->id,
+                    'uploaded_by' => $request->user()->id,
+                    'document_type' => $payload['document_type'],
+                    'file_path' => $path,
+                    'meta' => [
+                        'url' => Storage::disk('public')->url($path),
+                        'remark' => $payload['remark'] ?? null,
+                        'original_name' => $file->getClientOriginalName(),
+                    ],
+                    'uploaded_at' => now(),
+                ]);
+            }
+
+            return ElectronicDocument::query()->whereIn('id', collect($created)->pluck('id')->all())->get();
         });
 
-        return response()->json($document->loadMissing('waypoint:id,dispatch_task_id,sequence,node_type,address'), 201);
+        if ($documents->count() === 1) {
+            return response()->json(
+                $documents->first()->loadMissing('waypoint:id,dispatch_task_id,sequence,node_type,address'),
+                201
+            );
+        }
+
+        return response()->json([
+            'count' => $documents->count(),
+            'documents' => $documents->load('waypoint:id,dispatch_task_id,sequence,node_type,address')->values(),
+        ], 201);
     }
 }
