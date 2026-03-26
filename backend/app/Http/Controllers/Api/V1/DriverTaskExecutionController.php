@@ -9,7 +9,6 @@ use App\Models\TaskWaypoint;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 
 class DriverTaskExecutionController extends Controller
 {
@@ -26,6 +25,8 @@ class DriverTaskExecutionController extends Controller
         if ((int) $task->driver_id !== (int) $request->user()->id) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
+
+        $this->hydrateDocumentUrls($task, $request);
 
         return response()->json($task);
     }
@@ -186,7 +187,7 @@ class DriverTaskExecutionController extends Controller
                     'document_type' => $payload['document_type'],
                     'file_path' => $path,
                     'meta' => [
-                        'url' => Storage::disk('public')->url($path),
+                        'url' => $this->buildPublicFileUrl($request, $path),
                         'remark' => $payload['remark'] ?? null,
                         'original_name' => $file->getClientOriginalName(),
                     ],
@@ -208,5 +209,28 @@ class DriverTaskExecutionController extends Controller
             'count' => $documents->count(),
             'documents' => $documents->load('waypoint:id,dispatch_task_id,sequence,node_type,address')->values(),
         ], 201);
+    }
+
+    private function buildPublicFileUrl(Request $request, string $path): string
+    {
+        $base = rtrim($request->getSchemeAndHttpHost(), '/');
+        return $base.'/storage/'.ltrim($path, '/');
+    }
+
+    private function hydrateDocumentUrls(DispatchTask $task, Request $request): void
+    {
+        foreach ($task->documents as $doc) {
+            $meta = is_array($doc->meta) ? $doc->meta : [];
+            $meta['url'] = $this->buildPublicFileUrl($request, (string) $doc->file_path);
+            $doc->meta = $meta;
+        }
+
+        foreach ($task->waypoints as $waypoint) {
+            foreach ($waypoint->documents as $doc) {
+                $meta = is_array($doc->meta) ? $doc->meta : [];
+                $meta['url'] = $this->buildPublicFileUrl($request, (string) $doc->file_path);
+                $doc->meta = $meta;
+            }
+        }
     }
 }
