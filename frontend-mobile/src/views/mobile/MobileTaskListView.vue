@@ -74,7 +74,7 @@ const ensureUploadForm = (waypointId) => {
       remark: '',
       files: [],
       file_list: [],
-      preview_url: '',
+      preview_urls: [],
     }
   }
 
@@ -212,38 +212,41 @@ const completeWaypoint = async (waypointId) => {
   }
 }
 
-const resetPreviewUrl = (form) => {
-  if (!form?.preview_url) return
-  try {
-    URL.revokeObjectURL(form.preview_url)
-  } catch {
-    // ignore
+const resetPreviewUrls = (form) => {
+  if (!Array.isArray(form?.preview_urls)) return
+  for (const url of form.preview_urls) {
+    try {
+      URL.revokeObjectURL(url)
+    } catch {
+      // ignore
+    }
   }
-  form.preview_url = ''
+  form.preview_urls = []
+}
+
+const rebuildPreviewUrls = (form) => {
+  resetPreviewUrls(form)
+  const imageFiles = (form.files || []).filter((f) => String(f?.type || '').startsWith('image/'))
+  form.preview_urls = imageFiles.map((f) => URL.createObjectURL(f))
 }
 
 const onFileChange = (waypointId, file, fileList) => {
   const form = ensureUploadForm(waypointId)
   if (!form) return
-  resetPreviewUrl(form)
   const nextList = Array.isArray(fileList) ? fileList.slice(-9) : []
   form.file_list = nextList
   form.files = nextList
     .map((item) => item.raw)
     .filter(Boolean)
-
-  const imageFile = form.files.find((f) => String(f?.type || '').startsWith('image/'))
-  if (imageFile) {
-    form.preview_url = URL.createObjectURL(imageFile)
-  }
+  rebuildPreviewUrls(form)
 }
 
-const onFileRemove = (waypointId) => {
+const onFileRemove = (waypointId, fileList) => {
   const form = ensureUploadForm(waypointId)
   if (!form) return
-  resetPreviewUrl(form)
-  form.files = []
-  form.file_list = []
+  form.file_list = Array.isArray(fileList) ? fileList.slice(-9) : []
+  form.files = form.file_list.map((item) => item.raw).filter(Boolean)
+  rebuildPreviewUrls(form)
 }
 
 const uploadDocument = async (waypointId) => {
@@ -275,7 +278,7 @@ const uploadDocument = async (waypointId) => {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
     ElMessage.success('电子单据上传成功')
-    resetPreviewUrl(form)
+    resetPreviewUrls(form)
     form.files = []
     form.file_list = []
     form.remark = ''
@@ -301,7 +304,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   for (const form of Object.values(uploadForms)) {
-    resetPreviewUrl(form)
+    resetPreviewUrls(form)
   }
   if (locationTimer) {
     window.clearInterval(locationTimer)
@@ -427,19 +430,25 @@ onUnmounted(() => {
                     :limit="9"
                     :file-list="ensureUploadForm(waypoint.id).file_list"
                     :on-change="(file, fileList) => onFileChange(waypoint.id, file, fileList)"
-                    :on-remove="() => onFileRemove(waypoint.id)"
+                    :on-remove="(_, fileList) => onFileRemove(waypoint.id, fileList)"
                   >
                     <el-button type="primary" plain>选择文件</el-button>
                   </el-upload>
                   <div v-if="ensureUploadForm(waypoint.id).files?.length" class="mobile-file-tip">
                     已选文件：{{ ensureUploadForm(waypoint.id).files.length }} 个
                   </div>
-                  <img
-                    v-if="ensureUploadForm(waypoint.id).preview_url"
-                    class="mobile-image-preview"
-                    :src="ensureUploadForm(waypoint.id).preview_url"
-                    alt="图片预览"
-                  />
+                  <div
+                    v-if="ensureUploadForm(waypoint.id).preview_urls?.length"
+                    class="mobile-image-preview-grid"
+                  >
+                    <img
+                      v-for="(url, idx) in ensureUploadForm(waypoint.id).preview_urls"
+                      :key="`${waypoint.id}-preview-${idx}`"
+                      class="mobile-image-preview"
+                      :src="url"
+                      alt="图片预览"
+                    />
+                  </div>
                 </el-form-item>
                 <el-button type="primary" :loading="actionLoading" @click="uploadDocument(waypoint.id)">
                   上传该节点单据
