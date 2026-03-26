@@ -199,10 +199,10 @@ body {
 }
 
 .mobile-image-preview-grid {
-  margin-top: 8px;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 6px;
+  width: 100%;
 }
 
 .mobile-image-preview-item {
@@ -239,6 +239,14 @@ body {
 .mobile-image-remove:hover {
   opacity: 1;
   background: rgba(31, 45, 61, 0.72);
+}
+
+.mobile-upload-stack {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
 }
 
 .mobile-doc-list {

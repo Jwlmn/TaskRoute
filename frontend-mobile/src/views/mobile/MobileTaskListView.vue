@@ -440,38 +440,40 @@ onUnmounted(() => {
                   <el-input v-model="ensureUploadForm(waypoint.id).remark" placeholder="可选" />
                 </el-form-item>
                 <el-form-item label="文件">
-                  <el-upload
-                    :auto-upload="false"
-                    :show-file-list="false"
-                    multiple
-                    :limit="9"
-                    :file-list="ensureUploadForm(waypoint.id).file_list"
-                    :on-change="(file, fileList) => onFileChange(waypoint.id, file, fileList)"
-                    :on-remove="(_, fileList) => onFileRemove(waypoint.id, fileList)"
-                  >
-                    <el-button type="primary" plain>选择文件</el-button>
-                  </el-upload>
-                  <div
-                    v-if="ensureUploadForm(waypoint.id).preview_urls?.length"
-                    class="mobile-image-preview-grid"
-                  >
-                    <div
-                      v-for="(url, idx) in ensureUploadForm(waypoint.id).preview_urls"
-                      :key="`${waypoint.id}-preview-${idx}`"
-                      class="mobile-image-preview-item"
+                  <div class="mobile-upload-stack">
+                    <el-upload
+                      :auto-upload="false"
+                      :show-file-list="false"
+                      multiple
+                      :limit="9"
+                      :file-list="ensureUploadForm(waypoint.id).file_list"
+                      :on-change="(file, fileList) => onFileChange(waypoint.id, file, fileList)"
+                      :on-remove="(_, fileList) => onFileRemove(waypoint.id, fileList)"
                     >
-                      <img
-                        class="mobile-image-preview"
-                        :src="url"
-                        alt="图片预览"
-                      />
-                      <button
-                        type="button"
-                        class="mobile-image-remove"
-                        @click="removePreviewAt(waypoint.id, idx)"
+                      <el-button type="primary" plain>选择文件</el-button>
+                    </el-upload>
+                    <div
+                      v-if="ensureUploadForm(waypoint.id).preview_urls?.length"
+                      class="mobile-image-preview-grid"
+                    >
+                      <div
+                        v-for="(url, idx) in ensureUploadForm(waypoint.id).preview_urls"
+                        :key="`${waypoint.id}-preview-${idx}`"
+                        class="mobile-image-preview-item"
                       >
-                        ×
-                      </button>
+                        <img
+                          class="mobile-image-preview"
+                          :src="url"
+                          alt="图片预览"
+                        />
+                        <button
+                          type="button"
+                          class="mobile-image-remove"
+                          @click="removePreviewAt(waypoint.id, idx)"
+                        >
+                          ×
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </el-form-item>
