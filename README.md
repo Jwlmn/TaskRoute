@@ -3,8 +3,8 @@
 TaskRoute 是一个多行业适用的中文智能调度平台，当前仓库采用统一权限体系下的双终端架构：
 
 - `backend`：Laravel 12 API 服务
-- `frontend-b`：PC 管理门户（Vue 3 + Element Plus）
-- `frontend-c`：移动端门户（Vue 3 + Element Plus，手机优先）
+- `frontend-pc`：PC 管理门户（Vue 3 + Element Plus）
+- `mobile`：移动端门户（Vue 3 + Element Plus，手机优先）
 
 ## 技术栈
 
@@ -37,7 +37,7 @@ php artisan serve
 3. 启动 PC 端
 
 ```bash
-cd frontend-b
+cd frontend-pc
 npm install
 npm run dev
 ```
@@ -45,7 +45,7 @@ npm run dev
 4. 启动移动端
 
 ```bash
-cd frontend-c
+cd mobile
 npm install
 npm run dev
 ```
@@ -65,8 +65,8 @@ npm run dev
 - 智能派单：`/api/v1/dispatch/preview`、`/api/v1/dispatch/create-tasks`
 - 用户管理：管理员账号分配与维护（`/api/v1/users`）
 - 统一权限体系：PC 与移动端使用同一账号、同一权限模型
-- PC 端：面向管理与调度操作（`frontend-b`）
-- 移动端：面向任务执行与移动场景操作（`frontend-c`）
+- PC 端：面向管理与调度操作（`frontend-pc`）
+- 移动端：面向任务执行与移动场景操作（`mobile`）
 
 ## 默认测试账号
 
