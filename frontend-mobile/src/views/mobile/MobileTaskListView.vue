@@ -95,6 +95,19 @@ const getWaypointDocuments = (waypoint) => {
   return docs
 }
 
+const isImageUrl = (url) => {
+  if (!url || typeof url !== 'string') return false
+  return /\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?.*)?$/i.test(url)
+}
+
+const getWaypointImageUrls = (waypoint) =>
+  getWaypointDocuments(waypoint)
+    .map((doc) => doc?.meta?.url)
+    .filter((url) => isImageUrl(url))
+
+const getWaypointImageIndex = (waypoint, doc) =>
+  getWaypointImageUrls(waypoint).findIndex((url) => url === doc?.meta?.url)
+
 const fetchTasks = async () => {
   loading.value = true
   try {
@@ -419,7 +432,25 @@ onUnmounted(() => {
                   <div class="mobile-waypoint-doc-text">
                     {{ getDocumentTypeLabel(doc.document_type) }} / {{ doc.uploaded_at || '-' }}
                   </div>
-                  <a :href="doc.meta?.url" target="_blank">查看文件</a>
+                  <a :href="doc.meta?.url" target="_blank" class="mobile-doc-link">查看文件</a>
+                </div>
+                <div class="mobile-uploaded-preview-grid">
+                  <div
+                    v-for="doc in getWaypointDocuments(waypoint)"
+                    :key="`thumb-${doc.id}`"
+                    class="mobile-uploaded-preview-item"
+                  >
+                    <el-image
+                      v-if="isImageUrl(doc.meta?.url)"
+                      class="mobile-uploaded-preview-img"
+                      :src="doc.meta?.url"
+                      fit="cover"
+                      :preview-src-list="getWaypointImageUrls(waypoint)"
+                      :initial-index="getWaypointImageIndex(waypoint, doc)"
+                      preview-teleported
+                    />
+                    <a v-else class="mobile-doc-link" :href="doc.meta?.url" target="_blank">查看文件</a>
+                  </div>
                 </div>
               </div>
               <el-form label-position="top" size="small">
