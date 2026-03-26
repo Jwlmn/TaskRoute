@@ -10,15 +10,10 @@ const actionLoading = ref(false)
 const tasks = ref([])
 const detail = ref(null)
 const detailVisible = ref(false)
-const uploadFile = ref(null)
 const reportingLocation = ref(false)
 let locationTimer = null
 
-const uploadForm = reactive({
-  waypoint_id: null,
-  document_type: 'photo',
-  remark: '',
-})
+const uploadForms = reactive({})
 
 const user = computed(() => readCurrentUser())
 const isDriver = computed(() => user.value?.role === 'driver')
@@ -52,29 +47,36 @@ const documentTypeOptions = [
 ]
 
 const getLabel = (map, value) => map[value] || value || '-'
-const getWaypointLabel = (waypoint) => {
-  if (!waypoint) return '-'
-  const typeMap = {
-    pickup: '装货点',
-    dropoff: '卸货点',
-    checkpoint: '途经点',
-    finish: '收车点',
-  }
-  return `${waypoint.sequence}. ${typeMap[waypoint.node_type] || waypoint.node_type} - ${waypoint.address || ''}`
+const getDocumentTypeLabel = (value) => {
+  const item = documentTypeOptions.find((option) => option.value === value)
+  return item?.label || value || '-'
 }
 
-const syncUploadWaypoint = () => {
-  const waypoints = detail.value?.waypoints || []
-  if (!Array.isArray(waypoints) || waypoints.length === 0) {
-    uploadForm.waypoint_id = null
-    return
+const ensureUploadForm = (waypointId) => {
+  if (!waypointId) return null
+  if (!uploadForms[waypointId]) {
+    uploadForms[waypointId] = {
+      document_type: 'photo',
+      remark: '',
+      file: null,
+    }
   }
 
-  const existed = waypoints.some((item) => item.id === uploadForm.waypoint_id)
-  if (existed) return
+  return uploadForms[waypointId]
+}
 
-  const pending = waypoints.find((item) => item.status !== 'completed')
-  uploadForm.waypoint_id = pending?.id || waypoints[0].id
+const syncUploadForms = () => {
+  const waypoints = detail.value?.waypoints || []
+  if (!Array.isArray(waypoints) || waypoints.length === 0) return
+  for (const waypoint of waypoints) {
+    ensureUploadForm(waypoint.id)
+  }
+}
+
+const getWaypointDocument = (waypoint) => {
+  if (!waypoint) return null
+  const docs = Array.isArray(waypoint.documents) ? waypoint.documents : []
+  return docs.length > 0 ? docs[0] : null
 }
 
 const fetchTasks = async () => {
@@ -125,7 +127,7 @@ const openDetail = async (taskId) => {
   try {
     const { data } = await api.post('/driver-task/detail', { task_id: taskId })
     detail.value = data
-    syncUploadWaypoint()
+    syncUploadForms()
   } catch (error) {
     detailVisible.value = false
     ElMessage.error(error?.response?.data?.message || '加载任务详情失败')
@@ -138,7 +140,7 @@ const refreshCurrentDetail = async () => {
   if (!detail.value?.id) return
   const { data } = await api.post('/driver-task/detail', { task_id: detail.value.id })
   detail.value = data
-  syncUploadWaypoint()
+  syncUploadForms()
 }
 
 const startTask = async (taskId) => {
@@ -194,17 +196,20 @@ const completeWaypoint = async (waypointId) => {
   }
 }
 
-const onFileChange = (file) => {
-  uploadFile.value = file.raw || null
+const onFileChange = (waypointId, file) => {
+  const form = ensureUploadForm(waypointId)
+  if (!form) return
+  form.file = file.raw || null
 }
 
-const uploadDocument = async () => {
+const uploadDocument = async (waypointId) => {
   if (!detail.value?.id) return
-  if (!uploadForm.waypoint_id) {
-    ElMessage.warning('请先选择节点')
+  const form = ensureUploadForm(waypointId)
+  if (!form) {
+    ElMessage.warning('节点参数无效')
     return
   }
-  if (!uploadFile.value) {
+  if (!form.file) {
     ElMessage.warning('请先选择单据文件')
     return
   }
@@ -213,20 +218,20 @@ const uploadDocument = async () => {
   try {
     const formData = new FormData()
     formData.append('task_id', String(detail.value.id))
-    formData.append('waypoint_id', String(uploadForm.waypoint_id))
-    formData.append('document_type', uploadForm.document_type)
-    formData.append('document_file', uploadFile.value)
-    if (uploadForm.remark) {
-      formData.append('remark', uploadForm.remark)
+    formData.append('waypoint_id', String(waypointId))
+    formData.append('document_type', form.document_type)
+    formData.append('document_file', form.file)
+    if (form.remark) {
+      formData.append('remark', form.remark)
     }
 
     await api.post('/driver-task/upload-document', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
     ElMessage.success('电子单据上传成功')
-    uploadFile.value = null
-    uploadForm.remark = ''
-    uploadForm.document_type = 'photo'
+    form.file = null
+    form.remark = ''
+    form.document_type = 'photo'
     await refreshCurrentDetail()
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '上传失败')
@@ -336,62 +341,42 @@ onUnmounted(() => {
                   完成
                 </el-button>
               </div>
-            </div>
-          </div>
-        </el-card>
-
-        <el-card shadow="never" class="mb-12">
-          <template #header>
-            <div class="mobile-section-title">上传电子单据</div>
-          </template>
-          <el-form label-position="top" size="small">
-            <el-form-item label="任务节点">
-              <el-select v-model="uploadForm.waypoint_id" style="width: 100%">
-                <el-option
-                  v-for="waypoint in detail?.waypoints || []"
-                  :key="waypoint.id"
-                  :label="getWaypointLabel(waypoint)"
-                  :value="waypoint.id"
-                />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="单据类型">
-              <el-select v-model="uploadForm.document_type" style="width: 100%">
-                <el-option
-                  v-for="option in documentTypeOptions"
-                  :key="option.value"
-                  :label="option.label"
-                  :value="option.value"
-                />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="备注">
-              <el-input v-model="uploadForm.remark" placeholder="可选" />
-            </el-form-item>
-            <el-form-item label="文件">
-              <el-upload
-                :auto-upload="false"
-                :show-file-list="true"
-                :limit="1"
-                :on-change="onFileChange"
-              >
-                <el-button type="primary" plain>选择文件</el-button>
-              </el-upload>
-            </el-form-item>
-            <el-button type="primary" :loading="actionLoading" @click="uploadDocument">上传单据</el-button>
-          </el-form>
-        </el-card>
-
-        <el-card shadow="never">
-          <template #header>
-            <div class="mobile-section-title">已上传单据</div>
-          </template>
-          <el-empty v-if="(detail?.documents || []).length === 0" description="暂无单据" />
-          <div v-else class="mobile-doc-list">
-            <div v-for="doc in detail.documents" :key="doc.id" class="mobile-doc-item">
-              <div>{{ getWaypointLabel(doc.waypoint) }}</div>
-              <div>{{ doc.document_type }} / {{ doc.uploaded_at || '-' }}</div>
-              <a :href="doc.meta?.url" target="_blank">查看文件</a>
+              <el-divider />
+              <div v-if="getWaypointDocument(waypoint)" class="mobile-waypoint-doc">
+                <div class="mobile-waypoint-doc-text">
+                  已上传：{{ getDocumentTypeLabel(getWaypointDocument(waypoint)?.document_type) }} /
+                  {{ getWaypointDocument(waypoint)?.uploaded_at || '-' }}
+                </div>
+                <a :href="getWaypointDocument(waypoint)?.meta?.url" target="_blank">查看文件</a>
+              </div>
+              <el-form v-else label-position="top" size="small">
+                <el-form-item label="单据类型">
+                  <el-select v-model="ensureUploadForm(waypoint.id).document_type" style="width: 100%">
+                    <el-option
+                      v-for="option in documentTypeOptions"
+                      :key="option.value"
+                      :label="option.label"
+                      :value="option.value"
+                    />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="备注">
+                  <el-input v-model="ensureUploadForm(waypoint.id).remark" placeholder="可选" />
+                </el-form-item>
+                <el-form-item label="文件">
+                  <el-upload
+                    :auto-upload="false"
+                    :show-file-list="true"
+                    :limit="1"
+                    :on-change="(file) => onFileChange(waypoint.id, file)"
+                  >
+                    <el-button type="primary" plain>选择文件</el-button>
+                  </el-upload>
+                </el-form-item>
+                <el-button type="primary" :loading="actionLoading" @click="uploadDocument(waypoint.id)">
+                  上传该节点单据
+                </el-button>
+              </el-form>
             </div>
           </div>
         </el-card>
