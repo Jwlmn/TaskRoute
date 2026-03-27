@@ -19,6 +19,7 @@ const menuTree = computed(() => {
         { index: 'dashboard-home', label: '首页概览', permission: 'dashboard' },
         { index: 'pre-plan-order-management', label: '预计划单管理', permission: 'dispatch' },
         { index: 'dispatch-workbench', label: '调度任务管理', permission: 'dispatch' },
+        { index: 'exception-task-management', label: '异常任务管理', permission: 'dispatch' },
         { index: 'mobile-task-center', label: '司机定位与轨迹回放', permission: 'mobile_tasks' },
       ],
     },

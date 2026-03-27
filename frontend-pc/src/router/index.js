@@ -3,6 +3,7 @@ import LoginView from '../views/LoginView.vue'
 import PortalLayoutView from '../views/portal/PortalLayoutView.vue'
 import DashboardHomeView from '../views/portal/DashboardHomeView.vue'
 import DispatchWorkbenchView from '../views/portal/DispatchWorkbenchView.vue'
+import ExceptionTaskManagementView from '../views/portal/ExceptionTaskManagementView.vue'
 import PrePlanOrderManagementView from '../views/portal/PrePlanOrderManagementView.vue'
 import MobileTaskCenterView from '../views/portal/MobileTaskCenterView.vue'
 import UserManagementView from '../views/portal/UserManagementView.vue'
@@ -45,6 +46,12 @@ const router = createRouter({
           path: 'dispatch',
           name: 'dispatch-workbench',
           component: DispatchWorkbenchView,
+          meta: { permission: 'dispatch' },
+        },
+        {
+          path: 'dispatch/exceptions',
+          name: 'exception-task-management',
+          component: ExceptionTaskManagementView,
           meta: { permission: 'dispatch' },
         },
         {
