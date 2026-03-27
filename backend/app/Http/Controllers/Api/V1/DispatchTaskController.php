@@ -233,14 +233,18 @@ class DispatchTaskController extends Controller
 
         DB::transaction(function () use ($payload, $request, $task, $routeMeta, $exception): void {
             $oldVehicleId = (int) ($task->vehicle_id ?? 0);
+            $oldDriverId = (int) ($task->driver_id ?? 0);
+            $oldTaskStatus = (string) ($task->status ?? '');
 
             if ($payload['action'] === 'cancel') {
                 $task->status = 'cancelled';
+                $task->orders()
+                    ->whereIn('pre_plan_orders.status', ['pending', 'scheduled', 'in_progress'])
+                    ->update(['status' => 'cancelled']);
                 if ($task->vehicle_id) {
                     Vehicle::query()->where('id', (int) $task->vehicle_id)->update(['status' => 'idle']);
                 }
             } elseif ($payload['action'] === 'continue') {
-                $task->status = 'in_progress';
                 if ($task->vehicle_id) {
                     Vehicle::query()->where('id', (int) $task->vehicle_id)->update(['status' => 'busy']);
                 }
@@ -259,6 +263,9 @@ class DispatchTaskController extends Controller
                 $task->vehicle_id = (int) $vehicle->id;
                 $task->driver_id = (int) $vehicle->driver_id;
                 $task->status = 'assigned';
+                $task->orders()
+                    ->whereIn('pre_plan_orders.status', ['pending', 'scheduled', 'in_progress'])
+                    ->update(['status' => 'scheduled']);
 
                 if ($oldVehicleId > 0 && $oldVehicleId !== (int) $vehicle->id) {
                     Vehicle::query()->where('id', $oldVehicleId)->update(['status' => 'idle']);
@@ -273,6 +280,12 @@ class DispatchTaskController extends Controller
                 'handle_note' => $payload['handle_note'] ?? null,
                 'operator_id' => (int) $request->user()->id,
                 'occurred_at' => now()->toDateTimeString(),
+                'previous_task_status' => $oldTaskStatus,
+                'previous_vehicle_id' => $oldVehicleId > 0 ? $oldVehicleId : null,
+                'previous_driver_id' => $oldDriverId > 0 ? $oldDriverId : null,
+                'current_task_status' => (string) $task->status,
+                'current_vehicle_id' => $task->vehicle_id ? (int) $task->vehicle_id : null,
+                'current_driver_id' => $task->driver_id ? (int) $task->driver_id : null,
                 'reassign_vehicle_id' => $payload['reassign_vehicle_id'] ?? null,
             ];
 
@@ -283,6 +296,12 @@ class DispatchTaskController extends Controller
                 'handle_action' => $payload['action'],
                 'handle_note' => $payload['handle_note'] ?? null,
                 'reassign_vehicle_id' => $payload['reassign_vehicle_id'] ?? null,
+                'previous_task_status' => $oldTaskStatus,
+                'previous_vehicle_id' => $oldVehicleId > 0 ? $oldVehicleId : null,
+                'previous_driver_id' => $oldDriverId > 0 ? $oldDriverId : null,
+                'current_task_status' => (string) $task->status,
+                'current_vehicle_id' => $task->vehicle_id ? (int) $task->vehicle_id : null,
+                'current_driver_id' => $task->driver_id ? (int) $task->driver_id : null,
                 'history' => $history,
             ]);
 
