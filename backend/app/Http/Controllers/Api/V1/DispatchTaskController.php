@@ -224,14 +224,25 @@ class DispatchTaskController extends Controller
             return response()->json(['message' => '仅改派操作可设置目标车辆'], 422);
         }
 
-        $task = DispatchTask::query()->findOrFail($payload['task_id']);
-        $routeMeta = is_array($task->route_meta) ? $task->route_meta : [];
-        $exception = is_array($routeMeta['exception'] ?? null) ? $routeMeta['exception'] : null;
-        if (! $exception || ($exception['status'] ?? null) !== 'pending') {
-            return response()->json(['message' => '当前任务没有待处理异常'], 422);
-        }
+        return DB::transaction(function () use ($payload, $request): JsonResponse {
+            $task = DispatchTask::query()->lockForUpdate()->findOrFail($payload['task_id']);
+            $routeMeta = is_array($task->route_meta) ? $task->route_meta : [];
+            $exception = is_array($routeMeta['exception'] ?? null) ? $routeMeta['exception'] : null;
+            if (! $exception) {
+                return response()->json(['message' => '当前任务没有异常记录'], 422);
+            }
+            if (($exception['status'] ?? null) !== 'pending') {
+                $alreadyHandled = ($exception['status'] ?? null) === 'handled';
+                $sameAction = ($exception['handle_action'] ?? null) === $payload['action'];
+                $sameReassignVehicle = ((int) ($exception['reassign_vehicle_id'] ?? 0) === (int) ($payload['reassign_vehicle_id'] ?? 0));
+                if ($alreadyHandled && $sameAction && $sameReassignVehicle) {
+                    return response()->json(
+                        $task->fresh(['vehicle:id,plate_number,name', 'driver:id,account,name'])
+                    );
+                }
+                return response()->json(['message' => '当前异常已处理，请勿重复提交不同处理动作'], 422);
+            }
 
-        DB::transaction(function () use ($payload, $request, $task, $routeMeta, $exception): void {
             $oldVehicleId = (int) ($task->vehicle_id ?? 0);
             $oldDriverId = (int) ($task->driver_id ?? 0);
             $oldTaskStatus = (string) ($task->status ?? '');
@@ -307,11 +318,10 @@ class DispatchTaskController extends Controller
 
             $task->route_meta = $routeMeta;
             $task->save();
+            return response()->json(
+                $task->fresh(['vehicle:id,plate_number,name', 'driver:id,account,name'])
+            );
         });
-
-        return response()->json(
-            $task->fresh(['vehicle:id,plate_number,name', 'driver:id,account,name'])
-        );
     }
 
     private function canAccessTask(Request $request, DispatchTask $dispatchTask): bool

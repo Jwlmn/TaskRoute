@@ -45,24 +45,34 @@ class DriverTaskExecutionController extends Controller
             'task_id' => ['required', 'integer', 'exists:dispatch_tasks,id'],
         ]);
 
-        $task = DispatchTask::query()->findOrFail($payload['task_id']);
-        if ((int) $task->driver_id !== (int) $request->user()->id) {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
+        return DB::transaction(function () use ($payload, $request): JsonResponse {
+            $task = DispatchTask::query()->lockForUpdate()->findOrFail($payload['task_id']);
+            if ((int) $task->driver_id !== (int) $request->user()->id) {
+                return response()->json(['message' => 'Forbidden'], 403);
+            }
 
-        if (in_array($task->status, ['completed', 'cancelled'], true)) {
-            return response()->json(['message' => '当前任务不可开始'], 422);
-        }
+            if (in_array($task->status, ['completed', 'cancelled'], true)) {
+                return response()->json(['message' => '当前任务不可开始'], 422);
+            }
 
-        if ($task->status === 'assigned') {
-            $task->status = 'accepted';
-            $task->save();
-        }
-        if ($task->vehicle_id) {
-            Vehicle::query()->where('id', (int) $task->vehicle_id)->update(['status' => 'busy']);
-        }
+            // 幂等：已接单或执行中重复点击开始，直接返回当前任务状态。
+            if (in_array($task->status, ['accepted', 'in_progress'], true)) {
+                if ($task->vehicle_id) {
+                    Vehicle::query()->where('id', (int) $task->vehicle_id)->update(['status' => 'busy']);
+                }
+                return response()->json($task->fresh());
+            }
 
-        return response()->json($task->fresh());
+            if ($task->status === 'assigned') {
+                $task->status = 'accepted';
+                $task->save();
+            }
+            if ($task->vehicle_id) {
+                Vehicle::query()->where('id', (int) $task->vehicle_id)->update(['status' => 'busy']);
+            }
+
+            return response()->json($task->fresh());
+        });
     }
 
     public function reportException(Request $request): JsonResponse
@@ -74,51 +84,65 @@ class DriverTaskExecutionController extends Controller
             'waypoint_id' => ['nullable', 'integer', 'exists:task_waypoints,id'],
         ]);
 
-        $task = DispatchTask::query()->findOrFail($payload['task_id']);
-        if ((int) $task->driver_id !== (int) $request->user()->id) {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
-        if (! in_array($task->status, ['accepted', 'in_progress'], true)) {
-            return response()->json(['message' => '请先接单后再上报异常'], 422);
-        }
-
-        if (! empty($payload['waypoint_id'])) {
-            $isWaypointBelongsTask = TaskWaypoint::query()
-                ->where('dispatch_task_id', $task->id)
-                ->where('id', (int) $payload['waypoint_id'])
-                ->exists();
-            if (! $isWaypointBelongsTask) {
-                return response()->json(['message' => '节点不属于当前任务'], 422);
+        return DB::transaction(function () use ($payload, $request): JsonResponse {
+            $task = DispatchTask::query()->lockForUpdate()->findOrFail($payload['task_id']);
+            if ((int) $task->driver_id !== (int) $request->user()->id) {
+                return response()->json(['message' => 'Forbidden'], 403);
             }
-        }
+            if (! in_array($task->status, ['accepted', 'in_progress'], true)) {
+                return response()->json(['message' => '请先接单后再上报异常'], 422);
+            }
 
-        $routeMeta = is_array($task->route_meta) ? $task->route_meta : [];
-        $routeMeta['exception'] = [
-            'status' => 'pending',
-            'type' => $payload['exception_type'],
-            'description' => $payload['description'],
-            'waypoint_id' => $payload['waypoint_id'] ?? null,
-            'reported_by' => (int) $request->user()->id,
-            'reported_at' => now()->toDateTimeString(),
-            'handled_at' => null,
-            'handled_by' => null,
-            'handle_action' => null,
-            'handle_note' => null,
-            'history' => array_values(array_merge(
-                is_array($routeMeta['exception']['history'] ?? null) ? $routeMeta['exception']['history'] : [],
-                [[
-                    'event' => 'reported',
-                    'type' => $payload['exception_type'],
-                    'description' => $payload['description'],
-                    'operator_id' => (int) $request->user()->id,
-                    'occurred_at' => now()->toDateTimeString(),
-                ]]
-            )),
-        ];
-        $task->route_meta = $routeMeta;
-        $task->save();
+            if (! empty($payload['waypoint_id'])) {
+                $isWaypointBelongsTask = TaskWaypoint::query()
+                    ->where('dispatch_task_id', $task->id)
+                    ->where('id', (int) $payload['waypoint_id'])
+                    ->exists();
+                if (! $isWaypointBelongsTask) {
+                    return response()->json(['message' => '节点不属于当前任务'], 422);
+                }
+            }
 
-        return response()->json($task->fresh());
+            $routeMeta = is_array($task->route_meta) ? $task->route_meta : [];
+            $existingException = is_array($routeMeta['exception'] ?? null) ? $routeMeta['exception'] : null;
+            if (($existingException['status'] ?? null) === 'pending') {
+                $sameRequest = ($existingException['type'] ?? null) === $payload['exception_type']
+                    && ($existingException['description'] ?? null) === $payload['description']
+                    && (int) ($existingException['reported_by'] ?? 0) === (int) $request->user()->id
+                    && ((int) ($existingException['waypoint_id'] ?? 0) === (int) ($payload['waypoint_id'] ?? 0));
+                if ($sameRequest) {
+                    return response()->json($task->fresh());
+                }
+                return response()->json(['message' => '当前任务已有待处理异常，请勿重复上报'], 422);
+            }
+
+            $routeMeta['exception'] = [
+                'status' => 'pending',
+                'type' => $payload['exception_type'],
+                'description' => $payload['description'],
+                'waypoint_id' => $payload['waypoint_id'] ?? null,
+                'reported_by' => (int) $request->user()->id,
+                'reported_at' => now()->toDateTimeString(),
+                'handled_at' => null,
+                'handled_by' => null,
+                'handle_action' => null,
+                'handle_note' => null,
+                'history' => array_values(array_merge(
+                    is_array($routeMeta['exception']['history'] ?? null) ? $routeMeta['exception']['history'] : [],
+                    [[
+                        'event' => 'reported',
+                        'type' => $payload['exception_type'],
+                        'description' => $payload['description'],
+                        'operator_id' => (int) $request->user()->id,
+                        'occurred_at' => now()->toDateTimeString(),
+                    ]]
+                )),
+            ];
+            $task->route_meta = $routeMeta;
+            $task->save();
+
+            return response()->json($task->fresh());
+        });
     }
 
     public function arriveWaypoint(Request $request): JsonResponse

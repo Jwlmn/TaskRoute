@@ -294,4 +294,56 @@ class DriverTaskExecutionApiTest extends TestCase
             'document_file' => UploadedFile::fake()->image('proof.jpg'),
         ])->assertStatus(422)->assertJsonPath('message', '当前任务存在待处理异常，请等待调度处理后再上传单据');
     }
+
+    public function test_driver_start_and_report_exception_are_idempotent(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $driver = User::query()->where('account', 'driver')->firstOrFail();
+        $vehicle = Vehicle::query()->where('driver_id', $driver->id)->where('status', 'idle')->firstOrFail();
+        $order = PrePlanOrder::query()->whereIn('status', ['pending', 'scheduled'])->firstOrFail();
+
+        Sanctum::actingAs($dispatcher);
+        $createResponse = $this->postJson('/api/v1/dispatch/manual-create-tasks', [
+            'assignments' => [
+                [
+                    'vehicle_id' => $vehicle->id,
+                    'order_ids' => [$order->id],
+                ],
+            ],
+        ]);
+        $createResponse->assertCreated();
+        $taskId = (int) $createResponse->json('created_task_ids.0');
+
+        Sanctum::actingAs($driver);
+        $this->postJson('/api/v1/driver-task/start', ['task_id' => $taskId])->assertOk()
+            ->assertJsonPath('status', 'accepted');
+        $this->postJson('/api/v1/driver-task/start', ['task_id' => $taskId])->assertOk()
+            ->assertJsonPath('status', 'accepted');
+
+        $firstReport = $this->postJson('/api/v1/driver-task/report-exception', [
+            'task_id' => $taskId,
+            'exception_type' => 'traffic_jam',
+            'description' => '幂等测试-拥堵',
+        ]);
+        $firstReport->assertOk()
+            ->assertJsonPath('route_meta.exception.status', 'pending')
+            ->assertJsonCount(1, 'route_meta.exception.history');
+
+        $secondReport = $this->postJson('/api/v1/driver-task/report-exception', [
+            'task_id' => $taskId,
+            'exception_type' => 'traffic_jam',
+            'description' => '幂等测试-拥堵',
+        ]);
+        $secondReport->assertOk()
+            ->assertJsonPath('route_meta.exception.status', 'pending')
+            ->assertJsonCount(1, 'route_meta.exception.history');
+
+        $this->postJson('/api/v1/driver-task/report-exception', [
+            'task_id' => $taskId,
+            'exception_type' => 'other',
+            'description' => '不同异常请求',
+        ])->assertStatus(422)->assertJsonPath('message', '当前任务已有待处理异常，请勿重复上报');
+    }
 }

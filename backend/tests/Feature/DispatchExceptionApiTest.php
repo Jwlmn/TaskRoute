@@ -219,4 +219,55 @@ class DispatchExceptionApiTest extends TestCase
             'status' => 'cancelled',
         ]);
     }
+
+    public function test_dispatcher_handle_exception_is_idempotent_for_same_action_but_rejects_different_action(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $driver = User::query()->where('account', 'driver')->firstOrFail();
+        $vehicle = Vehicle::query()->where('driver_id', $driver->id)->where('status', 'idle')->firstOrFail();
+        $order = PrePlanOrder::query()->where('status', 'pending')->firstOrFail();
+
+        Sanctum::actingAs($dispatcher);
+        $createResponse = $this->postJson('/api/v1/dispatch/manual-create-tasks', [
+            'assignments' => [[
+                'vehicle_id' => $vehicle->id,
+                'order_ids' => [$order->id],
+            ]],
+        ]);
+        $createResponse->assertCreated();
+        $taskId = (int) $createResponse->json('created_task_ids.0');
+
+        Sanctum::actingAs($driver);
+        $this->postJson('/api/v1/driver-task/start', ['task_id' => $taskId])->assertOk();
+        $this->postJson('/api/v1/driver-task/report-exception', [
+            'task_id' => $taskId,
+            'exception_type' => 'traffic_jam',
+            'description' => '幂等处理测试',
+        ])->assertOk();
+
+        Sanctum::actingAs($dispatcher);
+        $this->postJson('/api/v1/dispatch-task/exception-handle', [
+            'task_id' => $taskId,
+            'action' => 'continue',
+            'handle_note' => '继续执行',
+        ])->assertOk()
+            ->assertJsonPath('route_meta.exception.status', 'handled')
+            ->assertJsonPath('route_meta.exception.handle_action', 'continue');
+
+        $this->postJson('/api/v1/dispatch-task/exception-handle', [
+            'task_id' => $taskId,
+            'action' => 'continue',
+            'handle_note' => '继续执行',
+        ])->assertOk()
+            ->assertJsonPath('route_meta.exception.status', 'handled')
+            ->assertJsonPath('route_meta.exception.handle_action', 'continue');
+
+        $this->postJson('/api/v1/dispatch-task/exception-handle', [
+            'task_id' => $taskId,
+            'action' => 'cancel',
+            'handle_note' => '冲突处理',
+        ])->assertStatus(422)->assertJsonPath('message', '当前异常已处理，请勿重复提交不同处理动作');
+    }
 }
