@@ -28,7 +28,9 @@ class MockDataSeeder extends Seeder
 
         // 扩展资源 mock 数据：车辆、站点、货品、计划单
         CargoCategory::factory()->count(4)->create();
-        Vehicle::factory()->count(8)->create(['status' => 'idle']);
+        for ($i = 0; $i < 8; $i++) {
+            Vehicle::factory()->create(['status' => 'idle']);
+        }
         LogisticsSite::factory()->count(10)->create(['status' => 'active']);
         PrePlanOrder::factory()->count(20)->create(['status' => 'pending']);
     }

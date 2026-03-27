@@ -34,20 +34,26 @@ class ResourceVehicleController extends Controller
 
     public function create(Request $request): JsonResponse
     {
-        $payload = $request->validate([
-            'plate_number' => ['required', 'string', 'max:64', 'unique:vehicles,plate_number'],
-            'name' => ['required', 'string', 'max:255'],
-            'vehicle_type' => ['required', 'string', 'max:64'],
-            'driver_id' => [
-                'required',
-                'integer',
-                Rule::exists('users', 'id')->where(fn ($query) => $query->where('role', 'driver')->where('status', 'active')),
+        $payload = $request->validate(
+            [
+                'plate_number' => ['required', 'string', 'max:64', 'unique:vehicles,plate_number'],
+                'name' => ['required', 'string', 'max:255'],
+                'vehicle_type' => ['required', 'string', 'max:64'],
+                'driver_id' => [
+                    'required',
+                    'integer',
+                    Rule::exists('users', 'id')->where(fn ($query) => $query->where('role', 'driver')->where('status', 'active')),
+                    'unique:vehicles,driver_id',
+                ],
+                'max_weight_kg' => ['nullable', 'numeric', 'min:0'],
+                'max_volume_m3' => ['nullable', 'numeric', 'min:0'],
+                'status' => ['nullable', 'in:idle,busy,maintenance'],
+                'meta' => ['nullable', 'array'],
             ],
-            'max_weight_kg' => ['nullable', 'numeric', 'min:0'],
-            'max_volume_m3' => ['nullable', 'numeric', 'min:0'],
-            'status' => ['nullable', 'in:idle,busy,maintenance'],
-            'meta' => ['nullable', 'array'],
-        ]);
+            [
+                'driver_id.unique' => '该司机已绑定其他车辆，请先解绑后再分配',
+            ]
+        );
 
         $payload['status'] ??= 'idle';
         $vehicle = Vehicle::query()->create($payload);
@@ -87,6 +93,13 @@ class ResourceVehicleController extends Controller
             validator(
                 ['plate_number' => $payload['plate_number']],
                 ['plate_number' => ['unique:vehicles,plate_number,'.$vehicle->id]]
+            )->validate();
+        }
+        if (array_key_exists('driver_id', $payload)) {
+            validator(
+                ['driver_id' => $payload['driver_id']],
+                ['driver_id' => ['unique:vehicles,driver_id,'.$vehicle->id]],
+                ['driver_id.unique' => '该司机已绑定其他车辆，请先解绑后再分配']
             )->validate();
         }
 

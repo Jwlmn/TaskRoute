@@ -18,9 +18,14 @@ class VehicleFactory extends Factory
         $prefix = fake()->randomElement(['沪A', '沪B', '沪C', '苏A']);
         $suffix = strtoupper(fake()->bothify('##??#'));
         $vehicleType = fake()->randomElement(['van', 'coldchain', 'tank', 'flatbed']);
+        $occupiedDriverIds = Vehicle::query()
+            ->whereNotNull('driver_id')
+            ->pluck('driver_id')
+            ->all();
         $driverId = User::query()
             ->where('role', 'driver')
             ->where('status', 'active')
+            ->whereNotIn('id', $occupiedDriverIds)
             ->inRandomOrder()
             ->value('id');
         $compartmentEnabled = $vehicleType === 'tank';

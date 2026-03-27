@@ -67,6 +67,11 @@ body {
 
 .mobile-header {
   height: 56px;
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  z-index: 1001;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -84,6 +89,7 @@ body {
 .mobile-main {
   flex: 1;
   padding: 12px;
+  padding-top: 68px;
   padding-bottom: 84px;
 }
 
@@ -136,6 +142,21 @@ body {
   gap: 10px;
 }
 
+.mobile-task-filter {
+  border: 1px solid #e1ebfb;
+  border-radius: 10px;
+  padding: 10px;
+  background: #f8fbff;
+}
+
+.mobile-task-tabs .el-tabs__header {
+  margin: 0 0 8px;
+}
+
+.mobile-task-tabs .el-tabs__nav-wrap::after {
+  display: none;
+}
+
 .mobile-task-item {
   border: 1px solid #e1ebfb;
   border-radius: 10px;
@@ -162,6 +183,58 @@ body {
   margin-top: 8px;
   display: flex;
   gap: 8px;
+}
+
+.mobile-order-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mobile-order-item {
+  border: 1px solid #e1ebfb;
+  border-radius: 10px;
+  padding: 10px;
+  background: #f8fbff;
+}
+
+.mobile-order-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.mobile-order-tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mobile-order-line {
+  font-size: 12px;
+  color: #59687b;
+  line-height: 1.6;
+}
+
+.mobile-order-actions {
+  margin-top: 10px;
+}
+
+.mobile-order-operation-tip {
+  margin-top: 10px;
+}
+
+.mobile-waypoint-missing {
+  margin-top: 10px;
+  border: 1px dashed #f2c68a;
+  border-radius: 8px;
+  padding: 8px;
+  color: #986024;
+  background: #fff8ec;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .mobile-waypoint-item {

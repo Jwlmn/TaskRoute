@@ -12,6 +12,7 @@ class VehicleResourceSeeder extends Seeder
     {
         $driverAId = User::query()->where('account', 'driver')->value('id');
         $driverBId = User::query()->where('account', 'driver2')->value('id');
+        $driverCId = User::query()->where('account', 'driver3')->value('id');
 
         Vehicle::query()->updateOrCreate(
             ['plate_number' => '沪A12345'],
@@ -53,7 +54,7 @@ class VehicleResourceSeeder extends Seeder
             [
                 'name' => '油品罐车2号',
                 'vehicle_type' => 'tank',
-                'driver_id' => $driverBId,
+                'driver_id' => $driverCId,
                 'max_weight_kg' => 15000,
                 'max_volume_m3' => 25,
                 'status' => 'idle',

@@ -53,5 +53,16 @@ class UserAccountSeeder extends Seeder
                 'password' => Hash::make('password'),
             ]
         );
+
+        User::query()->updateOrCreate(
+            ['account' => 'driver3'],
+            [
+                'name' => '司机C',
+                'phone' => '13800000005',
+                'role' => 'driver',
+                'status' => 'active',
+                'password' => Hash::make('password'),
+            ]
+        );
     }
 }

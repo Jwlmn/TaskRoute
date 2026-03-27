@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Models\Vehicle;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
@@ -54,5 +55,45 @@ class ResourceModuleApiTest extends TestCase
 
         $response->assertForbidden();
     }
-}
 
+    public function test_cannot_bind_one_driver_to_multiple_vehicles_on_create(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+        $admin = User::query()->where('account', 'admin')->firstOrFail();
+        $driver = User::query()->where('account', 'driver')->firstOrFail();
+        Sanctum::actingAs($admin);
+
+        $response = $this->postJson('/api/v1/resource/vehicle/create', [
+            'plate_number' => '沪C66666',
+            'name' => '新增测试车',
+            'vehicle_type' => 'truck',
+            'driver_id' => $driver->id,
+            'max_weight_kg' => 10000,
+            'max_volume_m3' => 20,
+            'status' => 'idle',
+        ]);
+
+        $response
+            ->assertStatus(422)
+            ->assertJsonPath('message', '该司机已绑定其他车辆，请先解绑后再分配');
+    }
+
+    public function test_cannot_bind_one_driver_to_multiple_vehicles_on_update(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+        $admin = User::query()->where('account', 'admin')->firstOrFail();
+        Sanctum::actingAs($admin);
+
+        $vehicleA = Vehicle::query()->where('plate_number', '沪A12345')->firstOrFail();
+        $vehicleB = Vehicle::query()->where('plate_number', '沪B88990')->firstOrFail();
+
+        $response = $this->postJson('/api/v1/resource/vehicle/update', [
+            'id' => $vehicleB->id,
+            'driver_id' => $vehicleA->driver_id,
+        ]);
+
+        $response
+            ->assertStatus(422)
+            ->assertJsonPath('message', '该司机已绑定其他车辆，请先解绑后再分配');
+    }
+}

@@ -14,6 +14,13 @@ const dialogVisible = ref(false)
 const dialogMode = ref('create')
 const cargoCategoryOptions = ref([])
 const driverOptions = ref([])
+const prePlanOrderMap = ref({})
+const dispatchDialogVisible = ref(false)
+const dispatchLoading = ref(false)
+const dispatchSubmitting = ref(false)
+const selectedVehicle = ref(null)
+const vehicleAssignment = ref(null)
+const vehicleUnassigned = ref([])
 
 const form = reactive({
   id: null,
@@ -89,6 +96,20 @@ const fetchDriverOptions = async () => {
   }
 }
 
+const fetchPrePlanOrderMap = async () => {
+  try {
+    const { data } = await api.post('/pre-plan-order/list', {})
+    const list = Array.isArray(data?.data) ? data.data : []
+    const nextMap = {}
+    for (const item of list) {
+      nextMap[item.id] = item
+    }
+    prePlanOrderMap.value = nextMap
+  } catch {
+    prePlanOrderMap.value = {}
+  }
+}
+
 const openCreate = () => {
   dialogMode.value = 'create'
   resetForm()
@@ -128,6 +149,86 @@ const compartmentSummary = (row) => {
   const list = normalizeCompartments(row.meta?.compartments)
   if (list.length === 0) return '已启用（未配置）'
   return `已启用（${list.length}仓）`
+}
+
+const orderOf = (orderId) => {
+  const order = prePlanOrderMap.value[orderId]
+  if (!order) {
+    return {
+      id: orderId,
+      order_no: `订单#${orderId}`,
+      client_name: '-',
+      pickup_address: '-',
+      dropoff_address: '-',
+      cargo_weight_kg: '-',
+      cargo_volume_m3: '-',
+    }
+  }
+  return order
+}
+
+const assignedOrders = () => {
+  const directOrders = vehicleAssignment.value?.orders
+  if (Array.isArray(directOrders) && directOrders.length > 0) {
+    return directOrders
+  }
+  return (vehicleAssignment.value?.order_ids || []).map((id) => orderOf(id))
+}
+
+const openVehicleDispatch = async (row) => {
+  selectedVehicle.value = row
+  vehicleAssignment.value = null
+  vehicleUnassigned.value = []
+  dispatchDialogVisible.value = true
+  dispatchLoading.value = true
+  try {
+    await fetchPrePlanOrderMap()
+    const { data } = await api.post('/dispatch/preview', {
+      vehicle_ids: [row.id],
+    })
+    const assignments = Array.isArray(data?.assignments) ? data.assignments : []
+    vehicleAssignment.value = assignments.find((item) => Number(item.vehicle_id) === Number(row.id)) || null
+    vehicleUnassigned.value = Array.isArray(data?.unassigned) ? data.unassigned : []
+    if (!vehicleAssignment.value || (vehicleAssignment.value.order_ids || []).length === 0) {
+      ElMessage.warning('该车辆当前未匹配到可派订单，请检查车辆状态、司机绑定或禁混规则')
+    }
+  } catch (error) {
+    dispatchDialogVisible.value = false
+    ElMessage.error(error?.response?.data?.message || '单车智能匹配失败')
+  } finally {
+    dispatchLoading.value = false
+  }
+}
+
+const submitVehicleDispatch = async () => {
+  if (!selectedVehicle.value || !vehicleAssignment.value || (vehicleAssignment.value.order_ids || []).length === 0) {
+    ElMessage.warning('当前没有可下发的订单')
+    return
+  }
+
+  dispatchSubmitting.value = true
+  try {
+    await api.post('/dispatch/manual-create-tasks', {
+      assignments: [
+        {
+          vehicle_id: selectedVehicle.value.id,
+          order_ids: vehicleAssignment.value.order_ids,
+          estimated_distance_km: vehicleAssignment.value.estimated_distance_km,
+          estimated_fuel_l: vehicleAssignment.value.estimated_fuel_l,
+          estimated_duration_min: vehicleAssignment.value.estimated_duration_min,
+          route_meta: vehicleAssignment.value.route_meta || {},
+          compartment_plan: vehicleAssignment.value.compartment_plan || [],
+        },
+      ],
+    })
+    ElMessage.success('该车辆派单下发成功')
+    dispatchDialogVisible.value = false
+    await fetchRows()
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '下发失败，请检查订单与车辆约束')
+  } finally {
+    dispatchSubmitting.value = false
+  }
 }
 
 const submit = async () => {
@@ -201,9 +302,17 @@ onMounted(async () => {
           {{ getLabel(vehicleStatusLabelMap, row.status) }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" min-width="110" fixed="right">
+      <el-table-column label="操作" min-width="200" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
+          <el-button
+            link
+            type="success"
+            :disabled="row.status !== 'idle' || !row.driver_id"
+            @click="openVehicleDispatch(row)"
+          >
+            智能派单
+          </el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -334,6 +443,90 @@ onMounted(async () => {
     <template #footer>
       <el-button @click="dialogVisible = false">取消</el-button>
       <el-button type="primary" @click="submit">保存</el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog
+    v-model="dispatchDialogVisible"
+    title="单车智能派单"
+    width="920px"
+    align-center
+    class="vehicle-dispatch-dialog"
+    destroy-on-close
+  >
+    <div class="vehicle-dispatch-dialog-content">
+      <el-skeleton :loading="dispatchLoading" animated :count="2">
+        <template #template>
+          <el-skeleton-item variant="text" style="height: 88px; margin-bottom: 10px" />
+        </template>
+        <template #default>
+          <el-descriptions :column="2" border size="small" class="mb-12">
+            <el-descriptions-item label="车辆">
+              {{ selectedVehicle?.plate_number || '-' }}｜{{ selectedVehicle?.name || '-' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="绑定司机">
+              {{ selectedVehicle?.driver?.name ? `${selectedVehicle.driver.name}（${selectedVehicle.driver.account}）` : '未绑定' }}
+            </el-descriptions-item>
+          </el-descriptions>
+
+          <el-empty
+            v-if="!vehicleAssignment || !(vehicleAssignment.order_ids || []).length"
+            description="当前未匹配到可派订单"
+          />
+          <template v-else>
+            <el-row :gutter="12" class="mb-12">
+              <el-col :span="6"><el-tag type="primary">订单数：{{ vehicleAssignment.order_ids.length }}</el-tag></el-col>
+              <el-col :span="6"><el-tag>里程：{{ vehicleAssignment.estimated_distance_km || 0 }} km</el-tag></el-col>
+              <el-col :span="6"><el-tag>油耗：{{ vehicleAssignment.estimated_fuel_l || 0 }} L</el-tag></el-col>
+              <el-col :span="6"><el-tag>耗时：{{ vehicleAssignment.estimated_duration_min || 0 }} min</el-tag></el-col>
+            </el-row>
+            <el-table
+              :data="assignedOrders()"
+              size="small"
+              stripe
+              max-height="260"
+            >
+              <el-table-column prop="order_no" label="订单号" min-width="120" show-overflow-tooltip />
+              <el-table-column prop="client_name" label="客户" min-width="120" show-overflow-tooltip />
+              <el-table-column prop="pickup_address" label="装货地" min-width="160" show-overflow-tooltip />
+              <el-table-column prop="dropoff_address" label="卸货地" min-width="160" show-overflow-tooltip />
+              <el-table-column prop="cargo_weight_kg" label="重量(kg)" min-width="90" />
+              <el-table-column prop="cargo_volume_m3" label="体积(m3)" min-width="90" />
+            </el-table>
+          </template>
+
+          <el-alert
+            v-if="vehicleUnassigned.length > 0"
+            style="margin-top: 12px"
+            title="以下订单本次未能分配到该车辆"
+            type="warning"
+            :closable="false"
+            show-icon
+          />
+          <el-table
+            v-if="vehicleUnassigned.length > 0"
+            :data="vehicleUnassigned"
+            size="small"
+            stripe
+            style="margin-top: 12px"
+            max-height="280"
+          >
+          <el-table-column prop="order_no" label="订单号" min-width="150" />
+          <el-table-column prop="reason" label="未分配原因" min-width="240" show-overflow-tooltip />
+        </el-table>
+        </template>
+      </el-skeleton>
+    </div>
+    <template #footer>
+      <el-button @click="dispatchDialogVisible = false">取消</el-button>
+      <el-button
+        type="primary"
+        :loading="dispatchSubmitting"
+        :disabled="!vehicleAssignment || !(vehicleAssignment.order_ids || []).length"
+        @click="submitVehicleDispatch"
+      >
+        确认下发
+      </el-button>
     </template>
   </el-dialog>
 </template>

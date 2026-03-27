@@ -18,6 +18,24 @@ class SmartDispatchApiTest extends TestCase
 {
     use RefreshDatabase;
 
+    private function resolveUnboundDriverId(): int
+    {
+        $driverId = (int) User::query()
+            ->where('role', 'driver')
+            ->where('status', 'active')
+            ->whereNotIn('id', Vehicle::query()->whereNotNull('driver_id')->pluck('driver_id'))
+            ->value('id');
+
+        if ($driverId > 0) {
+            return $driverId;
+        }
+
+        return (int) User::factory()->create([
+            'role' => 'driver',
+            'status' => 'active',
+        ])->id;
+    }
+
     public function test_dispatcher_can_preview_dispatch_result(): void
     {
         $this->seed(DatabaseSeeder::class);
@@ -46,7 +64,7 @@ class SmartDispatchApiTest extends TestCase
             'plate_number' => '沪Z90001',
             'name' => '测试分仓罐车',
             'vehicle_type' => 'tank',
-            'driver_id' => User::query()->where('role', 'driver')->value('id'),
+            'driver_id' => $this->resolveUnboundDriverId(),
             'max_weight_kg' => 20000,
             'max_volume_m3' => 30,
             'status' => 'idle',
@@ -120,7 +138,7 @@ class SmartDispatchApiTest extends TestCase
             'plate_number' => '沪Z81234',
             'name' => '双仓油罐车',
             'vehicle_type' => 'tank',
-            'driver_id' => User::query()->where('role', 'driver')->value('id'),
+            'driver_id' => $this->resolveUnboundDriverId(),
             'max_weight_kg' => 26000,
             'max_volume_m3' => 40,
             'status' => 'idle',
@@ -202,13 +220,75 @@ class SmartDispatchApiTest extends TestCase
             ->assertJsonPath('assignments.0.route_meta.optimizer', 'amap');
     }
 
+    public function test_non_compartment_vehicle_can_only_match_single_order(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        Sanctum::actingAs($dispatcher);
+
+        $gasoline = CargoCategory::query()->where('code', 'gasoline')->firstOrFail();
+        $driverId = User::query()->where('role', 'driver')->value('id');
+        if (! $driverId || Vehicle::query()->where('driver_id', $driverId)->exists()) {
+            $driverId = $this->resolveUnboundDriverId();
+        }
+        $vehicle = Vehicle::query()->create([
+            'plate_number' => '沪Z93001',
+            'name' => '无分仓测试车',
+            'vehicle_type' => 'truck',
+            'driver_id' => $driverId,
+            'max_weight_kg' => 26000,
+            'max_volume_m3' => 60,
+            'status' => 'idle',
+            'meta' => ['compartment_enabled' => false, 'compartments' => []],
+        ]);
+
+        $orders = collect([1, 2, 3])->map(function ($index) use ($gasoline) {
+            return PrePlanOrder::query()->create([
+                'order_no' => "PO-TEST-NC-{$index}",
+                'cargo_category_id' => $gasoline->id,
+                'client_name' => "测试客户{$index}",
+                'pickup_address' => "测试装货地{$index}",
+                'dropoff_address' => "测试卸货地{$index}",
+                'cargo_weight_kg' => 500,
+                'cargo_volume_m3' => 1.5,
+                'expected_pickup_at' => now()->addHours($index),
+                'expected_delivery_at' => now()->addHours($index + 1),
+                'status' => 'pending',
+            ]);
+        });
+
+        $response = $this->postJson('/api/v1/dispatch/preview', [
+            'vehicle_ids' => [$vehicle->id],
+            'order_ids' => $orders->pluck('id')->all(),
+        ]);
+
+        $response->assertOk();
+        $this->assertCount(1, $response->json('assignments.0.order_ids'));
+        $this->assertCount(2, $response->json('unassigned'));
+    }
+
     public function test_dispatcher_can_manual_adjust_and_create_tasks(): void
     {
         $this->seed(DatabaseSeeder::class);
         $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
         Sanctum::actingAs($dispatcher);
 
-        $vehicle = Vehicle::query()->where('status', 'idle')->firstOrFail();
+        $vehicle = Vehicle::query()->create([
+            'plate_number' => '沪Z92001',
+            'name' => '手工下发分仓车',
+            'vehicle_type' => 'tank',
+            'driver_id' => $this->resolveUnboundDriverId(),
+            'max_weight_kg' => 26000,
+            'max_volume_m3' => 40,
+            'status' => 'idle',
+            'meta' => [
+                'compartment_enabled' => true,
+                'compartments' => [
+                    ['no' => 1, 'capacity_m3' => 20],
+                    ['no' => 2, 'capacity_m3' => 20],
+                ],
+            ],
+        ]);
         $gasoline = CargoCategory::query()->where('code', 'gasoline')->firstOrFail();
         $orders = PrePlanOrder::query()
             ->whereIn('status', ['pending', 'scheduled'])
@@ -253,5 +333,42 @@ class SmartDispatchApiTest extends TestCase
             'pre_plan_order_id' => $orders[0]->id,
             'sequence' => 2,
         ]);
+    }
+
+    public function test_manual_create_rejects_multi_order_for_non_compartment_vehicle(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        Sanctum::actingAs($dispatcher);
+
+        $driverId = $this->resolveUnboundDriverId();
+        $vehicle = Vehicle::query()->create([
+            'plate_number' => '沪Z92002',
+            'name' => '无分仓手工校验车',
+            'vehicle_type' => 'truck',
+            'driver_id' => $driverId,
+            'max_weight_kg' => 18000,
+            'max_volume_m3' => 30,
+            'status' => 'idle',
+            'meta' => ['compartment_enabled' => false, 'compartments' => []],
+        ]);
+        $orders = PrePlanOrder::query()
+            ->whereIn('status', ['pending', 'scheduled'])
+            ->limit(2)
+            ->get();
+        $this->assertCount(2, $orders);
+
+        $response = $this->postJson('/api/v1/dispatch/manual-create-tasks', [
+            'assignments' => [
+                [
+                    'vehicle_id' => $vehicle->id,
+                    'order_ids' => [$orders[0]->id, $orders[1]->id],
+                ],
+            ],
+        ]);
+
+        $response
+            ->assertStatus(422)
+            ->assertJsonPath('message', '未启用分仓的车辆不可拼单，请改为单车单订单');
     }
 }

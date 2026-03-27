@@ -62,11 +62,6 @@ class DriverTaskExecutionApiTest extends TestCase
             'lat' => 31.23,
         ])->assertOk()->assertJsonPath('status', 'arrived');
 
-        $this->postJson('/api/v1/driver-task/waypoint-complete', [
-            'task_id' => $taskId,
-            'waypoint_id' => $waypointId,
-        ])->assertOk()->assertJsonPath('status', 'completed');
-
         Storage::fake('public');
         $uploadResponse = $this->post('/api/v1/driver-task/upload-document', [
             'task_id' => $taskId,
@@ -76,6 +71,11 @@ class DriverTaskExecutionApiTest extends TestCase
             'document_file' => UploadedFile::fake()->image('proof.jpg'),
         ]);
         $uploadResponse->assertCreated()->assertJsonPath('document_type', 'photo');
+
+        $this->postJson('/api/v1/driver-task/waypoint-complete', [
+            'task_id' => $taskId,
+            'waypoint_id' => $waypointId,
+        ])->assertOk()->assertJsonPath('status', 'completed');
 
         $this->assertDatabaseHas('electronic_documents', [
             'dispatch_task_id' => $taskId,
@@ -110,6 +110,7 @@ class DriverTaskExecutionApiTest extends TestCase
         Sanctum::actingAs($driver);
         $detailResponse = $this->postJson('/api/v1/driver-task/detail', ['task_id' => $taskId]);
         $waypointId = (int) $detailResponse->json('waypoints.0.id');
+        $this->postJson('/api/v1/driver-task/start', ['task_id' => $taskId])->assertOk();
 
         Storage::fake('public');
         $response = $this->post('/api/v1/driver-task/upload-document', [
@@ -129,5 +130,118 @@ class DriverTaskExecutionApiTest extends TestCase
             'task_waypoint_id' => $waypointId,
             'document_type' => 'photo',
         ]);
+    }
+
+    public function test_driver_complete_current_trip_will_auto_dispatch_next_trip_for_same_vehicle(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $driver = User::query()->where('account', 'driver')->firstOrFail();
+        $vehicle = Vehicle::query()->where('driver_id', $driver->id)->where('status', 'idle')->firstOrFail();
+        $gasoline = CargoCategory::query()->where('code', 'gasoline')->firstOrFail();
+        $orders = PrePlanOrder::query()
+            ->where('status', 'pending')
+            ->where('cargo_category_id', $gasoline->id)
+            ->orderBy('expected_pickup_at')
+            ->limit(2)
+            ->get();
+        $this->assertCount(2, $orders);
+
+        PrePlanOrder::query()
+            ->where('status', 'pending')
+            ->whereNotIn('id', [$orders[0]->id, $orders[1]->id])
+            ->update(['status' => 'completed']);
+
+        Sanctum::actingAs($dispatcher);
+        $createResponse = $this->postJson('/api/v1/dispatch/manual-create-tasks', [
+            'assignments' => [
+                [
+                    'vehicle_id' => $vehicle->id,
+                    'order_ids' => [$orders[0]->id],
+                ],
+            ],
+        ]);
+        $createResponse->assertCreated();
+        $firstTaskId = (int) $createResponse->json('created_task_ids.0');
+
+        Sanctum::actingAs($driver);
+        $detailResponse = $this->postJson('/api/v1/driver-task/detail', ['task_id' => $firstTaskId]);
+        $waypointId = (int) $detailResponse->json('waypoints.0.id');
+        $this->postJson('/api/v1/driver-task/start', ['task_id' => $firstTaskId])->assertOk();
+
+        $this->postJson('/api/v1/driver-task/waypoint-complete', [
+            'task_id' => $firstTaskId,
+            'waypoint_id' => $waypointId,
+        ])->assertOk()->assertJsonPath('status', 'completed');
+
+        $this->assertDatabaseHas('dispatch_tasks', [
+            'id' => $firstTaskId,
+            'status' => 'completed',
+        ]);
+        $this->assertDatabaseHas('pre_plan_orders', [
+            'id' => $orders[0]->id,
+            'status' => 'completed',
+        ]);
+        $this->assertDatabaseHas('pre_plan_orders', [
+            'id' => $orders[1]->id,
+            'status' => 'scheduled',
+        ]);
+        $this->assertDatabaseHas('vehicles', [
+            'id' => $vehicle->id,
+            'status' => 'busy',
+        ]);
+        $this->assertDatabaseHas('dispatch_task_orders', [
+            'pre_plan_order_id' => $orders[1]->id,
+            'sequence' => 1,
+        ]);
+        $this->assertDatabaseHas('dispatch_tasks', [
+            'vehicle_id' => $vehicle->id,
+            'status' => 'assigned',
+        ]);
+    }
+
+    public function test_driver_cannot_operate_waypoint_or_upload_before_accepting_task(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $driver = User::query()->where('account', 'driver')->firstOrFail();
+        $vehicle = Vehicle::query()->where('driver_id', $driver->id)->where('status', 'idle')->firstOrFail();
+        $order = PrePlanOrder::query()->whereIn('status', ['pending', 'scheduled'])->firstOrFail();
+
+        Sanctum::actingAs($dispatcher);
+        $createResponse = $this->postJson('/api/v1/dispatch/manual-create-tasks', [
+            'assignments' => [
+                [
+                    'vehicle_id' => $vehicle->id,
+                    'order_ids' => [$order->id],
+                ],
+            ],
+        ]);
+        $createResponse->assertCreated();
+        $taskId = (int) $createResponse->json('created_task_ids.0');
+
+        Sanctum::actingAs($driver);
+        $detailResponse = $this->postJson('/api/v1/driver-task/detail', ['task_id' => $taskId]);
+        $waypointId = (int) $detailResponse->json('waypoints.0.id');
+
+        $this->postJson('/api/v1/driver-task/waypoint-arrive', [
+            'task_id' => $taskId,
+            'waypoint_id' => $waypointId,
+        ])->assertStatus(422)->assertJsonPath('message', '请先接单后再执行节点操作');
+
+        $this->postJson('/api/v1/driver-task/waypoint-complete', [
+            'task_id' => $taskId,
+            'waypoint_id' => $waypointId,
+        ])->assertStatus(422)->assertJsonPath('message', '请先接单后再执行节点操作');
+
+        Storage::fake('public');
+        $this->post('/api/v1/driver-task/upload-document', [
+            'task_id' => $taskId,
+            'waypoint_id' => $waypointId,
+            'document_type' => 'photo',
+            'document_file' => UploadedFile::fake()->image('proof.jpg'),
+        ])->assertStatus(422)->assertJsonPath('message', '请先接单后再上传单据');
     }
 }

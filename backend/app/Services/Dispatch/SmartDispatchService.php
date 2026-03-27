@@ -48,6 +48,17 @@ class SmartDispatchService
                     'vehicle_name' => $vehicle->name,
                     'plate_number' => $vehicle->plate_number,
                     'order_ids' => $packResult['orders']->pluck('id')->values(),
+                    'orders' => $packResult['orders']
+                        ->map(fn (PrePlanOrder $order) => [
+                            'id' => (int) $order->id,
+                            'order_no' => (string) $order->order_no,
+                            'client_name' => (string) $order->client_name,
+                            'pickup_address' => (string) $order->pickup_address,
+                            'dropoff_address' => (string) $order->dropoff_address,
+                            'cargo_weight_kg' => (float) $order->cargo_weight_kg,
+                            'cargo_volume_m3' => (float) $order->cargo_volume_m3,
+                        ])
+                        ->values(),
                     'compartment_plan' => $packResult['compartment_plan'],
                     'estimated_distance_km' => $estimatedDistanceKm,
                     'estimated_duration_min' => $estimatedDurationMin,
@@ -84,9 +95,15 @@ class SmartDispatchService
         $weight = 0.0;
         $volume = 0.0;
         $compartments = $this->resolveVehicleCompartments($vehicle);
+        $hasCompartments = $compartments->isNotEmpty();
         $compartmentPlan = [];
 
         foreach ($orders as $order) {
+            // 未启用分仓时，硬约束为单车单订单，避免任何拼单混装风险。
+            if (! $hasCompartments && $selected->isNotEmpty()) {
+                break;
+            }
+
             if (! $this->isVehicleAllowedCargo($vehicle->id, (int) $order->cargo_category_id)) {
                 continue;
             }
@@ -103,7 +120,7 @@ class SmartDispatchService
             }
 
             $assignedCompartmentNo = null;
-            if ($compartments->isNotEmpty()) {
+            if ($hasCompartments) {
                 if ($selected->count() >= $compartments->count()) {
                     continue;
                 }

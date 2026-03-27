@@ -19,7 +19,7 @@ const replayIndex = ref(0)
 const replaying = ref(false)
 
 let amapInstance = null
-let trajectoryPolyline = null
+let trajectoryPolylines = []
 let movingMarker = null
 let replayTimer = null
 
@@ -175,9 +175,9 @@ const renderMapTrajectory = async () => {
   const AMap = window.AMap
   if (!AMap) return
 
-  if (trajectoryPolyline) {
-    amapInstance.remove(trajectoryPolyline)
-    trajectoryPolyline = null
+  if (trajectoryPolylines.length) {
+    amapInstance.remove(trajectoryPolylines)
+    trajectoryPolylines = []
   }
   if (movingMarker) {
     amapInstance.remove(movingMarker)
@@ -186,21 +186,49 @@ const renderMapTrajectory = async () => {
 
   if (points.value.length === 0) return
 
-  trajectoryPolyline = new AMap.Polyline({
-    path: points.value,
-    strokeColor: '#2563eb',
-    strokeWeight: 5,
-    lineJoin: 'round',
-    lineCap: 'round',
-  })
+  const groupedPaths = {}
+  for (const row of trajectory.value) {
+    const lng = Number(row?.lng)
+    const lat = Number(row?.lat)
+    if (Number.isNaN(lng) || Number.isNaN(lat)) continue
+    const taskKey = row?.dispatch_task_id || 'unknown'
+    if (!groupedPaths[taskKey]) {
+      groupedPaths[taskKey] = []
+    }
+    groupedPaths[taskKey].push([lng, lat])
+  }
+
+  const colors = ['#2563eb', '#16a34a', '#f59e0b', '#7c3aed', '#dc2626', '#0891b2']
+  trajectoryPolylines = Object.values(groupedPaths)
+    .filter((path) => Array.isArray(path) && path.length > 1)
+    .map((path, index) => new AMap.Polyline({
+      path,
+      strokeColor: colors[index % colors.length],
+      strokeWeight: 5,
+      lineJoin: 'round',
+      lineCap: 'round',
+    }))
+
+  if (trajectoryPolylines.length === 0) {
+    trajectoryPolylines = [
+      new AMap.Polyline({
+        path: points.value,
+        strokeColor: '#2563eb',
+        strokeWeight: 5,
+        lineJoin: 'round',
+        lineCap: 'round',
+      }),
+    ]
+  }
+
   movingMarker = new AMap.Marker({
     position: points.value[0],
     zIndex: 110,
     title: '当前位置',
   })
 
-  amapInstance.add([trajectoryPolyline, movingMarker])
-  amapInstance.setFitView([trajectoryPolyline], false, [60, 60, 60, 60])
+  amapInstance.add([...trajectoryPolylines, movingMarker])
+  amapInstance.setFitView([...trajectoryPolylines], false, [60, 60, 60, 60])
   amapInstance.resize()
 }
 
@@ -219,8 +247,7 @@ const openTrajectory = async (row) => {
   try {
     const { data } = await api.post('/driver-location/trajectory', {
       driver_id: row.driver_id,
-      dispatch_task_id: row.dispatch_task_id || null,
-      limit: 200,
+      limit: 500,
     })
     trajectory.value = Array.isArray(data) ? data : []
     await nextTick()
@@ -240,9 +267,9 @@ const handleTrajectoryDialogClosed = () => {
   stopReplay()
   trajectory.value = []
   replayIndex.value = 0
-  if (amapInstance && trajectoryPolyline) {
-    amapInstance.remove(trajectoryPolyline)
-    trajectoryPolyline = null
+  if (amapInstance && trajectoryPolylines.length) {
+    amapInstance.remove(trajectoryPolylines)
+    trajectoryPolylines = []
   }
   if (amapInstance && movingMarker) {
     amapInstance.remove(movingMarker)

@@ -96,6 +96,9 @@ class SmartDispatchController extends Controller
     {
         return PrePlanOrder::query()
             ->whereIn('status', ['pending', 'scheduled'])
+            ->whereDoesntHave('dispatchTasks', function ($query): void {
+                $query->whereIn('dispatch_tasks.status', ['draft', 'assigned', 'accepted', 'in_progress']);
+            })
             ->when($orderIds, fn ($query) => $query->whereIn('id', $orderIds))
             ->orderBy('expected_pickup_at')
             ->get();
@@ -145,6 +148,20 @@ class SmartDispatchController extends Controller
         if ($idleVehicleCount !== $vehicleIds->count()) {
             abort(422, '存在不可用车辆（车辆未绑定可用司机或非空闲状态）');
         }
+
+        $vehicleMetaMap = Vehicle::query()
+            ->whereIn('id', $vehicleIds->all())
+            ->get(['id', 'meta'])
+            ->keyBy('id');
+        foreach ($assignments as $assignment) {
+            $vehicleId = (int) ($assignment['vehicle_id'] ?? 0);
+            $meta = $vehicleMetaMap->get($vehicleId)?->meta ?? [];
+            $compartmentEnabled = (bool) ($meta['compartment_enabled'] ?? false);
+            $orderCount = count($assignment['order_ids'] ?? []);
+            if (! $compartmentEnabled && $orderCount > 1) {
+                abort(422, '未启用分仓的车辆不可拼单，请改为单车单订单');
+            }
+        }
     }
 
     private function createTasksFromAssignments(array $assignments, int $dispatcherId, bool $manualAdjusted): array
@@ -193,6 +210,7 @@ class SmartDispatchController extends Controller
                 PrePlanOrder::query()
                     ->whereIn('id', $orderIds)
                     ->update(['status' => 'scheduled']);
+                Vehicle::query()->where('id', (int) $assignment['vehicle_id'])->update(['status' => 'busy']);
 
                 $taskIds[] = $task->id;
             }

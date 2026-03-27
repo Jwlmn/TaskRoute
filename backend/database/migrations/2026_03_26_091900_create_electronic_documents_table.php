@@ -13,7 +13,7 @@ return new class extends Migration
             $table->foreignId('dispatch_task_id')->constrained()->cascadeOnDelete();
             $table->foreignId('task_waypoint_id')->constrained('task_waypoints')->cascadeOnDelete();
             $table->foreignId('uploaded_by')->constrained('users')->cascadeOnDelete();
-            $table->enum('document_type', ['receipt', 'signoff', 'photo', 'exception']);
+            $table->enum('document_type', ['pickup_note', 'dropoff_note', 'receipt', 'signoff', 'photo', 'exception']);
             $table->string('file_path');
             $table->json('meta')->nullable();
             $table->timestamp('uploaded_at');

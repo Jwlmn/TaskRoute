@@ -14,6 +14,7 @@ return new class extends Migration
             $table->string('name');
             $table->string('vehicle_type');
             $table->foreignId('driver_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->unique('driver_id');
             $table->decimal('max_weight_kg', 10, 2)->default(0);
             $table->decimal('max_volume_m3', 10, 2)->default(0);
             $table->enum('status', ['idle', 'busy', 'maintenance'])->default('idle');

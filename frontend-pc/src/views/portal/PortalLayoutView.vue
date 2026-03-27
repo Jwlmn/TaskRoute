@@ -26,15 +26,9 @@ const menuTree = computed(() => {
       index: 'resource-center',
       label: '资源维护',
       children: [
-        {
-          index: 'resource-catalog',
-          label: '资源台账',
-          children: [
-            { index: 'vehicle-management', label: '车辆资源管理', permission: 'resources' },
-            { index: 'personnel-management', label: '人员资源管理', permission: 'resources' },
-            { index: 'site-management', label: '站点资源管理', permission: 'resources' },
-          ],
-        },
+        { index: 'vehicle-management', label: '车辆管理', permission: 'resources' },
+        { index: 'personnel-management', label: '人员管理', permission: 'resources' },
+        { index: 'site-management', label: '站点管理', permission: 'resources' },
       ],
     },
     {
@@ -105,21 +99,9 @@ const logout = async () => {
           <template v-for="item in menuTree" :key="item.index">
             <el-sub-menu :index="item.index">
               <template #title>{{ item.label }}</template>
-              <template v-for="child in item.children" :key="child.index">
-                <el-menu-item v-if="!child.children" :index="child.index">
-                  {{ child.label }}
-                </el-menu-item>
-                <el-sub-menu v-else :index="child.index">
-                  <template #title>{{ child.label }}</template>
-                  <el-menu-item
-                    v-for="grand in child.children"
-                    :key="grand.index"
-                    :index="grand.index"
-                  >
-                    {{ grand.label }}
-                  </el-menu-item>
-                </el-sub-menu>
-              </template>
+              <el-menu-item v-for="child in item.children" :key="child.index" :index="child.index">
+                {{ child.label }}
+              </el-menu-item>
             </el-sub-menu>
           </template>
         </el-menu>
