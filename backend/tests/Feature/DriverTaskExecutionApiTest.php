@@ -244,4 +244,54 @@ class DriverTaskExecutionApiTest extends TestCase
             'document_file' => UploadedFile::fake()->image('proof.jpg'),
         ])->assertStatus(422)->assertJsonPath('message', '请先接单后再上传单据');
     }
+
+    public function test_driver_cannot_operate_waypoint_or_upload_when_exception_is_pending(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $driver = User::query()->where('account', 'driver')->firstOrFail();
+        $vehicle = Vehicle::query()->where('driver_id', $driver->id)->where('status', 'idle')->firstOrFail();
+        $order = PrePlanOrder::query()->whereIn('status', ['pending', 'scheduled'])->firstOrFail();
+
+        Sanctum::actingAs($dispatcher);
+        $createResponse = $this->postJson('/api/v1/dispatch/manual-create-tasks', [
+            'assignments' => [
+                [
+                    'vehicle_id' => $vehicle->id,
+                    'order_ids' => [$order->id],
+                ],
+            ],
+        ]);
+        $createResponse->assertCreated();
+        $taskId = (int) $createResponse->json('created_task_ids.0');
+
+        Sanctum::actingAs($driver);
+        $detailResponse = $this->postJson('/api/v1/driver-task/detail', ['task_id' => $taskId]);
+        $waypointId = (int) $detailResponse->json('waypoints.0.id');
+        $this->postJson('/api/v1/driver-task/start', ['task_id' => $taskId])->assertOk();
+        $this->postJson('/api/v1/driver-task/report-exception', [
+            'task_id' => $taskId,
+            'exception_type' => 'traffic_jam',
+            'description' => '高架堵车，等待调度处理',
+        ])->assertOk();
+
+        $this->postJson('/api/v1/driver-task/waypoint-arrive', [
+            'task_id' => $taskId,
+            'waypoint_id' => $waypointId,
+        ])->assertStatus(422)->assertJsonPath('message', '当前任务存在待处理异常，请等待调度处理后再执行节点');
+
+        $this->postJson('/api/v1/driver-task/waypoint-complete', [
+            'task_id' => $taskId,
+            'waypoint_id' => $waypointId,
+        ])->assertStatus(422)->assertJsonPath('message', '当前任务存在待处理异常，请等待调度处理后再执行节点');
+
+        Storage::fake('public');
+        $this->post('/api/v1/driver-task/upload-document', [
+            'task_id' => $taskId,
+            'waypoint_id' => $waypointId,
+            'document_type' => 'photo',
+            'document_file' => UploadedFile::fake()->image('proof.jpg'),
+        ])->assertStatus(422)->assertJsonPath('message', '当前任务存在待处理异常，请等待调度处理后再上传单据');
+    }
 }

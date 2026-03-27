@@ -112,9 +112,10 @@ const getWaypointDocumentGroups = (waypoint) => {
 const getGroupImageIndex = (group, doc) =>
   (group?.imageUrls || []).findIndex((url) => url === doc?.meta?.url)
 
-const canOperateTask = () => ['accepted', 'in_progress'].includes(detail.value?.status)
-const shouldShowAcceptTip = () => detail.value?.status === 'assigned'
 const hasPendingException = () => detail.value?.route_meta?.exception?.status === 'pending'
+const canOperateTask = () =>
+  ['accepted', 'in_progress'].includes(detail.value?.status) && !hasPendingException()
+const shouldShowAcceptTip = () => detail.value?.status === 'assigned'
 
 const formatDateTime = (value) => {
   if (!value) return '-'
@@ -283,7 +284,7 @@ const completeWaypoint = async (waypointId) => {
 const uploadDocument = async (waypointId) => {
   if (!detail.value?.id) return
   if (!canOperateTask()) {
-    ElMessage.warning('请先接单后再上传单据')
+    ElMessage.warning(hasPendingException() ? '异常处理中，暂不可上传单据' : '请先接单后再上传单据')
     return
   }
   const form = ensureUploadForm(waypointId)
@@ -321,6 +322,10 @@ const uploadDocument = async (waypointId) => {
 }
 
 const openExceptionDialog = () => {
+  if (hasPendingException()) {
+    ElMessage.warning('当前异常待处理，请勿重复上报')
+    return
+  }
   if (!canOperateTask()) {
     ElMessage.warning('请先接单后再上报异常')
     return
@@ -373,7 +378,7 @@ onUnmounted(() => {
           size="small"
           type="danger"
           plain
-          :disabled="!canOperateTask()"
+          :disabled="!canOperateTask() || hasPendingException()"
           @click="openExceptionDialog"
         >
           上报异常

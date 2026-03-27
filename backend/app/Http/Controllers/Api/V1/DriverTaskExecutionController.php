@@ -137,6 +137,9 @@ class DriverTaskExecutionController extends Controller
         if (! in_array($task->status, ['accepted', 'in_progress'], true)) {
             return response()->json(['message' => '请先接单后再执行节点操作'], 422);
         }
+        if ($this->hasPendingException($task)) {
+            return response()->json(['message' => '当前任务存在待处理异常，请等待调度处理后再执行节点'], 422);
+        }
 
         $waypoint = TaskWaypoint::query()
             ->where('dispatch_task_id', $task->id)
@@ -182,6 +185,9 @@ class DriverTaskExecutionController extends Controller
         }
         if (! in_array($task->status, ['accepted', 'in_progress'], true)) {
             return response()->json(['message' => '请先接单后再执行节点操作'], 422);
+        }
+        if ($this->hasPendingException($task)) {
+            return response()->json(['message' => '当前任务存在待处理异常，请等待调度处理后再执行节点'], 422);
         }
 
         $waypoint = TaskWaypoint::query()
@@ -262,6 +268,9 @@ class DriverTaskExecutionController extends Controller
         if (! in_array($task->status, ['accepted', 'in_progress'], true)) {
             return response()->json(['message' => '请先接单后再上传单据'], 422);
         }
+        if ($this->hasPendingException($task)) {
+            return response()->json(['message' => '当前任务存在待处理异常，请等待调度处理后再上传单据'], 422);
+        }
 
         $waypoint = TaskWaypoint::query()
             ->where('dispatch_task_id', $task->id)
@@ -321,6 +330,12 @@ class DriverTaskExecutionController extends Controller
     {
         $base = rtrim($request->getSchemeAndHttpHost(), '/');
         return $base.'/storage/'.ltrim($path, '/');
+    }
+
+    private function hasPendingException(DispatchTask $task): bool
+    {
+        $meta = is_array($task->route_meta) ? $task->route_meta : [];
+        return ($meta['exception']['status'] ?? null) === 'pending';
     }
 
     private function autoDispatchNextTrip(DispatchTask $completedTask): void
