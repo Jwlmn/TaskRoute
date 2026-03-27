@@ -12,6 +12,7 @@ const actionLoading = ref(false)
 const detail = ref(null)
 const uploadForms = reactive({})
 const exceptionDialogVisible = ref(false)
+let exceptionPollingTimer = null
 const exceptionForm = reactive({
   exception_type: 'traffic_jam',
   description: '',
@@ -116,6 +117,15 @@ const hasPendingException = () => detail.value?.route_meta?.exception?.status ==
 const canOperateTask = () =>
   ['accepted', 'in_progress'].includes(detail.value?.status) && !hasPendingException()
 const shouldShowAcceptTip = () => detail.value?.status === 'assigned'
+const handledException = () => {
+  if (detail.value?.route_meta?.exception?.status !== 'handled') return null
+  return detail.value.route_meta.exception
+}
+const exceptionActionLabelMap = {
+  continue: '继续执行',
+  cancel: '取消任务',
+  reassign: '改派车辆',
+}
 
 const formatDateTime = (value) => {
   if (!value) return '-'
@@ -231,17 +241,40 @@ const reportCurrentLocation = async (taskId) => {
 
 const taskId = () => Number(route.params.id)
 
-const loadDetail = async () => {
-  detailLoading.value = true
+const resetExceptionPolling = () => {
+  if (exceptionPollingTimer) {
+    window.clearInterval(exceptionPollingTimer)
+    exceptionPollingTimer = null
+  }
+}
+
+const setupExceptionPolling = () => {
+  resetExceptionPolling()
+  if (!hasPendingException()) return
+  exceptionPollingTimer = window.setInterval(() => {
+    if (actionLoading.value) return
+    loadDetail({ silent: true })
+  }, 15000)
+}
+
+const loadDetail = async ({ silent = false } = {}) => {
+  if (!silent) {
+    detailLoading.value = true
+  }
   try {
     const { data } = await api.post('/driver-task/detail', { task_id: taskId() })
     detail.value = data
     syncUploadForms()
+    setupExceptionPolling()
   } catch (error) {
-    ElMessage.error(error?.response?.data?.message || '加载任务详情失败')
-    await router.push({ name: 'mobile-tasks' })
+    if (!silent) {
+      ElMessage.error(error?.response?.data?.message || '加载任务详情失败')
+      await router.push({ name: 'mobile-tasks' })
+    }
   } finally {
-    detailLoading.value = false
+    if (!silent) {
+      detailLoading.value = false
+    }
   }
 }
 
@@ -363,6 +396,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  resetExceptionPolling()
   for (const form of Object.values(uploadForms)) {
     resetPreviewUrls(form)
   }
@@ -406,6 +440,28 @@ onUnmounted(() => {
         show-icon
         :title="`异常待处理：${detail?.route_meta?.exception?.description || '请等待调度处理'}`"
       />
+      <el-alert
+        v-else-if="handledException()"
+        class="mb-12"
+        type="success"
+        :closable="false"
+        show-icon
+        :title="`异常已处理：${handledException()?.handle_note || '调度已处理该异常'}`"
+      />
+      <el-descriptions
+        v-if="handledException()"
+        :column="1"
+        border
+        size="small"
+        class="mb-12"
+      >
+        <el-descriptions-item label="处理动作">
+          {{ getLabel(exceptionActionLabelMap, handledException()?.handle_action) }}
+        </el-descriptions-item>
+        <el-descriptions-item label="处理时间">
+          {{ handledException()?.handled_at || '-' }}
+        </el-descriptions-item>
+      </el-descriptions>
 
       <el-card shadow="never" class="mb-12">
         <template #header>
