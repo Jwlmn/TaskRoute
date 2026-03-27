@@ -17,7 +17,10 @@ const previewAssignments = ref([])
 const loadingTasks = ref(false)
 const previewLoading = ref(false)
 const creatingTasks = ref(false)
+const orderDetailLoading = ref(false)
 const previewDialogVisible = ref(false)
+const orderDetailDialogVisible = ref(false)
+const selectedOrder = ref(null)
 
 const orderMap = computed(() => {
   const map = {}
@@ -72,6 +75,29 @@ const getOrderTaskStatusTagType = (status) => {
   if (status === 'accepted' || status === 'in_progress') return 'warning'
   if (status === 'cancelled') return 'danger'
   return 'info'
+}
+
+const formatDateTime = (value) => {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return String(value)
+  return date.toLocaleString('zh-CN', { hour12: false })
+}
+
+const openOrderDetailDialog = async (order) => {
+  if (!order?.id) return
+  orderDetailDialogVisible.value = true
+  orderDetailLoading.value = true
+  selectedOrder.value = null
+  try {
+    const { data } = await api.post('/pre-plan-order/detail', { id: order.id })
+    selectedOrder.value = data
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '加载订单详情失败')
+    orderDetailDialogVisible.value = false
+  } finally {
+    orderDetailLoading.value = false
+  }
 }
 
 const moveOrder = (assignment, index, delta) => {
@@ -185,6 +211,8 @@ onMounted(async () => {
               :key="order.id"
               size="small"
               :type="getOrderTaskStatusTagType(order.status)"
+              class="order-tag-clickable"
+              @click="openOrderDetailDialog(order)"
             >
               {{ order.order_no }}｜{{ order.client_name }}｜{{ getOrderTaskStatusLabel(order.status) }}
             </el-tag>
@@ -277,6 +305,38 @@ onMounted(async () => {
     <template #footer>
       <el-button @click="previewDialogVisible = false">取消</el-button>
       <el-button type="primary" :loading="creatingTasks" @click="submitManualAdjustedTasks">确认下发</el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog
+    v-model="orderDetailDialogVisible"
+    title="订单详情"
+    width="620px"
+    destroy-on-close
+  >
+    <el-skeleton :loading="orderDetailLoading" animated :count="2">
+      <template #template>
+        <el-skeleton-item variant="text" style="height: 84px; margin-bottom: 10px" />
+      </template>
+      <template #default>
+        <el-descriptions v-if="selectedOrder" :column="1" border size="small">
+          <el-descriptions-item label="订单号">{{ selectedOrder.order_no || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="客户">{{ selectedOrder.client_name || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="状态">{{ getOrderTaskStatusLabel(selectedOrder.status) }}</el-descriptions-item>
+          <el-descriptions-item label="货品分类ID">{{ selectedOrder.cargo_category_id || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="装货地址">{{ selectedOrder.pickup_address || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="卸货地址">{{ selectedOrder.dropoff_address || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="重量(kg)">{{ selectedOrder.cargo_weight_kg ?? '-' }}</el-descriptions-item>
+          <el-descriptions-item label="体积(m³)">{{ selectedOrder.cargo_volume_m3 ?? '-' }}</el-descriptions-item>
+          <el-descriptions-item label="期望提货时间">{{ formatDateTime(selectedOrder.expected_pickup_at) }}</el-descriptions-item>
+          <el-descriptions-item label="期望送达时间">{{ formatDateTime(selectedOrder.expected_delivery_at) }}</el-descriptions-item>
+          <el-descriptions-item label="创建时间">{{ formatDateTime(selectedOrder.created_at) }}</el-descriptions-item>
+          <el-descriptions-item label="更新时间">{{ formatDateTime(selectedOrder.updated_at) }}</el-descriptions-item>
+        </el-descriptions>
+      </template>
+    </el-skeleton>
+    <template #footer>
+      <el-button @click="orderDetailDialogVisible = false">关闭</el-button>
     </template>
   </el-dialog>
 </template>

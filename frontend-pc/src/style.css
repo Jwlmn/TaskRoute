@@ -146,6 +146,10 @@ body {
   font-size: 12px;
 }
 
+.order-tag-clickable {
+  cursor: pointer;
+}
+
 .mr-8 {
   margin-right: 8px;
 }
