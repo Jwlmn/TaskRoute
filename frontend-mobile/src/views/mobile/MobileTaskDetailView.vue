@@ -11,6 +11,11 @@ const detailLoading = ref(false)
 const actionLoading = ref(false)
 const detail = ref(null)
 const uploadForms = reactive({})
+const exceptionDialogVisible = ref(false)
+const exceptionForm = reactive({
+  exception_type: 'traffic_jam',
+  description: '',
+})
 
 const dispatchModeLabelMap = {
   single_vehicle_single_order: '单车单订单',
@@ -34,10 +39,21 @@ const waypointStatusLabelMap = {
 }
 
 const documentTypeOptions = [
+  { label: '装货单', value: 'pickup_note' },
+  { label: '卸货单', value: 'dropoff_note' },
   { label: '回单', value: 'receipt' },
   { label: '签收单', value: 'signoff' },
   { label: '现场照片', value: 'photo' },
   { label: '异常单据', value: 'exception' },
+]
+
+const exceptionTypeOptions = [
+  { label: '交通拥堵', value: 'traffic_jam' },
+  { label: '车辆故障', value: 'vehicle_breakdown' },
+  { label: '客户拒收', value: 'customer_reject' },
+  { label: '地址变更', value: 'address_change' },
+  { label: '货损异常', value: 'goods_damage' },
+  { label: '其他异常', value: 'other' },
 ]
 
 const getLabel = (map, value) => map[value] || value || '-'
@@ -60,6 +76,12 @@ const getWaypointTypeLabel = (waypoint) => {
 const getWaypointDocuments = (waypoint) => {
   if (!waypoint) return []
   return Array.isArray(waypoint.documents) ? waypoint.documents : []
+}
+
+const getOrderWaypoint = (order) => {
+  if (!order?.order_no) return null
+  const waypoints = detail.value?.waypoints || []
+  return waypoints.find((item) => String(item?.address || '').startsWith(`订单${order.order_no}｜`)) || null
 }
 
 const isImageUrl = (url) => {
@@ -89,6 +111,27 @@ const getWaypointDocumentGroups = (waypoint) => {
 
 const getGroupImageIndex = (group, doc) =>
   (group?.imageUrls || []).findIndex((url) => url === doc?.meta?.url)
+
+const canOperateTask = () => ['accepted', 'in_progress'].includes(detail.value?.status)
+const shouldShowAcceptTip = () => detail.value?.status === 'assigned'
+const hasPendingException = () => detail.value?.route_meta?.exception?.status === 'pending'
+
+const formatDateTime = (value) => {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return String(value)
+  return date.toLocaleString('zh-CN', { hour12: false })
+}
+
+const formatCargoValue = (value, unit) => {
+  if (value === null || value === undefined || value === '') return '-'
+  return `${value}${unit}`
+}
+
+const getCargoCategoryName = (order) => {
+  if (!order || typeof order !== 'object') return '-'
+  return order.cargo_category?.name || order.cargo_category_name || '-'
+}
 
 const ensureUploadForm = (waypointId) => {
   if (!waypointId) return null
@@ -239,6 +282,10 @@ const completeWaypoint = async (waypointId) => {
 
 const uploadDocument = async (waypointId) => {
   if (!detail.value?.id) return
+  if (!canOperateTask()) {
+    ElMessage.warning('请先接单后再上传单据')
+    return
+  }
   const form = ensureUploadForm(waypointId)
   if (!form || !Array.isArray(form.files) || form.files.length === 0) {
     ElMessage.warning('请先选择单据文件')
@@ -273,6 +320,39 @@ const uploadDocument = async (waypointId) => {
   }
 }
 
+const openExceptionDialog = () => {
+  if (!canOperateTask()) {
+    ElMessage.warning('请先接单后再上报异常')
+    return
+  }
+  exceptionDialogVisible.value = true
+}
+
+const submitException = async () => {
+  if (!detail.value?.id) return
+  if (!String(exceptionForm.description || '').trim()) {
+    ElMessage.warning('请填写异常说明')
+    return
+  }
+
+  actionLoading.value = true
+  try {
+    await api.post('/driver-task/report-exception', {
+      task_id: detail.value.id,
+      exception_type: exceptionForm.exception_type,
+      description: exceptionForm.description.trim(),
+    })
+    ElMessage.success('异常已上报，请等待调度处理')
+    exceptionDialogVisible.value = false
+    exceptionForm.description = ''
+    await loadDetail()
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '异常上报失败')
+  } finally {
+    actionLoading.value = false
+  }
+}
+
 onMounted(() => {
   loadDetail()
 })
@@ -288,7 +368,18 @@ onUnmounted(() => {
   <el-card shadow="never" class="mb-12">
     <div class="table-header">
       <div class="mobile-section-title">任务执行详情</div>
-      <el-button plain size="small" @click="router.push({ name: 'mobile-tasks' })">返回任务列表</el-button>
+      <el-space>
+        <el-button
+          size="small"
+          type="danger"
+          plain
+          :disabled="!canOperateTask()"
+          @click="openExceptionDialog"
+        >
+          上报异常
+        </el-button>
+        <el-button plain size="small" @click="router.push({ name: 'mobile-tasks' })">返回任务列表</el-button>
+      </el-space>
     </div>
   </el-card>
 
@@ -302,127 +393,204 @@ onUnmounted(() => {
         <el-descriptions-item label="状态">{{ getLabel(taskStatusLabelMap, detail?.status) }}</el-descriptions-item>
         <el-descriptions-item label="派单模式">{{ getLabel(dispatchModeLabelMap, detail?.dispatch_mode) }}</el-descriptions-item>
       </el-descriptions>
+      <el-alert
+        v-if="hasPendingException()"
+        class="mb-12"
+        type="warning"
+        :closable="false"
+        show-icon
+        :title="`异常待处理：${detail?.route_meta?.exception?.description || '请等待调度处理'}`"
+      />
 
       <el-card shadow="never" class="mb-12">
         <template #header>
-          <div class="mobile-section-title">任务节点</div>
+          <div class="table-header">
+            <div class="mobile-section-title">订单信息</div>
+            <el-tag size="small" type="info">共 {{ (detail?.orders || []).length }} 单</el-tag>
+          </div>
         </template>
-        <div v-if="(detail?.waypoints || []).length === 0">
-          <el-empty description="暂无节点" />
-        </div>
-        <div v-else>
-          <div v-for="waypoint in detail.waypoints" :key="waypoint.id" class="mobile-waypoint-item">
-            <div class="mobile-waypoint-main">
-              <strong>{{ waypoint.sequence }}. {{ getWaypointTypeLabel(waypoint) }}</strong>
-              <el-tag size="small">{{ getLabel(waypointStatusLabelMap, waypoint.status) }}</el-tag>
-            </div>
-            <div class="mobile-waypoint-address">{{ waypoint.address }}</div>
-            <div class="mobile-task-actions">
-              <el-button
-                size="small"
-                plain
-                @click="arriveWaypoint(waypoint.id)"
-                :disabled="waypoint.status !== 'pending'"
-                :loading="actionLoading"
-              >
-                到达
-              </el-button>
-              <el-button
-                size="small"
-                type="primary"
-                @click="completeWaypoint(waypoint.id)"
-                :disabled="waypoint.status === 'completed'"
-                :loading="actionLoading"
-              >
-                完成
-              </el-button>
-            </div>
-            <el-divider />
-            <div v-if="getWaypointDocuments(waypoint)?.length" class="mobile-waypoint-doc-list">
-              <div
-                v-for="group in getWaypointDocumentGroups(waypoint)"
-                :key="`${waypoint.id}-${group.key}`"
-                class="mobile-waypoint-group"
-              >
-                <div class="mobile-waypoint-doc-title">
-                  {{ group.label }}（{{ group.docs.length }}）
-                </div>
-                <div class="mobile-image-preview-grid">
-                  <div
-                    v-for="doc in group.docs"
-                    :key="`uploaded-thumb-${doc.id}`"
-                    class="mobile-image-preview-item"
-                  >
-                    <el-image
-                      v-if="isImageUrl(doc.meta?.url)"
-                      class="mobile-image-preview"
-                      :src="doc.meta?.url"
-                      fit="cover"
-                      :preview-src-list="group.imageUrls"
-                      :initial-index="getGroupImageIndex(group, doc)"
-                      :hide-on-click-modal="true"
-                      preview-teleported
-                    />
-                    <div v-else class="mobile-image-preview-fallback">非图片</div>
-                  </div>
-                </div>
+        <el-empty v-if="(detail?.orders || []).length === 0" description="暂无订单信息" />
+        <div v-else class="mobile-order-list">
+          <div
+            v-for="order in detail.orders"
+            :key="order.id"
+            class="mobile-order-item"
+          >
+            <div class="mobile-order-header">
+              <strong>{{ order.order_no || `订单#${order.id}` }}</strong>
+              <div class="mobile-order-tags">
+                <el-tag size="small" type="info">{{ getCargoCategoryName(order) }}</el-tag>
+                <el-tag v-if="getOrderWaypoint(order)" size="small">
+                  {{ getLabel(waypointStatusLabelMap, getOrderWaypoint(order)?.status) }}
+                </el-tag>
               </div>
             </div>
-            <el-form label-position="top" size="small">
-              <el-form-item label="单据类型">
-                <el-select v-model="ensureUploadForm(waypoint.id).document_type" style="width: 100%">
-                  <el-option
-                    v-for="option in documentTypeOptions"
-                    :key="option.value"
-                    :label="option.label"
-                    :value="option.value"
-                  />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="备注">
-                <el-input v-model="ensureUploadForm(waypoint.id).remark" placeholder="可选" />
-              </el-form-item>
-              <el-form-item label="文件">
-                <div class="mobile-upload-stack">
-                  <el-upload
-                    :auto-upload="false"
-                    :show-file-list="false"
-                    multiple
-                    :limit="9"
-                    :file-list="ensureUploadForm(waypoint.id).file_list"
-                    :on-change="(file, fileList) => onFileChange(waypoint.id, file, fileList)"
-                    :on-remove="(_, fileList) => onFileRemove(waypoint.id, fileList)"
-                  >
-                    <el-button type="primary" plain>选择文件</el-button>
-                  </el-upload>
-                  <div
-                    v-if="ensureUploadForm(waypoint.id).preview_urls?.length"
-                    class="mobile-image-preview-grid"
-                  >
+            <div class="mobile-order-line">客户：{{ order.client_name || '-' }}</div>
+            <div class="mobile-order-line">装货地：{{ order.pickup_address || '-' }}</div>
+            <div class="mobile-order-line">卸货地：{{ order.dropoff_address || '-' }}</div>
+            <div class="mobile-order-line">
+              重量/体积：{{ formatCargoValue(order.cargo_weight_kg, 'kg') }} / {{ formatCargoValue(order.cargo_volume_m3, 'm³') }}
+            </div>
+            <div class="mobile-order-line">
+              时间窗：{{ formatDateTime(order.expected_pickup_at) }} ~ {{ formatDateTime(order.expected_delivery_at) }}
+            </div>
+
+            <template v-if="getOrderWaypoint(order)">
+              <el-alert
+                v-if="shouldShowAcceptTip()"
+                class="mobile-order-operation-tip"
+                type="warning"
+                :closable="false"
+                title="当前任务尚未接单，仅可查看详情；请先在任务列表点击“接单”后再执行节点和上传单据"
+              />
+              <div class="mobile-task-actions mobile-order-actions">
+                <el-button
+                  size="small"
+                  plain
+                  @click="arriveWaypoint(getOrderWaypoint(order).id)"
+                  :disabled="!canOperateTask() || getOrderWaypoint(order).status !== 'pending'"
+                  :loading="actionLoading"
+                >
+                  到达
+                </el-button>
+                <el-button
+                  size="small"
+                  type="primary"
+                  @click="completeWaypoint(getOrderWaypoint(order).id)"
+                  :disabled="!canOperateTask() || getOrderWaypoint(order).status === 'completed'"
+                  :loading="actionLoading"
+                >
+                  完成
+                </el-button>
+              </div>
+
+              <el-divider />
+              <div v-if="getWaypointDocuments(getOrderWaypoint(order))?.length" class="mobile-waypoint-doc-list">
+                <div
+                  v-for="group in getWaypointDocumentGroups(getOrderWaypoint(order))"
+                  :key="`${getOrderWaypoint(order).id}-${group.key}`"
+                  class="mobile-waypoint-group"
+                >
+                  <div class="mobile-waypoint-doc-title">
+                    {{ group.label }}（{{ group.docs.length }}）
+                  </div>
+                  <div class="mobile-image-preview-grid">
                     <div
-                      v-for="(url, idx) in ensureUploadForm(waypoint.id).preview_urls"
-                      :key="`${waypoint.id}-preview-${idx}`"
+                      v-for="doc in group.docs"
+                      :key="`uploaded-thumb-${doc.id}`"
                       class="mobile-image-preview-item"
                     >
-                      <img class="mobile-image-preview" :src="url" alt="图片预览" />
-                      <button
-                        type="button"
-                        class="mobile-image-remove"
-                        @click="removePreviewAt(waypoint.id, idx)"
-                      >
-                        ×
-                      </button>
+                      <el-image
+                        v-if="isImageUrl(doc.meta?.url)"
+                        class="mobile-image-preview"
+                        :src="doc.meta?.url"
+                        fit="cover"
+                        :preview-src-list="group.imageUrls"
+                        :initial-index="getGroupImageIndex(group, doc)"
+                        :hide-on-click-modal="true"
+                        preview-teleported
+                      />
+                      <div v-else class="mobile-image-preview-fallback">非图片</div>
                     </div>
                   </div>
                 </div>
-              </el-form-item>
-              <el-button type="primary" :loading="actionLoading" @click="uploadDocument(waypoint.id)">
-                上传该节点单据
-              </el-button>
-            </el-form>
+              </div>
+
+              <el-form label-position="top" size="small">
+                <el-form-item label="单据类型">
+                  <el-select v-model="ensureUploadForm(getOrderWaypoint(order).id).document_type" style="width: 100%">
+                    <el-option
+                      v-for="option in documentTypeOptions"
+                      :key="option.value"
+                      :label="option.label"
+                      :value="option.value"
+                    />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="备注">
+                  <el-input v-model="ensureUploadForm(getOrderWaypoint(order).id).remark" placeholder="可选" />
+                </el-form-item>
+                <el-form-item label="文件">
+                  <div class="mobile-upload-stack">
+                    <el-upload
+                      :disabled="!canOperateTask()"
+                      :auto-upload="false"
+                      :show-file-list="false"
+                      multiple
+                      :limit="9"
+                      :file-list="ensureUploadForm(getOrderWaypoint(order).id).file_list"
+                      :on-change="(file, fileList) => onFileChange(getOrderWaypoint(order).id, file, fileList)"
+                      :on-remove="(_, fileList) => onFileRemove(getOrderWaypoint(order).id, fileList)"
+                    >
+                      <el-button type="primary" plain>选择文件</el-button>
+                    </el-upload>
+                    <div
+                      v-if="ensureUploadForm(getOrderWaypoint(order).id).preview_urls?.length"
+                      class="mobile-image-preview-grid"
+                    >
+                      <div
+                        v-for="(url, idx) in ensureUploadForm(getOrderWaypoint(order).id).preview_urls"
+                        :key="`${getOrderWaypoint(order).id}-preview-${idx}`"
+                        class="mobile-image-preview-item"
+                      >
+                        <img class="mobile-image-preview" :src="url" alt="图片预览" />
+                        <button
+                          type="button"
+                          class="mobile-image-remove"
+                          @click="removePreviewAt(getOrderWaypoint(order).id, idx)"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </el-form-item>
+                <el-button
+                  type="primary"
+                  :disabled="!canOperateTask()"
+                  :loading="actionLoading"
+                  @click="uploadDocument(getOrderWaypoint(order).id)"
+                >
+                  上传该订单单据
+                </el-button>
+              </el-form>
+            </template>
+
+            <div v-else class="mobile-waypoint-missing">
+              当前订单未关联执行节点，暂不可上报到达/完成与上传单据，请联系调度员检查任务数据。
+            </div>
           </div>
         </div>
       </el-card>
     </template>
   </el-skeleton>
+
+  <el-dialog v-model="exceptionDialogVisible" title="上报任务异常" width="90%" destroy-on-close>
+    <el-form label-position="top">
+      <el-form-item label="异常类型">
+        <el-select v-model="exceptionForm.exception_type" style="width: 100%">
+          <el-option
+            v-for="option in exceptionTypeOptions"
+            :key="option.value"
+            :label="option.label"
+            :value="option.value"
+          />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="异常说明">
+        <el-input
+          v-model="exceptionForm.description"
+          type="textarea"
+          :rows="4"
+          maxlength="500"
+          show-word-limit
+          placeholder="请描述异常原因和现场情况"
+        />
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="exceptionDialogVisible = false">取消</el-button>
+      <el-button type="danger" :loading="actionLoading" @click="submitException">提交异常</el-button>
+    </template>
+  </el-dialog>
 </template>

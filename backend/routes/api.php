@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\Api\V1\DashboardOverviewController;
 use App\Http\Controllers\Api\V1\DispatchTaskController;
 use App\Http\Controllers\Api\V1\DriverTaskExecutionController;
 use App\Http\Controllers\Api\V1\DriverLocationController;
@@ -22,6 +23,7 @@ Route::prefix('v1')->group(function (): void {
     Route::middleware('auth:sanctum')->group(function (): void {
         Route::get('/auth/me', [AuthController::class, 'me']);
         Route::post('/auth/logout', [AuthController::class, 'logout']);
+        Route::post('/dashboard/overview', DashboardOverviewController::class);
 
         Route::middleware('role:admin,dispatcher')->group(function (): void {
             Route::post('/pre-plan-order/list', [PrePlanOrderController::class, 'index']);
@@ -39,6 +41,8 @@ Route::prefix('v1')->group(function (): void {
             Route::post('/dispatch/preview', [SmartDispatchController::class, 'preview']);
             Route::post('/dispatch/create-tasks', [SmartDispatchController::class, 'createTasks']);
             Route::post('/dispatch/manual-create-tasks', [SmartDispatchController::class, 'manualCreateTasks']);
+            Route::post('/dispatch-task/exception-list', [DispatchTaskController::class, 'exceptionList']);
+            Route::post('/dispatch-task/exception-handle', [DispatchTaskController::class, 'handleException']);
             Route::post('/driver-location/latest', [DriverLocationController::class, 'latest']);
             Route::post('/driver-location/trajectory', [DriverLocationController::class, 'trajectory']);
 
@@ -69,6 +73,7 @@ Route::prefix('v1')->group(function (): void {
         Route::middleware('role:driver')->group(function (): void {
             Route::post('/driver-task/detail', [DriverTaskExecutionController::class, 'detail']);
             Route::post('/driver-task/start', [DriverTaskExecutionController::class, 'start']);
+            Route::post('/driver-task/report-exception', [DriverTaskExecutionController::class, 'reportException']);
             Route::post('/driver-task/waypoint-arrive', [DriverTaskExecutionController::class, 'arriveWaypoint']);
             Route::post('/driver-task/waypoint-complete', [DriverTaskExecutionController::class, 'completeWaypoint']);
             Route::post('/driver-task/upload-document', [DriverTaskExecutionController::class, 'uploadDocument']);

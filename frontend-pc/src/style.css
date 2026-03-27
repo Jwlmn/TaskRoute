@@ -121,6 +121,13 @@ body {
   font-weight: 600;
 }
 
+.overview-value {
+  margin-top: 8px;
+  font-size: 28px;
+  color: #1d3d8f;
+  font-weight: 600;
+}
+
 .card-title {
   font-size: 16px;
   font-weight: 600;
@@ -200,6 +207,35 @@ body {
 .trajectory-table-wrap {
   flex: 1;
   min-height: 0;
+}
+
+.vehicle-dispatch-dialog {
+  margin-bottom: 0;
+}
+
+.vehicle-dispatch-dialog .el-overlay-dialog {
+  display: flex;
+  align-items: center;
+}
+
+.vehicle-dispatch-dialog .el-dialog {
+  margin: 0 auto !important;
+  max-height: 96vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.vehicle-dispatch-dialog .el-dialog__body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.vehicle-dispatch-dialog-content {
+  height: 100%;
+  max-height: calc(96vh - 140px);
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .login-page {

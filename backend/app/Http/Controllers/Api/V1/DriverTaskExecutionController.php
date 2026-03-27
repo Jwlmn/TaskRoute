@@ -5,13 +5,21 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\DispatchTask;
 use App\Models\ElectronicDocument;
+use App\Models\PrePlanOrder;
 use App\Models\TaskWaypoint;
+use App\Models\Vehicle;
+use App\Services\Dispatch\SmartDispatchService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class DriverTaskExecutionController extends Controller
 {
+    public function __construct(private readonly SmartDispatchService $smartDispatchService)
+    {
+    }
+
     public function detail(Request $request): JsonResponse
     {
         $payload = $request->validate([
@@ -19,7 +27,7 @@ class DriverTaskExecutionController extends Controller
         ]);
 
         $task = DispatchTask::query()
-            ->with(['orders', 'waypoints.documents', 'documents.waypoint'])
+            ->with(['orders.cargoCategory', 'waypoints.documents', 'documents.waypoint'])
             ->findOrFail($payload['task_id']);
 
         if ((int) $task->driver_id !== (int) $request->user()->id) {
@@ -50,6 +58,65 @@ class DriverTaskExecutionController extends Controller
             $task->status = 'accepted';
             $task->save();
         }
+        if ($task->vehicle_id) {
+            Vehicle::query()->where('id', (int) $task->vehicle_id)->update(['status' => 'busy']);
+        }
+
+        return response()->json($task->fresh());
+    }
+
+    public function reportException(Request $request): JsonResponse
+    {
+        $payload = $request->validate([
+            'task_id' => ['required', 'integer', 'exists:dispatch_tasks,id'],
+            'exception_type' => ['required', 'in:vehicle_breakdown,traffic_jam,customer_reject,address_change,goods_damage,other'],
+            'description' => ['required', 'string', 'max:500'],
+            'waypoint_id' => ['nullable', 'integer', 'exists:task_waypoints,id'],
+        ]);
+
+        $task = DispatchTask::query()->findOrFail($payload['task_id']);
+        if ((int) $task->driver_id !== (int) $request->user()->id) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+        if (! in_array($task->status, ['accepted', 'in_progress'], true)) {
+            return response()->json(['message' => '请先接单后再上报异常'], 422);
+        }
+
+        if (! empty($payload['waypoint_id'])) {
+            $isWaypointBelongsTask = TaskWaypoint::query()
+                ->where('dispatch_task_id', $task->id)
+                ->where('id', (int) $payload['waypoint_id'])
+                ->exists();
+            if (! $isWaypointBelongsTask) {
+                return response()->json(['message' => '节点不属于当前任务'], 422);
+            }
+        }
+
+        $routeMeta = is_array($task->route_meta) ? $task->route_meta : [];
+        $routeMeta['exception'] = [
+            'status' => 'pending',
+            'type' => $payload['exception_type'],
+            'description' => $payload['description'],
+            'waypoint_id' => $payload['waypoint_id'] ?? null,
+            'reported_by' => (int) $request->user()->id,
+            'reported_at' => now()->toDateTimeString(),
+            'handled_at' => null,
+            'handled_by' => null,
+            'handle_action' => null,
+            'handle_note' => null,
+            'history' => array_values(array_merge(
+                is_array($routeMeta['exception']['history'] ?? null) ? $routeMeta['exception']['history'] : [],
+                [[
+                    'event' => 'reported',
+                    'type' => $payload['exception_type'],
+                    'description' => $payload['description'],
+                    'operator_id' => (int) $request->user()->id,
+                    'occurred_at' => now()->toDateTimeString(),
+                ]]
+            )),
+        ];
+        $task->route_meta = $routeMeta;
+        $task->save();
 
         return response()->json($task->fresh());
     }
@@ -66,6 +133,9 @@ class DriverTaskExecutionController extends Controller
         $task = DispatchTask::query()->findOrFail($payload['task_id']);
         if ((int) $task->driver_id !== (int) $request->user()->id) {
             return response()->json(['message' => 'Forbidden'], 403);
+        }
+        if (! in_array($task->status, ['accepted', 'in_progress'], true)) {
+            return response()->json(['message' => '请先接单后再执行节点操作'], 422);
         }
 
         $waypoint = TaskWaypoint::query()
@@ -87,6 +157,11 @@ class DriverTaskExecutionController extends Controller
         if (in_array($task->status, ['assigned', 'accepted'], true)) {
             $task->status = 'in_progress';
             $task->save();
+            $task->orders()->update(['status' => 'in_progress']);
+        }
+
+        if ($task->vehicle_id) {
+            Vehicle::query()->where('id', (int) $task->vehicle_id)->update(['status' => 'busy']);
         }
 
         return response()->json($waypoint->fresh());
@@ -105,28 +180,56 @@ class DriverTaskExecutionController extends Controller
         if ((int) $task->driver_id !== (int) $request->user()->id) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
+        if (! in_array($task->status, ['accepted', 'in_progress'], true)) {
+            return response()->json(['message' => '请先接单后再执行节点操作'], 422);
+        }
 
         $waypoint = TaskWaypoint::query()
             ->where('dispatch_task_id', $task->id)
             ->where('id', $payload['waypoint_id'])
             ->firstOrFail();
 
-        if ($waypoint->status !== 'completed') {
-            $waypoint->update([
-                'status' => 'completed',
-                'lng' => $payload['lng'] ?? $waypoint->lng,
-                'lat' => $payload['lat'] ?? $waypoint->lat,
-                'arrived_at' => $waypoint->arrived_at ?? now(),
-                'completed_at' => now(),
-            ]);
-        }
+        DB::transaction(function () use ($payload, $waypoint, $task): void {
+            $task->refresh();
+            $wasTaskCompleted = $task->status === 'completed';
 
-        $pendingExists = TaskWaypoint::query()
-            ->where('dispatch_task_id', $task->id)
-            ->where('status', '!=', 'completed')
-            ->exists();
-        $task->status = $pendingExists ? 'in_progress' : 'completed';
-        $task->save();
+            if ($waypoint->status !== 'completed') {
+                $waypoint->update([
+                    'status' => 'completed',
+                    'lng' => $payload['lng'] ?? $waypoint->lng,
+                    'lat' => $payload['lat'] ?? $waypoint->lat,
+                    'arrived_at' => $waypoint->arrived_at ?? now(),
+                    'completed_at' => now(),
+                ]);
+            }
+
+            $pendingExists = TaskWaypoint::query()
+                ->where('dispatch_task_id', $task->id)
+                ->where('status', '!=', 'completed')
+                ->exists();
+
+            if ($pendingExists) {
+                $task->status = 'in_progress';
+                $task->save();
+                $task->orders()->update(['status' => 'in_progress']);
+                if ($task->vehicle_id) {
+                    Vehicle::query()->where('id', (int) $task->vehicle_id)->update(['status' => 'busy']);
+                }
+                return;
+            }
+
+            $task->status = 'completed';
+            $task->save();
+            $task->orders()->update(['status' => 'completed']);
+
+            if ($task->vehicle_id) {
+                Vehicle::query()->where('id', (int) $task->vehicle_id)->update(['status' => 'idle']);
+            }
+
+            if (! $wasTaskCompleted) {
+                $this->autoDispatchNextTrip($task);
+            }
+        });
 
         return response()->json($waypoint->fresh());
     }
@@ -137,7 +240,7 @@ class DriverTaskExecutionController extends Controller
             [
                 'task_id' => ['required', 'integer', 'exists:dispatch_tasks,id'],
                 'waypoint_id' => ['required', 'integer', 'exists:task_waypoints,id'],
-                'document_type' => ['required', 'in:receipt,signoff,photo,exception'],
+                'document_type' => ['required', 'in:pickup_note,dropoff_note,receipt,signoff,photo,exception'],
                 'document_file' => ['nullable', 'file', 'max:5120'],
                 'document_files' => ['nullable', 'array', 'min:1', 'max:9'],
                 'document_files.*' => ['file', 'max:5120'],
@@ -155,6 +258,9 @@ class DriverTaskExecutionController extends Controller
         $task = DispatchTask::query()->findOrFail($payload['task_id']);
         if ((int) $task->driver_id !== (int) $request->user()->id) {
             return response()->json(['message' => 'Forbidden'], 403);
+        }
+        if (! in_array($task->status, ['accepted', 'in_progress'], true)) {
+            return response()->json(['message' => '请先接单后再上传单据'], 422);
         }
 
         $waypoint = TaskWaypoint::query()
@@ -215,6 +321,113 @@ class DriverTaskExecutionController extends Controller
     {
         $base = rtrim($request->getSchemeAndHttpHost(), '/');
         return $base.'/storage/'.ltrim($path, '/');
+    }
+
+    private function autoDispatchNextTrip(DispatchTask $completedTask): void
+    {
+        if (! $completedTask->vehicle_id) {
+            return;
+        }
+
+        $vehicle = Vehicle::query()
+            ->where('id', (int) $completedTask->vehicle_id)
+            ->where('status', 'idle')
+            ->whereNotNull('driver_id')
+            ->whereHas('driver', fn ($query) => $query->where('role', 'driver')->where('status', 'active'))
+            ->first();
+        if (! $vehicle) {
+            return;
+        }
+
+        $orders = PrePlanOrder::query()
+            ->where('status', 'pending')
+            ->whereDoesntHave('dispatchTasks', function ($query): void {
+                $query->whereIn('dispatch_tasks.status', ['draft', 'assigned', 'accepted', 'in_progress']);
+            })
+            ->orderBy('expected_pickup_at')
+            ->get();
+        if ($orders->isEmpty()) {
+            return;
+        }
+
+        $preview = $this->smartDispatchService->preview($orders, collect([$vehicle]));
+        $assignment = collect($preview['assignments'] ?? [])
+            ->first(fn ($item) => (int) ($item['vehicle_id'] ?? 0) === (int) $vehicle->id);
+        if (! is_array($assignment) || empty($assignment['order_ids'])) {
+            return;
+        }
+
+        $orderIds = collect($assignment['order_ids'])->map(fn ($id) => (int) $id)->values()->all();
+        $dispatchMode = count($orderIds) > 1
+            ? 'single_vehicle_multi_order'
+            : 'single_vehicle_single_order';
+
+        $task = DispatchTask::query()->create([
+            'task_no' => 'DT-'.now()->format('Ymd').'-'.Str::upper(Str::random(6)),
+            'vehicle_id' => (int) $vehicle->id,
+            'driver_id' => (int) $vehicle->driver_id,
+            'dispatcher_id' => $completedTask->dispatcher_id,
+            'dispatch_mode' => $dispatchMode,
+            'status' => 'assigned',
+            'estimated_distance_km' => (float) ($assignment['estimated_distance_km'] ?? 0),
+            'estimated_fuel_l' => (float) ($assignment['estimated_fuel_l'] ?? 0),
+            'route_meta' => array_merge(
+                $assignment['route_meta'] ?? [],
+                [
+                    'estimated_duration_min' => $assignment['estimated_duration_min'] ?? null,
+                    'compartment_plan' => $assignment['compartment_plan'] ?? [],
+                    'auto_next_trip' => true,
+                ]
+            ),
+        ]);
+
+        $syncData = [];
+        foreach ($orderIds as $index => $orderId) {
+            $syncData[$orderId] = ['sequence' => $index + 1];
+        }
+        $task->orders()->sync($syncData);
+        $this->buildTaskWaypoints($task->id, $orderIds);
+
+        PrePlanOrder::query()->whereIn('id', $orderIds)->update(['status' => 'scheduled']);
+        Vehicle::query()->where('id', (int) $vehicle->id)->update(['status' => 'busy']);
+    }
+
+    private function buildTaskWaypoints(int $taskId, array $orderIds): void
+    {
+        $orders = PrePlanOrder::query()
+            ->whereIn('id', $orderIds)
+            ->get()
+            ->keyBy('id');
+
+        DB::table('task_waypoints')->where('dispatch_task_id', $taskId)->delete();
+
+        $rows = [];
+        $sequence = 1;
+        foreach ($orderIds as $orderId) {
+            $order = $orders->get($orderId);
+            if (! $order) {
+                continue;
+            }
+
+            $rows[] = [
+                'dispatch_task_id' => $taskId,
+                'node_type' => 'pickup',
+                'sequence' => $sequence++,
+                'address' => sprintf(
+                    '订单%s｜装货:%s｜卸货:%s',
+                    $order->order_no,
+                    $order->pickup_address,
+                    $order->dropoff_address
+                ),
+                'status' => 'pending',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ];
+        }
+
+        if ($rows !== []) {
+            DB::table('task_waypoints')->insert($rows);
+        }
     }
 
     private function hydrateDocumentUrls(DispatchTask $task, Request $request): void
