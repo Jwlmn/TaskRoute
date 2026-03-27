@@ -1,9 +1,11 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { onUnmounted } from 'vue'
 import api from '../../services/api'
 
 const loading = ref(false)
 const errorMessage = ref('')
+let refreshTimer = null
 const overview = ref({
   metrics: {
     pending_pre_plan_orders: 0,
@@ -46,11 +48,25 @@ const fetchOverview = async () => {
 
 onMounted(() => {
   fetchOverview()
+  refreshTimer = window.setInterval(() => {
+    fetchOverview()
+  }, 30000)
+})
+
+onUnmounted(() => {
+  if (refreshTimer) {
+    window.clearInterval(refreshTimer)
+    refreshTimer = null
+  }
 })
 </script>
 
 <template>
   <div>
+    <div class="table-header mb-12">
+      <div class="card-title">首页看板</div>
+      <el-button plain size="small" :loading="loading" @click="fetchOverview">刷新数据</el-button>
+    </div>
     <el-alert
       v-if="errorMessage"
       class="mb-12"
