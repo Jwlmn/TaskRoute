@@ -17,6 +17,7 @@ const loadingSites = ref(false)
 const loadingVehicles = ref(false)
 
 const createDialogVisible = ref(false)
+const batchCreateDialogVisible = ref(false)
 const editDialogVisible = ref(false)
 const manualDispatchDialogVisible = ref(false)
 
@@ -24,11 +25,14 @@ const creating = ref(false)
 const editing = ref(false)
 const dispatching = ref(false)
 const auditing = ref(false)
+const managingOrder = ref(false)
 
 const currentEditId = ref(null)
 
 const createFormRef = ref()
 const editFormRef = ref()
+
+const batchCreatePayloadText = ref('')
 
 const createForm = reactive({
   cargo_category_id: null,
@@ -299,12 +303,32 @@ const openCreateDialog = () => {
   createDialogVisible.value = true
 }
 
+const openBatchCreateDialog = () => {
+  batchCreatePayloadText.value = ''
+  batchCreateDialogVisible.value = true
+}
+
 const openEditDialog = (row) => {
   resetEditForm()
   currentEditId.value = row.id
   fillOrderForm(editForm, row)
   editForm.status = row.status
   editDialogVisible.value = true
+}
+
+const parseBatchPayload = () => {
+  const lines = String(batchCreatePayloadText.value || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+
+  return lines.map((line, index) => {
+    try {
+      return JSON.parse(line)
+    } catch {
+      throw new Error(`第 ${index + 1} 行 JSON 格式错误`)
+    }
+  })
 }
 
 const createPrePlanOrder = async () => {
@@ -343,6 +367,33 @@ const updatePrePlanOrder = async () => {
     ElMessage.error(error?.response?.data?.message || '修改失败')
   } finally {
     editing.value = false
+  }
+}
+
+const batchCreatePrePlanOrders = async () => {
+  let orders = []
+  try {
+    orders = parseBatchPayload()
+  } catch (error) {
+    ElMessage.error(error?.message || '批量内容格式错误')
+    return
+  }
+
+  if (!orders.length) {
+    ElMessage.warning('请至少输入一条订单 JSON')
+    return
+  }
+
+  creating.value = true
+  try {
+    await api.post('/pre-plan-order/batch-create', { orders })
+    ElMessage.success(`批量创建成功，共 ${orders.length} 条`)
+    batchCreateDialogVisible.value = false
+    await loadPrePlanOrders()
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '批量创建失败')
+  } finally {
+    creating.value = false
   }
 }
 
@@ -414,6 +465,57 @@ const rejectOrder = async (row) => {
   }
 }
 
+const lockOrder = async (row) => {
+  managingOrder.value = true
+  try {
+    await api.post('/pre-plan-order/lock', { id: row.id })
+    ElMessage.success('已锁单')
+    await loadPrePlanOrders()
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '锁单失败')
+  } finally {
+    managingOrder.value = false
+  }
+}
+
+const unlockOrder = async (row) => {
+  managingOrder.value = true
+  try {
+    await api.post('/pre-plan-order/unlock', { id: row.id })
+    ElMessage.success('已解锁')
+    await loadPrePlanOrders()
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '解锁失败')
+  } finally {
+    managingOrder.value = false
+  }
+}
+
+const voidOrder = async (row) => {
+  const { value } = await ElMessageBox.prompt('请输入作废原因', '作废计划单', {
+    confirmButtonText: '确认作废',
+    cancelButtonText: '取消',
+    inputPlaceholder: '作废原因（必填）',
+    inputValidator: (v) => (String(v || '').trim().length > 0 ? true : '请输入作废原因'),
+  }).catch(() => ({ value: null }))
+
+  if (!value) return
+
+  managingOrder.value = true
+  try {
+    await api.post('/pre-plan-order/void', {
+      id: row.id,
+      void_remark: String(value).trim(),
+    })
+    ElMessage.success('计划单已作废')
+    await loadPrePlanOrders()
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '作废失败')
+  } finally {
+    managingOrder.value = false
+  }
+}
+
 const submitManualDispatch = async () => {
   if (!manualDispatchForm.vehicle_id) {
     ElMessage.warning('请选择派单车辆')
@@ -467,6 +569,7 @@ onMounted(() => {
         <div class="card-title">预计划单管理</div>
         <div>
           <el-button class="mr-8" plain type="primary" @click="openManualDispatchDialog">手动派单</el-button>
+          <el-button class="mr-8" plain @click="openBatchCreateDialog">批量创建</el-button>
           <el-button type="primary" @click="openCreateDialog">新建预计划单</el-button>
         </div>
       </div>
@@ -526,10 +629,54 @@ onMounted(() => {
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="audit_remark" label="审核备注" min-width="160" />
-      <el-table-column label="操作" width="200" fixed="right">
+      <el-table-column label="锁单" min-width="80">
         <template #default="{ row }">
-          <el-button link type="primary" :disabled="!editableStatusSet.has(row.status)" @click="openEditDialog(row)">编辑</el-button>
+          <el-tag :type="row.is_locked ? 'warning' : 'info'">{{ row.is_locked ? '已锁定' : '未锁定' }}</el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column prop="audit_remark" label="审核备注" min-width="160" />
+      <el-table-column label="作废原因" min-width="160">
+        <template #default="{ row }">
+          {{ row.void_remark || '-' }}
+        </template>
+      </el-table-column>
+      <el-table-column label="操作" width="280" fixed="right">
+        <template #default="{ row }">
+          <el-button
+            link
+            type="primary"
+            :disabled="!editableStatusSet.has(row.status) || row.is_locked || row.status === 'cancelled'"
+            @click="openEditDialog(row)"
+          >
+            编辑
+          </el-button>
+          <el-button
+            v-if="!row.is_locked && row.status !== 'cancelled'"
+            link
+            type="warning"
+            :loading="managingOrder"
+            @click="lockOrder(row)"
+          >
+            锁单
+          </el-button>
+          <el-button
+            v-if="row.is_locked && row.status !== 'cancelled'"
+            link
+            type="success"
+            :loading="managingOrder"
+            @click="unlockOrder(row)"
+          >
+            解锁
+          </el-button>
+          <el-button
+            v-if="row.status !== 'cancelled'"
+            link
+            type="danger"
+            :loading="managingOrder"
+            @click="voidOrder(row)"
+          >
+            作废
+          </el-button>
           <el-button
             v-if="row.audit_status === 'pending_approval'"
             link
@@ -552,6 +699,26 @@ onMounted(() => {
       </el-table-column>
     </el-table>
   </el-card>
+
+  <el-dialog v-model="batchCreateDialogVisible" title="批量创建预计划单" width="760px" destroy-on-close>
+    <el-alert
+      class="mb-12"
+      type="info"
+      :closable="false"
+      show-icon
+      title="每行一个 JSON 对象，必填字段：cargo_category_id、client_name、pickup_address、dropoff_address"
+    />
+    <el-input
+      v-model="batchCreatePayloadText"
+      type="textarea"
+      :rows="12"
+      placeholder='{"cargo_category_id":1,"client_name":"客户A","pickup_address":"上海仓A","dropoff_address":"上海店A"}'
+    />
+    <template #footer>
+      <el-button @click="batchCreateDialogVisible = false">取消</el-button>
+      <el-button type="primary" :loading="creating" @click="batchCreatePrePlanOrders">确认批量创建</el-button>
+    </template>
+  </el-dialog>
 
   <el-dialog v-model="createDialogVisible" title="新建预计划单" width="680px" destroy-on-close>
     <el-form ref="createFormRef" :model="createForm" :rules="formRules" label-width="120px">

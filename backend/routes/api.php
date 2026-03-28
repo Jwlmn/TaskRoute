@@ -29,8 +29,12 @@ Route::prefix('v1')->group(function (): void {
         Route::middleware('role:admin,dispatcher')->group(function (): void {
             Route::post('/pre-plan-order/list', [PrePlanOrderController::class, 'index']);
             Route::post('/pre-plan-order/create', [PrePlanOrderController::class, 'store']);
+            Route::post('/pre-plan-order/batch-create', [PrePlanOrderController::class, 'batchStore']);
             Route::post('/pre-plan-order/detail', [PrePlanOrderController::class, 'showByPayload']);
             Route::post('/pre-plan-order/update', [PrePlanOrderController::class, 'updateByPayload']);
+            Route::post('/pre-plan-order/lock', [PrePlanOrderController::class, 'lock']);
+            Route::post('/pre-plan-order/unlock', [PrePlanOrderController::class, 'unlock']);
+            Route::post('/pre-plan-order/void', [PrePlanOrderController::class, 'void']);
             Route::post('/pre-plan-order/audit-list', [PrePlanOrderController::class, 'auditList']);
             Route::post('/pre-plan-order/audit-approve', [PrePlanOrderController::class, 'auditApprove']);
             Route::post('/pre-plan-order/audit-reject', [PrePlanOrderController::class, 'auditReject']);

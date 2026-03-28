@@ -38,6 +38,10 @@ return new class extends Migration
             $table->foreignId('audited_by')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamp('audited_at')->nullable();
             $table->string('audit_remark', 255)->nullable();
+            $table->boolean('is_locked')->default(false);
+            $table->foreignId('voided_by')->nullable()->constrained('users')->nullOnDelete();
+            $table->timestamp('voided_at')->nullable();
+            $table->string('void_remark', 255)->nullable();
             $table->enum('status', ['pending', 'scheduled', 'in_progress', 'completed', 'cancelled'])->default('pending');
             $table->json('meta')->nullable();
             $table->timestamps();

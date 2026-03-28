@@ -40,6 +40,10 @@ class PrePlanOrder extends Model
         'audited_by',
         'audited_at',
         'audit_remark',
+        'is_locked',
+        'voided_by',
+        'voided_at',
+        'void_remark',
         'status',
         'meta',
     ];
@@ -51,6 +55,8 @@ class PrePlanOrder extends Model
             'expected_delivery_at' => 'datetime',
             'freight_calculated_at' => 'datetime',
             'audited_at' => 'datetime',
+            'voided_at' => 'datetime',
+            'is_locked' => 'boolean',
             'meta' => 'array',
         ];
     }

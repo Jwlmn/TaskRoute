@@ -61,6 +61,49 @@ class PrePlanOrderController extends Controller
         return response()->json($order, 201);
     }
 
+    public function batchStore(Request $request): JsonResponse
+    {
+        $payload = $request->validate([
+            'orders' => ['required', 'array', 'min:1', 'max:200'],
+            'orders.*.cargo_category_id' => ['required', 'integer', 'exists:cargo_categories,id'],
+            'orders.*.client_name' => ['required', 'string', 'max:255'],
+            'orders.*.pickup_address' => ['required', 'string', 'max:255'],
+            'orders.*.pickup_contact_name' => ['nullable', 'string', 'max:64'],
+            'orders.*.pickup_contact_phone' => ['nullable', 'string', 'max:32'],
+            'orders.*.dropoff_address' => ['required', 'string', 'max:255'],
+            'orders.*.dropoff_contact_name' => ['nullable', 'string', 'max:64'],
+            'orders.*.dropoff_contact_phone' => ['nullable', 'string', 'max:32'],
+            'orders.*.cargo_weight_kg' => ['nullable', 'numeric', 'min:0'],
+            'orders.*.cargo_volume_m3' => ['nullable', 'numeric', 'min:0'],
+            'orders.*.freight_calc_scheme' => ['nullable', 'in:by_weight,by_volume,by_trip'],
+            'orders.*.freight_unit_price' => ['nullable', 'numeric', 'min:0'],
+            'orders.*.freight_trip_count' => ['nullable', 'integer', 'min:1'],
+            'orders.*.actual_delivered_weight_kg' => ['nullable', 'numeric', 'min:0'],
+            'orders.*.loss_allowance_kg' => ['nullable', 'numeric', 'min:0'],
+            'orders.*.loss_deduct_unit_price' => ['nullable', 'numeric', 'min:0'],
+            'orders.*.expected_pickup_at' => ['nullable', 'date'],
+            'orders.*.expected_delivery_at' => ['nullable', 'date'],
+            'orders.*.meta' => ['nullable', 'array'],
+        ]);
+
+        $createdOrders = DB::transaction(function () use ($payload, $request) {
+            return collect($payload['orders'])->map(function (array $orderPayload) use ($request) {
+                $orderPayload['order_no'] = 'PO-'.now()->format('Ymd').'-'.Str::upper(Str::random(6));
+                $orderPayload['submitter_id'] = (int) $request->user()->id;
+                $orderPayload['audit_status'] = 'approved';
+                $orderPayload['audited_by'] = (int) $request->user()->id;
+                $orderPayload['audited_at'] = now();
+
+                return PrePlanOrder::query()->create($orderPayload);
+            });
+        });
+
+        return response()->json([
+            'count' => $createdOrders->count(),
+            'data' => $createdOrders->values(),
+        ], 201);
+    }
+
     public function customerSubmit(Request $request): JsonResponse
     {
         $payload = $request->validate([
@@ -202,15 +245,78 @@ class PrePlanOrderController extends Controller
         $payload = $request->validate([
             'audit_status' => ['nullable', 'in:pending_approval,approved,rejected'],
             'submitter_id' => ['nullable', 'integer', 'exists:users,id'],
+            'is_locked' => ['nullable', 'boolean'],
         ]);
 
         return response()->json(
             PrePlanOrder::query()
                 ->when($payload['audit_status'] ?? null, fn ($query, $auditStatus) => $query->where('audit_status', $auditStatus))
                 ->when($payload['submitter_id'] ?? null, fn ($query, $submitterId) => $query->where('submitter_id', $submitterId))
+                ->when(array_key_exists('is_locked', $payload), fn ($query) => $query->where('is_locked', (bool) $payload['is_locked']))
                 ->latest()
                 ->paginate(20)
         );
+    }
+
+    public function lock(Request $request): JsonResponse
+    {
+        $payload = $request->validate([
+            'id' => ['required', 'integer', 'exists:pre_plan_orders,id'],
+        ]);
+
+        $order = PrePlanOrder::query()->findOrFail($payload['id']);
+        if (! $this->canModifyOrder($order)) {
+            return response()->json(['message' => '关联任务节点已到达/完成，预计划单不可锁定'], 422);
+        }
+        if ($order->status === 'cancelled') {
+            return response()->json(['message' => '已作废计划单不可锁定'], 422);
+        }
+
+        $order->is_locked = true;
+        $order->save();
+
+        return response()->json($order->fresh());
+    }
+
+    public function unlock(Request $request): JsonResponse
+    {
+        $payload = $request->validate([
+            'id' => ['required', 'integer', 'exists:pre_plan_orders,id'],
+        ]);
+
+        $order = PrePlanOrder::query()->findOrFail($payload['id']);
+        if (! $this->canModifyOrder($order, true)) {
+            return response()->json(['message' => '关联任务节点已到达/完成，预计划单不可解锁'], 422);
+        }
+
+        $order->is_locked = false;
+        $order->save();
+
+        return response()->json($order->fresh());
+    }
+
+    public function void(Request $request): JsonResponse
+    {
+        $payload = $request->validate([
+            'id' => ['required', 'integer', 'exists:pre_plan_orders,id'],
+            'void_remark' => ['required', 'string', 'max:255'],
+        ]);
+
+        $order = PrePlanOrder::query()->findOrFail($payload['id']);
+        if ($order->status === 'cancelled') {
+            return response()->json(['message' => '计划单已作废，请勿重复操作'], 422);
+        }
+        if (! $this->canModifyOrder($order)) {
+            return response()->json(['message' => '关联任务节点已到达/完成，预计划单不可作废'], 422);
+        }
+
+        $order->status = 'cancelled';
+        $order->voided_by = (int) $request->user()->id;
+        $order->voided_at = now();
+        $order->void_remark = $payload['void_remark'];
+        $order->save();
+
+        return response()->json($order->fresh());
     }
 
     public function auditApprove(Request $request): JsonResponse
@@ -381,8 +487,12 @@ class PrePlanOrderController extends Controller
         return response()->json($prePlanOrder->fresh());
     }
 
-    private function canModifyOrder(PrePlanOrder $prePlanOrder): bool
+    private function canModifyOrder(PrePlanOrder $prePlanOrder, bool $ignoreLock = false): bool
     {
+        if (! $ignoreLock && (bool) $prePlanOrder->is_locked) {
+            return false;
+        }
+
         return ! $prePlanOrder->dispatchTasks()
             ->whereHas('waypoints', fn ($query) => $query->whereIn('status', ['arrived', 'completed']))
             ->exists();

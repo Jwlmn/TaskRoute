@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\CargoCategory;
+use App\Models\PrePlanOrder;
 use App\Models\User;
 use App\Models\Vehicle;
 use Database\Seeders\DatabaseSeeder;
@@ -157,5 +158,60 @@ class PrePlanOrderAuditApiTest extends TestCase
         $this->postJson('/api/v1/pre-plan-order/customer-resubmit', [
             'id' => $orderId,
         ])->assertOk()->assertJsonPath('audit_status', 'pending_approval');
+    }
+
+    public function test_dispatcher_can_batch_create_pre_plan_orders(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $cargo = CargoCategory::query()->firstOrFail();
+        Sanctum::actingAs($dispatcher);
+
+        $response = $this->postJson('/api/v1/pre-plan-order/batch-create', [
+            'orders' => [
+                [
+                    'cargo_category_id' => $cargo->id,
+                    'client_name' => '批量客户A',
+                    'pickup_address' => '批量装货地A',
+                    'dropoff_address' => '批量卸货地A',
+                ],
+                [
+                    'cargo_category_id' => $cargo->id,
+                    'client_name' => '批量客户B',
+                    'pickup_address' => '批量装货地B',
+                    'dropoff_address' => '批量卸货地B',
+                ],
+            ],
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('count', 2)
+            ->assertJsonPath('data.0.audit_status', 'approved');
+    }
+
+    public function test_dispatcher_can_lock_unlock_and_void_pre_plan_order(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $order = PrePlanOrder::query()->where('status', 'pending')->firstOrFail();
+        Sanctum::actingAs($dispatcher);
+
+        $this->postJson('/api/v1/pre-plan-order/lock', ['id' => $order->id])
+            ->assertOk()
+            ->assertJsonPath('is_locked', true);
+
+        $this->postJson('/api/v1/pre-plan-order/unlock', ['id' => $order->id])
+            ->assertOk()
+            ->assertJsonPath('is_locked', false);
+
+        $this->postJson('/api/v1/pre-plan-order/void', [
+            'id' => $order->id,
+            'void_remark' => '客户取消，本单作废',
+        ])
+            ->assertOk()
+            ->assertJsonPath('status', 'cancelled')
+            ->assertJsonPath('void_remark', '客户取消，本单作废');
     }
 }
