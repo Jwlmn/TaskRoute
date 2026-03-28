@@ -16,6 +16,7 @@ class SystemMessage extends Model
         'title',
         'content',
         'meta',
+        'is_pinned',
         'read_at',
     ];
 
@@ -23,6 +24,7 @@ class SystemMessage extends Model
     {
         return [
             'meta' => 'array',
+            'is_pinned' => 'boolean',
             'read_at' => 'datetime',
         ];
     }

@@ -27,6 +27,10 @@ Route::prefix('v1')->group(function (): void {
         Route::get('/auth/me', [AuthController::class, 'me']);
         Route::post('/auth/logout', [AuthController::class, 'logout']);
         Route::post('/dashboard/overview', DashboardOverviewController::class);
+        Route::post('/message/list', [SystemMessageController::class, 'list']);
+        Route::post('/message/read', [SystemMessageController::class, 'markRead']);
+        Route::post('/message/read-batch', [SystemMessageController::class, 'markReadBatch']);
+        Route::post('/message/pin', [SystemMessageController::class, 'togglePin']);
 
         Route::middleware('role:admin,dispatcher')->group(function (): void {
             Route::post('/pre-plan-order/list', [PrePlanOrderController::class, 'index']);
@@ -48,6 +52,7 @@ Route::prefix('v1')->group(function (): void {
             Route::post('/pre-plan-order/audit-remark-templates', [PrePlanOrderController::class, 'auditRemarkTemplates']);
             Route::post('/pre-plan-order/audit-timeout-reminder', [PrePlanOrderController::class, 'auditTimeoutReminder']);
             Route::post('/pre-plan-order/revision-compare', [PrePlanOrderController::class, 'revisionCompare']);
+            Route::post('/pre-plan-order/audit-log-list', [PrePlanOrderController::class, 'auditLogList']);
             Route::post('/freight-template/list', [FreightRateTemplateController::class, 'list']);
             Route::post('/freight-template/create', [FreightRateTemplateController::class, 'create']);
             Route::post('/freight-template/detail', [FreightRateTemplateController::class, 'detail']);
@@ -65,8 +70,6 @@ Route::prefix('v1')->group(function (): void {
             Route::post('/pre-plan-order/customer-update', [PrePlanOrderController::class, 'customerUpdate']);
             Route::post('/pre-plan-order/customer-resubmit', [PrePlanOrderController::class, 'customerResubmit']);
             Route::post('/pre-plan-order/revision-compare', [PrePlanOrderController::class, 'revisionCompare']);
-            Route::post('/message/list', [SystemMessageController::class, 'list']);
-            Route::post('/message/read', [SystemMessageController::class, 'markRead']);
         });
 
         Route::post('/dispatch-task/list', [DispatchTaskController::class, 'index']);

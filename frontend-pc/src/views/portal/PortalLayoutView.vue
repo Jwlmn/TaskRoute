@@ -22,6 +22,7 @@ const menuTree = computed(() => {
         { index: 'dispatch-workbench', label: '调度任务管理', permission: 'dispatch' },
         { index: 'exception-task-management', label: '异常任务管理', permission: 'dispatch' },
         { index: 'mobile-task-center', label: '司机定位与轨迹回放', permission: 'mobile_tasks' },
+        { index: 'order-audit-log', label: '操作审计查询', permission: 'audit_log' },
       ],
     },
     {
@@ -39,6 +40,7 @@ const menuTree = computed(() => {
       label: '系统管理',
       children: [
         { index: 'user-management', label: '账号管理', permission: 'users' },
+        { index: 'notification-center', label: '通知中心', permission: 'notifications' },
       ],
     },
     {
@@ -46,6 +48,7 @@ const menuTree = computed(() => {
       label: '客户协同',
       children: [
         { index: 'customer-pre-plan-order', label: '客户计划单', permission: 'customer_orders' },
+        { index: 'notification-center', label: '通知中心', permission: 'notifications' },
       ],
     },
   ]

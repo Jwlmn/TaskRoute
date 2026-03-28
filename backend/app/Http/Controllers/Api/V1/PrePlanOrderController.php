@@ -885,6 +885,71 @@ class PrePlanOrderController extends Controller
         ]);
     }
 
+    public function auditLogList(Request $request): JsonResponse
+    {
+        $payload = $request->validate([
+            'keyword' => ['nullable', 'string', 'max:100'],
+            'action' => ['nullable', 'string', 'max:100'],
+            'operator_id' => ['nullable', 'integer'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'page_size' => ['nullable', 'integer', 'min:10', 'max:200'],
+        ]);
+
+        $keyword = trim((string) ($payload['keyword'] ?? ''));
+        $action = trim((string) ($payload['action'] ?? ''));
+        $operatorId = $payload['operator_id'] ?? null;
+        $page = (int) ($payload['page'] ?? 1);
+        $pageSize = (int) ($payload['page_size'] ?? 20);
+
+        $orders = PrePlanOrder::query()
+            ->when($keyword !== '', fn ($query) => $query->where(function ($sub) use ($keyword): void {
+                $sub->where('order_no', 'like', "%{$keyword}%")
+                    ->orWhere('client_name', 'like', "%{$keyword}%");
+            }))
+            ->latest()
+            ->limit(1000)
+            ->get(['id', 'order_no', 'client_name', 'meta']);
+
+        $logs = $orders->flatMap(function (PrePlanOrder $order) {
+            $history = data_get($order->meta, 'history');
+            if (! is_array($history)) {
+                return [];
+            }
+
+            return collect($history)->map(function ($row) use ($order) {
+                return [
+                    'order_id' => (int) $order->id,
+                    'order_no' => (string) $order->order_no,
+                    'client_name' => (string) $order->client_name,
+                    'at' => $row['at'] ?? null,
+                    'action' => $row['action'] ?? null,
+                    'operator_id' => $row['operator_id'] ?? null,
+                    'operator_account' => $row['operator_account'] ?? null,
+                    'operator_name' => $row['operator_name'] ?? null,
+                    'extra' => $row['extra'] ?? null,
+                ];
+            });
+        })->filter(function (array $row) use ($action, $operatorId): bool {
+            if ($action !== '' && (string) ($row['action'] ?? '') !== $action) {
+                return false;
+            }
+            if ($operatorId !== null && (int) ($row['operator_id'] ?? 0) !== (int) $operatorId) {
+                return false;
+            }
+            return true;
+        })->sortByDesc('at')->values();
+
+        $total = $logs->count();
+        $data = $logs->slice(($page - 1) * $pageSize, $pageSize)->values()->all();
+
+        return response()->json([
+            'data' => $data,
+            'total' => $total,
+            'current_page' => $page,
+            'per_page' => $pageSize,
+        ]);
+    }
+
     public function show(PrePlanOrder $prePlanOrder): JsonResponse
     {
         return response()->json($prePlanOrder);

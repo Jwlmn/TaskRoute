@@ -13,6 +13,8 @@ import PersonnelManagementView from '../views/portal/PersonnelManagementView.vue
 import SiteManagementView from '../views/portal/SiteManagementView.vue'
 import FreightTemplateManagementView from '../views/portal/FreightTemplateManagementView.vue'
 import SettlementManagementView from '../views/portal/SettlementManagementView.vue'
+import NotificationCenterView from '../views/portal/NotificationCenterView.vue'
+import OrderAuditLogView from '../views/portal/OrderAuditLogView.vue'
 import { hasPermission, readCurrentUser } from '../utils/auth'
 
 const router = createRouter({
@@ -104,6 +106,18 @@ const router = createRouter({
           name: 'user-management',
           component: UserManagementView,
           meta: { permission: 'users' },
+        },
+        {
+          path: 'notifications',
+          name: 'notification-center',
+          component: NotificationCenterView,
+          meta: { permission: 'notifications' },
+        },
+        {
+          path: 'audit-logs',
+          name: 'order-audit-log',
+          component: OrderAuditLogView,
+          meta: { permission: 'audit_log' },
         },
       ],
     },

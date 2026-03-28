@@ -15,6 +15,7 @@ return new class extends Migration
             $table->string('title', 120);
             $table->string('content', 500);
             $table->json('meta')->nullable();
+            $table->boolean('is_pinned')->default(false);
             $table->timestamp('read_at')->nullable();
             $table->timestamps();
             $table->index(['user_id', 'read_at']);
