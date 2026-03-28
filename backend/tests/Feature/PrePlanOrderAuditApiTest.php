@@ -101,4 +101,49 @@ class PrePlanOrderAuditApiTest extends TestCase
             'status' => 'scheduled',
         ]);
     }
+
+    public function test_customer_can_modify_rejected_order_and_resubmit_with_message_read_flow(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $customer = User::query()->where('account', 'customer')->firstOrFail();
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $cargo = CargoCategory::query()->firstOrFail();
+
+        Sanctum::actingAs($customer);
+        $submitResponse = $this->postJson('/api/v1/pre-plan-order/customer-submit', [
+            'cargo_category_id' => $cargo->id,
+            'client_name' => '客户自助下单C',
+            'pickup_address' => '上海仓X',
+            'dropoff_address' => '上海店Y',
+            'cargo_weight_kg' => 2000,
+            'cargo_volume_m3' => 4,
+        ])->assertCreated();
+        $orderId = (int) $submitResponse->json('id');
+
+        Sanctum::actingAs($dispatcher);
+        $this->postJson('/api/v1/pre-plan-order/audit-reject', [
+            'id' => $orderId,
+            'audit_remark' => '地址信息不完整，请补充后重提',
+        ])->assertOk()->assertJsonPath('audit_status', 'rejected');
+
+        Sanctum::actingAs($customer);
+        $messageListResponse = $this->postJson('/api/v1/message/list', ['unread_only' => true]);
+        $messageListResponse->assertOk()
+            ->assertJsonPath('data.0.meta.order_id', $orderId)
+            ->assertJsonPath('data.0.meta.audit_status', 'rejected');
+        $messageId = (int) $messageListResponse->json('data.0.id');
+
+        $this->postJson('/api/v1/message/read', ['id' => $messageId])
+            ->assertOk();
+
+        $this->postJson('/api/v1/pre-plan-order/customer-update', [
+            'id' => $orderId,
+            'pickup_address' => '上海仓X（已补充月台信息）',
+        ])->assertOk()->assertJsonPath('pickup_address', '上海仓X（已补充月台信息）');
+
+        $this->postJson('/api/v1/pre-plan-order/customer-resubmit', [
+            'id' => $orderId,
+        ])->assertOk()->assertJsonPath('audit_status', 'pending_approval');
+    }
 }

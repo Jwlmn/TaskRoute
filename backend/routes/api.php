@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\V1\DriverTaskExecutionController;
 use App\Http\Controllers\Api\V1\DriverLocationController;
 use App\Http\Controllers\Api\V1\MetaController;
 use App\Http\Controllers\Api\V1\PrePlanOrderController;
+use App\Http\Controllers\Api\V1\SystemMessageController;
 use App\Http\Controllers\Api\V1\Resource\ResourcePersonnelController;
 use App\Http\Controllers\Api\V1\Resource\ResourceSiteController;
 use App\Http\Controllers\Api\V1\Resource\ResourceVehicleController;
@@ -39,6 +40,10 @@ Route::prefix('v1')->group(function (): void {
             Route::post('/pre-plan-order/customer-submit', [PrePlanOrderController::class, 'customerSubmit']);
             Route::post('/pre-plan-order/customer-list', [PrePlanOrderController::class, 'customerList']);
             Route::post('/pre-plan-order/customer-detail', [PrePlanOrderController::class, 'customerDetail']);
+            Route::post('/pre-plan-order/customer-update', [PrePlanOrderController::class, 'customerUpdate']);
+            Route::post('/pre-plan-order/customer-resubmit', [PrePlanOrderController::class, 'customerResubmit']);
+            Route::post('/message/list', [SystemMessageController::class, 'list']);
+            Route::post('/message/read', [SystemMessageController::class, 'markRead']);
         });
 
         Route::post('/dispatch-task/list', [DispatchTaskController::class, 'index']);

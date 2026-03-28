@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\PrePlanOrder;
+use App\Models\SystemMessage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -118,6 +119,72 @@ class PrePlanOrderController extends Controller
         return response()->json($order);
     }
 
+    public function customerUpdate(Request $request): JsonResponse
+    {
+        $payload = $request->validate([
+            'id' => ['required', 'integer', 'exists:pre_plan_orders,id'],
+            'cargo_category_id' => ['sometimes', 'integer', 'exists:cargo_categories,id'],
+            'client_name' => ['sometimes', 'string', 'max:255'],
+            'pickup_address' => ['sometimes', 'string', 'max:255'],
+            'dropoff_address' => ['sometimes', 'string', 'max:255'],
+            'cargo_weight_kg' => ['sometimes', 'numeric', 'min:0'],
+            'cargo_volume_m3' => ['sometimes', 'numeric', 'min:0'],
+            'freight_calc_scheme' => ['sometimes', 'nullable', 'in:by_weight,by_volume,by_trip'],
+            'freight_unit_price' => ['sometimes', 'nullable', 'numeric', 'min:0'],
+            'freight_trip_count' => ['sometimes', 'nullable', 'integer', 'min:1'],
+            'actual_delivered_weight_kg' => ['sometimes', 'nullable', 'numeric', 'min:0'],
+            'loss_allowance_kg' => ['sometimes', 'nullable', 'numeric', 'min:0'],
+            'loss_deduct_unit_price' => ['sometimes', 'nullable', 'numeric', 'min:0'],
+            'expected_pickup_at' => ['sometimes', 'nullable', 'date'],
+            'expected_delivery_at' => ['sometimes', 'nullable', 'date'],
+            'meta' => ['sometimes', 'array'],
+        ]);
+
+        $order = PrePlanOrder::query()->findOrFail($payload['id']);
+        if ((int) $order->submitter_id !== (int) $request->user()->id) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+        if ($order->audit_status !== 'rejected') {
+            return response()->json(['message' => '仅已驳回计划单可由客户修改'], 422);
+        }
+        if (! $this->canModifyOrder($order)) {
+            return response()->json(['message' => '关联任务节点已到达/完成，预计划单不可修改'], 422);
+        }
+
+        unset($payload['id']);
+        $order->update($payload);
+
+        return response()->json($order->fresh());
+    }
+
+    public function customerResubmit(Request $request): JsonResponse
+    {
+        $payload = $request->validate([
+            'id' => ['required', 'integer', 'exists:pre_plan_orders,id'],
+        ]);
+
+        return DB::transaction(function () use ($payload, $request): JsonResponse {
+            $order = PrePlanOrder::query()->lockForUpdate()->findOrFail($payload['id']);
+            if ((int) $order->submitter_id !== (int) $request->user()->id) {
+                return response()->json(['message' => 'Forbidden'], 403);
+            }
+            if ($order->audit_status !== 'rejected') {
+                return response()->json(['message' => '仅已驳回计划单可重新提报'], 422);
+            }
+            if (! $this->canModifyOrder($order)) {
+                return response()->json(['message' => '关联任务节点已到达/完成，预计划单不可修改'], 422);
+            }
+
+            $order->audit_status = 'pending_approval';
+            $order->audited_by = null;
+            $order->audited_at = null;
+            $order->audit_remark = null;
+            $order->save();
+
+            return response()->json($order);
+        });
+    }
+
     public function auditList(Request $request): JsonResponse
     {
         $payload = $request->validate([
@@ -153,6 +220,24 @@ class PrePlanOrderController extends Controller
             $order->audit_remark = $payload['audit_remark'] ?? null;
             $order->save();
 
+            if ($order->submitter_id) {
+                SystemMessage::query()->create([
+                    'user_id' => (int) $order->submitter_id,
+                    'message_type' => 'audit_notice',
+                    'title' => '计划单审核通过',
+                    'content' => sprintf(
+                        '计划单 %s 已审核通过%s',
+                        $order->order_no,
+                        $order->audit_remark ? '，备注：'.$order->audit_remark : ''
+                    ),
+                    'meta' => [
+                        'order_id' => (int) $order->id,
+                        'order_no' => (string) $order->order_no,
+                        'audit_status' => 'approved',
+                    ],
+                ]);
+            }
+
             return $order;
         });
 
@@ -177,6 +262,20 @@ class PrePlanOrderController extends Controller
             $order->audited_at = now();
             $order->audit_remark = $payload['audit_remark'];
             $order->save();
+
+            if ($order->submitter_id) {
+                SystemMessage::query()->create([
+                    'user_id' => (int) $order->submitter_id,
+                    'message_type' => 'audit_notice',
+                    'title' => '计划单审核驳回',
+                    'content' => sprintf('计划单 %s 被驳回，原因：%s', $order->order_no, $order->audit_remark),
+                    'meta' => [
+                        'order_id' => (int) $order->id,
+                        'order_no' => (string) $order->order_no,
+                        'audit_status' => 'rejected',
+                    ],
+                ]);
+            }
 
             return $order;
         });
