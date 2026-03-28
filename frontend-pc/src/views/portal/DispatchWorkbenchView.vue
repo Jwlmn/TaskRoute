@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import * as XLSX from 'xlsx'
 import api from '../../services/api'
 import {
   dispatchModeLabelMap,
@@ -18,9 +19,17 @@ const loadingTasks = ref(false)
 const previewLoading = ref(false)
 const creatingTasks = ref(false)
 const orderDetailLoading = ref(false)
+const taskOrdersLoading = ref(false)
 const previewDialogVisible = ref(false)
 const orderDetailDialogVisible = ref(false)
+const taskOrdersDialogVisible = ref(false)
 const selectedOrder = ref(null)
+const selectedTask = ref(null)
+const taskOrders = ref([])
+const taskOrderFilter = ref({
+  keyword: '',
+  status: '',
+})
 
 const orderMap = computed(() => {
   const map = {}
@@ -98,6 +107,54 @@ const openOrderDetailDialog = async (order) => {
   } finally {
     orderDetailLoading.value = false
   }
+}
+
+const loadTaskOrders = async () => {
+  if (!selectedTask.value?.id) return
+  taskOrdersLoading.value = true
+  try {
+    const { data } = await api.post('/dispatch-task/order-list', {
+      task_id: selectedTask.value.id,
+      keyword: taskOrderFilter.value.keyword || undefined,
+      status: taskOrderFilter.value.status || undefined,
+    })
+    taskOrders.value = Array.isArray(data?.data) ? data.data : []
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '加载任务订单明细失败')
+  } finally {
+    taskOrdersLoading.value = false
+  }
+}
+
+const openTaskOrdersDialog = async (task) => {
+  selectedTask.value = task
+  taskOrderFilter.value.keyword = ''
+  taskOrderFilter.value.status = ''
+  taskOrdersDialogVisible.value = true
+  await loadTaskOrders()
+}
+
+const exportTaskOrders = () => {
+  if (!taskOrders.value.length) {
+    ElMessage.warning('暂无可导出数据')
+    return
+  }
+  const rows = taskOrders.value.map((item) => ({
+    序号: item.sequence,
+    订单号: item.order_no,
+    客户: item.client_name,
+    状态: getOrderTaskStatusLabel(item.status),
+    装货地: item.pickup_address,
+    卸货地: item.dropoff_address,
+    装货联系人: `${item.pickup_contact_name || '-'} / ${item.pickup_contact_phone || '-'}`,
+    收货联系人: `${item.dropoff_contact_name || '-'} / ${item.dropoff_contact_phone || '-'}`,
+    重量kg: item.cargo_weight_kg ?? '',
+    体积m3: item.cargo_volume_m3 ?? '',
+  }))
+  const sheet = XLSX.utils.json_to_sheet(rows)
+  const workbook = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(workbook, sheet, '任务订单明细')
+  XLSX.writeFile(workbook, `${selectedTask.value?.task_no || '调度任务'}-订单明细.xlsx`)
 }
 
 const moveOrder = (assignment, index, delta) => {
@@ -224,6 +281,11 @@ onMounted(async () => {
           {{ getLabel(taskStatusLabelMap, row.status) }}
         </template>
       </el-table-column>
+      <el-table-column label="操作" min-width="90" fixed="right">
+        <template #default="{ row }">
+          <el-button link type="primary" @click="openTaskOrdersDialog(row)">订单明细</el-button>
+        </template>
+      </el-table-column>
     </el-table>
   </el-card>
 
@@ -343,6 +405,57 @@ onMounted(async () => {
     </el-skeleton>
     <template #footer>
       <el-button @click="orderDetailDialogVisible = false">关闭</el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog v-model="taskOrdersDialogVisible" width="980px" destroy-on-close>
+    <template #header>
+      <div class="table-header">
+        <div>调度任务订单明细：{{ selectedTask?.task_no || '-' }}</div>
+        <div>
+          <el-button class="mr-8" plain @click="exportTaskOrders">导出 XLSX</el-button>
+          <el-button plain @click="loadTaskOrders">刷新</el-button>
+        </div>
+      </div>
+    </template>
+    <el-form inline class="mb-12">
+      <el-form-item label="关键词">
+        <el-input v-model="taskOrderFilter.keyword" clearable placeholder="订单号/客户/装卸地" style="width: 220px" />
+      </el-form-item>
+      <el-form-item label="状态">
+        <el-select v-model="taskOrderFilter.status" clearable placeholder="全部状态" style="width: 140px">
+          <el-option label="待接单" value="pending" />
+          <el-option label="已排程" value="scheduled" />
+          <el-option label="执行中" value="in_progress" />
+          <el-option label="已完成" value="completed" />
+          <el-option label="已取消" value="cancelled" />
+        </el-select>
+      </el-form-item>
+      <el-form-item>
+        <el-button type="primary" @click="loadTaskOrders">查询</el-button>
+      </el-form-item>
+    </el-form>
+    <el-table :data="taskOrders" stripe v-loading="taskOrdersLoading">
+      <el-table-column prop="sequence" label="序号" min-width="70" />
+      <el-table-column prop="order_no" label="订单号" min-width="160" />
+      <el-table-column prop="client_name" label="客户" min-width="120" />
+      <el-table-column label="状态" min-width="100">
+        <template #default="{ row }">
+          <el-tag :type="getOrderTaskStatusTagType(row.status)">
+            {{ getOrderTaskStatusLabel(row.status) }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column prop="pickup_address" label="装货地" min-width="180" />
+      <el-table-column prop="dropoff_address" label="卸货地" min-width="180" />
+      <el-table-column label="联系人" min-width="180">
+        <template #default="{ row }">
+          {{ row.pickup_contact_name || '-' }} / {{ row.dropoff_contact_name || '-' }}
+        </template>
+      </el-table-column>
+    </el-table>
+    <template #footer>
+      <el-button @click="taskOrdersDialogVisible = false">关闭</el-button>
     </template>
   </el-dialog>
 </template>

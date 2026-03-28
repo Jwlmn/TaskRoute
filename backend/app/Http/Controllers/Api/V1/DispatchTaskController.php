@@ -207,6 +207,60 @@ class DispatchTaskController extends Controller
         ]);
     }
 
+    public function orderList(Request $request): JsonResponse
+    {
+        if (! in_array($request->user()?->role, ['admin', 'dispatcher', 'driver'], true)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $payload = $request->validate([
+            'task_id' => ['required', 'integer', 'exists:dispatch_tasks,id'],
+            'keyword' => ['nullable', 'string', 'max:100'],
+            'status' => ['nullable', 'in:pending,scheduled,in_progress,completed,cancelled'],
+        ]);
+
+        $dispatchTask = DispatchTask::query()->findOrFail((int) $payload['task_id']);
+        if (! $this->canAccessTask($request, $dispatchTask)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $keyword = trim((string) ($payload['keyword'] ?? ''));
+        $orders = $dispatchTask->orders()
+            ->when($keyword !== '', function ($query) use ($keyword): void {
+                $query->where(function ($sub) use ($keyword): void {
+                    $sub->where('order_no', 'like', "%{$keyword}%")
+                        ->orWhere('client_name', 'like', "%{$keyword}%")
+                        ->orWhere('pickup_address', 'like', "%{$keyword}%")
+                        ->orWhere('dropoff_address', 'like', "%{$keyword}%");
+                });
+            })
+            ->when($payload['status'] ?? null, fn ($query, $status) => $query->where('status', $status))
+            ->orderBy('dispatch_task_orders.sequence')
+            ->get([
+                'pre_plan_orders.id',
+                'pre_plan_orders.order_no',
+                'pre_plan_orders.client_name',
+                'pre_plan_orders.pickup_address',
+                'pre_plan_orders.dropoff_address',
+                'pre_plan_orders.pickup_contact_name',
+                'pre_plan_orders.pickup_contact_phone',
+                'pre_plan_orders.dropoff_contact_name',
+                'pre_plan_orders.dropoff_contact_phone',
+                'pre_plan_orders.cargo_weight_kg',
+                'pre_plan_orders.cargo_volume_m3',
+                'pre_plan_orders.status',
+                'pre_plan_orders.audit_status',
+                'dispatch_task_orders.sequence',
+            ]);
+
+        return response()->json([
+            'task_id' => (int) $dispatchTask->id,
+            'task_no' => (string) $dispatchTask->task_no,
+            'data' => $orders,
+            'total' => $orders->count(),
+        ]);
+    }
+
     public function handleException(Request $request): JsonResponse
     {
         if (! in_array($request->user()?->role, ['admin', 'dispatcher'], true)) {

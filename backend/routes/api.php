@@ -66,6 +66,7 @@ Route::prefix('v1')->group(function (): void {
         Route::post('/dispatch-task/list', [DispatchTaskController::class, 'index']);
         Route::post('/dispatch-task/create', [DispatchTaskController::class, 'store']);
         Route::post('/dispatch-task/detail', [DispatchTaskController::class, 'showByPayload']);
+        Route::post('/dispatch-task/order-list', [DispatchTaskController::class, 'orderList']);
         Route::post('/dispatch-task/update', [DispatchTaskController::class, 'updateByPayload']);
 
         Route::middleware('role:admin,dispatcher')->group(function (): void {

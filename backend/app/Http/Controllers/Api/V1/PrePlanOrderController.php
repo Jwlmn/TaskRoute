@@ -344,8 +344,8 @@ class PrePlanOrderController extends Controller
         if ($order->audit_status !== 'rejected') {
             return response()->json(['message' => '仅已驳回计划单可由客户修改'], 422);
         }
-        if (! $this->canModifyOrder($order)) {
-            return response()->json(['message' => '关联任务节点已到达/完成，预计划单不可修改'], 422);
+        if (! $this->canPerformOrderAction($order, 'edit')) {
+            return response()->json(['message' => '当前状态下预计划单不可修改'], 422);
         }
 
         unset($payload['id']);
@@ -412,11 +412,8 @@ class PrePlanOrderController extends Controller
         ]);
 
         $order = PrePlanOrder::query()->findOrFail($payload['id']);
-        if (! $this->canModifyOrder($order)) {
-            return response()->json(['message' => '关联任务节点已到达/完成，预计划单不可锁定'], 422);
-        }
-        if ($order->status === 'cancelled') {
-            return response()->json(['message' => '已作废计划单不可锁定'], 422);
+        if (! $this->canPerformOrderAction($order, 'lock')) {
+            return response()->json(['message' => '当前状态下预计划单不可锁定'], 422);
         }
 
         $order->is_locked = true;
@@ -433,8 +430,8 @@ class PrePlanOrderController extends Controller
         ]);
 
         $order = PrePlanOrder::query()->findOrFail($payload['id']);
-        if (! $this->canModifyOrder($order, true)) {
-            return response()->json(['message' => '关联任务节点已到达/完成，预计划单不可解锁'], 422);
+        if (! $this->canPerformOrderAction($order, 'unlock')) {
+            return response()->json(['message' => '当前状态下预计划单不可解锁'], 422);
         }
 
         $order->is_locked = false;
@@ -452,11 +449,8 @@ class PrePlanOrderController extends Controller
         ]);
 
         $order = PrePlanOrder::query()->findOrFail($payload['id']);
-        if ($order->status === 'cancelled') {
-            return response()->json(['message' => '计划单已作废，请勿重复操作'], 422);
-        }
-        if (! $this->canModifyOrder($order)) {
-            return response()->json(['message' => '关联任务节点已到达/完成，预计划单不可作废'], 422);
+        if (! $this->canPerformOrderAction($order, 'void')) {
+            return response()->json(['message' => '当前状态下预计划单不可作废'], 422);
         }
 
         $order->status = 'cancelled';
@@ -754,8 +748,8 @@ class PrePlanOrderController extends Controller
 
     public function update(Request $request, PrePlanOrder $prePlanOrder): JsonResponse
     {
-        if (! $this->canModifyOrder($prePlanOrder)) {
-            return response()->json(['message' => '关联任务节点已到达/完成，预计划单不可修改'], 422);
+        if (! $this->canPerformOrderAction($prePlanOrder, 'edit')) {
+            return response()->json(['message' => '当前状态下预计划单不可修改'], 422);
         }
 
         $payload = $request->validate([
@@ -813,8 +807,8 @@ class PrePlanOrderController extends Controller
         ]);
 
         $prePlanOrder = PrePlanOrder::query()->findOrFail($payload['id']);
-        if (! $this->canModifyOrder($prePlanOrder)) {
-            return response()->json(['message' => '关联任务节点已到达/完成，预计划单不可修改'], 422);
+        if (! $this->canPerformOrderAction($prePlanOrder, 'edit')) {
+            return response()->json(['message' => '当前状态下预计划单不可修改'], 422);
         }
         unset($payload['id']);
         $prePlanOrder->fill($payload);
@@ -967,14 +961,55 @@ class PrePlanOrderController extends Controller
 
     private function canSplitOrMerge(PrePlanOrder $order): bool
     {
-        if ($order->status !== 'pending') {
-            return false;
+        return $this->canPerformOrderAction($order, 'split_merge');
+    }
+
+    private function canPerformOrderAction(PrePlanOrder $order, string $action): bool
+    {
+        if ($action === 'edit') {
+            if (! in_array($order->status, ['pending', 'scheduled', 'in_progress'], true)) {
+                return false;
+            }
+            if ((bool) $order->is_locked || $order->status === 'cancelled') {
+                return false;
+            }
+            return $this->canModifyOrder($order);
         }
-        if ((bool) $order->is_locked || $order->status === 'cancelled') {
-            return false;
+        if ($action === 'lock') {
+            if (! in_array($order->status, ['pending', 'scheduled', 'in_progress'], true)) {
+                return false;
+            }
+            if ((bool) $order->is_locked || $order->status === 'cancelled') {
+                return false;
+            }
+            return $this->canModifyOrder($order);
+        }
+        if ($action === 'unlock') {
+            if (! (bool) $order->is_locked || $order->status === 'cancelled') {
+                return false;
+            }
+            return $this->canModifyOrder($order, true);
+        }
+        if ($action === 'void') {
+            if (! in_array($order->status, ['pending', 'scheduled', 'in_progress'], true)) {
+                return false;
+            }
+            if ($order->status === 'cancelled') {
+                return false;
+            }
+            return $this->canModifyOrder($order);
+        }
+        if ($action === 'split_merge') {
+            if ($order->status !== 'pending') {
+                return false;
+            }
+            if ((bool) $order->is_locked || $order->status === 'cancelled') {
+                return false;
+            }
+            return $this->canModifyOrder($order);
         }
 
-        return $this->canModifyOrder($order);
+        return false;
     }
 
     /**

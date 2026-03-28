@@ -395,4 +395,26 @@ class PrePlanOrderAuditApiTest extends TestCase
         $this->assertContains('dispatcher_unlock', $actions);
         $this->assertContains('dispatcher_void', $actions);
     }
+
+    public function test_cancelled_order_cannot_be_locked_or_edited(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $order = PrePlanOrder::query()->where('status', 'pending')->firstOrFail();
+        Sanctum::actingAs($dispatcher);
+
+        $this->postJson('/api/v1/pre-plan-order/void', [
+            'id' => $order->id,
+            'void_remark' => '测试作废锁定限制',
+        ])->assertOk();
+
+        $this->postJson('/api/v1/pre-plan-order/lock', ['id' => $order->id])
+            ->assertStatus(422);
+
+        $this->postJson('/api/v1/pre-plan-order/update', [
+            'id' => $order->id,
+            'client_name' => '作废后更新',
+        ])->assertStatus(422);
+    }
 }
