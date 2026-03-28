@@ -343,6 +343,65 @@ const openImportDialog = () => {
   importDialogVisible.value = true
 }
 
+const downloadImportTemplate = () => {
+  const headers = [
+    '货品分类编码',
+    '客户名称',
+    '装货地',
+    '装货联系人',
+    '装货联系电话',
+    '卸货地',
+    '收货联系人',
+    '收货联系电话',
+    '重量kg',
+    '体积m3',
+    '运价方式',
+    '运价单价',
+    '趟数',
+    '实送重量kg',
+    '允许亏吨kg',
+    '亏吨扣减单价',
+    '预计提货时间',
+    '预计送达时间',
+  ]
+
+  const exampleRow = [
+    'gasoline',
+    '示例客户A',
+    '上海油库A',
+    '张三',
+    '13900000001',
+    '上海加油站B',
+    '李四',
+    '13900000002',
+    30000,
+    38.5,
+    'by_weight',
+    8.5,
+    '',
+    '',
+    200,
+    1.2,
+    '2026-03-30 08:30:00',
+    '2026-03-30 12:00:00',
+  ]
+
+  const tips = [
+    ['填写说明'],
+    ['1. 必填字段：货品分类编码/ID/名称（至少一个）、客户名称、装货地、卸货地'],
+    ['2. 运价方式仅支持：by_weight / by_volume / by_trip'],
+    ['3. 日期格式建议：YYYY-MM-DD HH:mm:ss'],
+    ['4. 一次最多导入 200 条，请分批导入'],
+  ]
+
+  const dataSheet = XLSX.utils.aoa_to_sheet([headers, exampleRow])
+  const tipsSheet = XLSX.utils.aoa_to_sheet(tips)
+  const workbook = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(workbook, dataSheet, '计划单导入模板')
+  XLSX.utils.book_append_sheet(workbook, tipsSheet, '填写说明')
+  XLSX.writeFile(workbook, '预计划单导入模板.xlsx')
+}
+
 const openEditDialog = (row) => {
   resetEditForm()
   currentEditId.value = row.id
@@ -791,6 +850,7 @@ onMounted(() => {
         <div class="card-title">预计划单管理</div>
         <div>
           <el-button class="mr-8" plain type="primary" @click="openManualDispatchDialog">手动派单</el-button>
+          <el-button class="mr-8" plain @click="downloadImportTemplate">下载模板</el-button>
           <el-button class="mr-8" plain @click="openImportDialog">导入文件</el-button>
           <el-button class="mr-8" plain @click="openBatchCreateDialog">批量创建</el-button>
           <el-button type="primary" @click="openCreateDialog">新建预计划单</el-button>
