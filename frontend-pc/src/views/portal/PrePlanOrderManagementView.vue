@@ -10,6 +10,13 @@ const selectedOrders = ref([])
 const cargoCategories = ref([])
 const sites = ref([])
 const vehicles = ref([])
+const filterForm = reactive({
+  keyword: '',
+  status: '',
+  audit_status: '',
+  is_locked: '',
+  cargo_category_id: '',
+})
 
 const loadingOrders = ref(false)
 const loadingMeta = ref(false)
@@ -289,13 +296,29 @@ const loadVehicles = async () => {
 const loadPrePlanOrders = async () => {
   loadingOrders.value = true
   try {
-    const { data } = await api.post('/pre-plan-order/list', {})
+    const payload = {}
+    if (filterForm.keyword.trim()) payload.keyword = filterForm.keyword.trim()
+    if (filterForm.status) payload.status = filterForm.status
+    if (filterForm.audit_status) payload.audit_status = filterForm.audit_status
+    if (filterForm.is_locked !== '') payload.is_locked = filterForm.is_locked
+    if (filterForm.cargo_category_id) payload.cargo_category_id = Number(filterForm.cargo_category_id)
+
+    const { data } = await api.post('/pre-plan-order/list', payload)
     prePlanOrders.value = Array.isArray(data?.data) ? data.data : []
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '获取预计划单失败')
   } finally {
     loadingOrders.value = false
   }
+}
+
+const resetFilters = async () => {
+  filterForm.keyword = ''
+  filterForm.status = ''
+  filterForm.audit_status = ''
+  filterForm.is_locked = ''
+  filterForm.cargo_category_id = ''
+  await loadPrePlanOrders()
 }
 
 const openCreateDialog = () => {
@@ -574,6 +597,47 @@ onMounted(() => {
         </div>
       </div>
     </template>
+    <el-form inline class="mb-12">
+      <el-form-item label="关键词">
+        <el-input v-model="filterForm.keyword" clearable placeholder="订单号/客户/装卸地址/联系人" style="width: 240px" />
+      </el-form-item>
+      <el-form-item label="状态">
+        <el-select v-model="filterForm.status" clearable placeholder="全部状态" style="width: 140px">
+          <el-option label="待调度" value="pending" />
+          <el-option label="已排程" value="scheduled" />
+          <el-option label="执行中" value="in_progress" />
+          <el-option label="已完成" value="completed" />
+          <el-option label="已作废" value="cancelled" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="审核">
+        <el-select v-model="filterForm.audit_status" clearable placeholder="全部审核" style="width: 140px">
+          <el-option label="待审核" value="pending_approval" />
+          <el-option label="已审核" value="approved" />
+          <el-option label="已驳回" value="rejected" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="锁单">
+        <el-select v-model="filterForm.is_locked" clearable placeholder="全部" style="width: 120px">
+          <el-option label="已锁定" :value="true" />
+          <el-option label="未锁定" :value="false" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="货品分类">
+        <el-select v-model="filterForm.cargo_category_id" clearable placeholder="全部分类" style="width: 180px">
+          <el-option
+            v-for="item in cargoCategories"
+            :key="`filter-cargo-${item.id}`"
+            :label="`${item.name}（${item.code}）`"
+            :value="item.id"
+          />
+        </el-select>
+      </el-form-item>
+      <el-form-item>
+        <el-button type="primary" @click="loadPrePlanOrders">查询</el-button>
+        <el-button @click="resetFilters">重置</el-button>
+      </el-form-item>
+    </el-form>
     <el-table ref="tableRef" :data="prePlanOrders" stripe v-loading="loadingOrders" @selection-change="onSelectionChange">
       <el-table-column type="selection" width="50" :selectable="selectableOrder" />
       <el-table-column prop="order_no" label="预计划单号" min-width="180" />

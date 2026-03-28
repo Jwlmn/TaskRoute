@@ -15,12 +15,37 @@ class PrePlanOrderController extends Controller
     public function index(Request $request): JsonResponse
     {
         $payload = $request->validate([
+            'keyword' => ['nullable', 'string', 'max:100'],
+            'status' => ['nullable', 'in:pending,scheduled,in_progress,completed,cancelled'],
             'audit_status' => ['nullable', 'in:pending_approval,approved,rejected'],
+            'is_locked' => ['nullable', 'boolean'],
+            'cargo_category_id' => ['nullable', 'integer', 'exists:cargo_categories,id'],
+            'expected_pickup_from' => ['nullable', 'date'],
+            'expected_pickup_to' => ['nullable', 'date'],
         ]);
 
         return response()->json(
             PrePlanOrder::query()
+                ->when($payload['keyword'] ?? null, function ($query, $keyword): void {
+                    $kw = trim((string) $keyword);
+                    if ($kw === '') {
+                        return;
+                    }
+                    $query->where(function ($sub) use ($kw): void {
+                        $sub->where('order_no', 'like', "%{$kw}%")
+                            ->orWhere('client_name', 'like', "%{$kw}%")
+                            ->orWhere('pickup_address', 'like', "%{$kw}%")
+                            ->orWhere('dropoff_address', 'like', "%{$kw}%")
+                            ->orWhere('pickup_contact_name', 'like', "%{$kw}%")
+                            ->orWhere('dropoff_contact_name', 'like', "%{$kw}%");
+                    });
+                })
+                ->when($payload['status'] ?? null, fn ($query, $status) => $query->where('status', $status))
                 ->when($payload['audit_status'] ?? null, fn ($query, $auditStatus) => $query->where('audit_status', $auditStatus))
+                ->when(array_key_exists('is_locked', $payload), fn ($query) => $query->where('is_locked', (bool) $payload['is_locked']))
+                ->when($payload['cargo_category_id'] ?? null, fn ($query, $cargoCategoryId) => $query->where('cargo_category_id', (int) $cargoCategoryId))
+                ->when($payload['expected_pickup_from'] ?? null, fn ($query, $from) => $query->where('expected_pickup_at', '>=', $from))
+                ->when($payload['expected_pickup_to'] ?? null, fn ($query, $to) => $query->where('expected_pickup_at', '<=', $to))
                 ->latest()
                 ->paginate(20)
         );

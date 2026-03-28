@@ -214,4 +214,29 @@ class PrePlanOrderAuditApiTest extends TestCase
             ->assertJsonPath('status', 'cancelled')
             ->assertJsonPath('void_remark', '客户取消，本单作废');
     }
+
+    public function test_dispatcher_can_filter_pre_plan_orders_by_keyword_and_lock_status(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $order = PrePlanOrder::query()
+            ->where('status', 'pending')
+            ->where('client_name', 'like', '%商超%')
+            ->firstOrFail();
+        Sanctum::actingAs($dispatcher);
+
+        $this->postJson('/api/v1/pre-plan-order/lock', ['id' => $order->id])->assertOk();
+
+        $response = $this->postJson('/api/v1/pre-plan-order/list', [
+            'keyword' => '商超',
+            'is_locked' => true,
+        ]);
+
+        $response->assertOk();
+        $this->assertTrue(
+            collect($response->json('data'))->contains(fn (array $item): bool => (int) ($item['id'] ?? 0) === (int) $order->id),
+            '筛选结果应包含已锁定且关键词匹配的计划单'
+        );
+    }
 }
