@@ -83,5 +83,9 @@ class SettlementAndTemplateApiTest extends TestCase
         $this->postJson('/api/v1/settlement/list', ['client_name' => '结算客户A'])
             ->assertOk()
             ->assertJsonPath('data.0.id', $statementId);
+
+        $this->postJson('/api/v1/settlement/detail', ['id' => $statementId])
+            ->assertOk()
+            ->assertJsonPath('orders.0.order_no', 'PO-SETTLE-TEST-001');
     }
 }

@@ -38,8 +38,32 @@ class SettlementStatementController extends Controller
         ]);
 
         $statement = SettlementStatement::query()->findOrFail((int) $payload['id']);
+        $orderIds = collect(data_get($statement->meta, 'order_ids', []))
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->values();
+        $orders = PrePlanOrder::query()
+            ->whereIn('id', $orderIds->all())
+            ->get([
+                'id',
+                'order_no',
+                'client_name',
+                'pickup_address',
+                'dropoff_address',
+                'status',
+                'freight_base_amount',
+                'freight_loss_deduct_amount',
+                'freight_amount',
+                'freight_calculated_at',
+            ])
+            ->sortBy(function (PrePlanOrder $item) use ($orderIds) {
+                return $orderIds->search((int) $item->id);
+            })
+            ->values();
 
-        return response()->json($statement);
+        return response()->json(array_merge($statement->toArray(), [
+            'orders' => $orders,
+        ]));
     }
 
     public function create(Request $request): JsonResponse

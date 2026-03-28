@@ -117,6 +117,29 @@ const exportCurrentList = () => {
   XLSX.writeFile(workbook, '结算单列表.xlsx')
 }
 
+const exportDetailOrders = () => {
+  if (!detail.value?.orders?.length) {
+    ElMessage.warning('当前结算单没有可导出的订单明细')
+    return
+  }
+  const rows = detail.value.orders.map((item) => ({
+    订单ID: item.id,
+    订单号: item.order_no,
+    客户: item.client_name,
+    装货地: item.pickup_address,
+    卸货地: item.dropoff_address,
+    状态: item.status,
+    基础运费: item.freight_base_amount ?? 0,
+    亏吨扣减: item.freight_loss_deduct_amount ?? 0,
+    应结运费: item.freight_amount ?? 0,
+    运费计算时间: item.freight_calculated_at || '',
+  }))
+  const sheet = XLSX.utils.json_to_sheet(rows)
+  const workbook = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(workbook, sheet, '结算订单明细')
+  XLSX.writeFile(workbook, `${detail.value.statement_no || '结算单'}-订单明细.xlsx`)
+}
+
 onMounted(loadStatements)
 </script>
 
@@ -193,6 +216,9 @@ onMounted(loadStatements)
   </el-dialog>
 
   <el-dialog v-model="detailDialogVisible" title="结算单详情" width="680px" destroy-on-close>
+    <div class="mb-12" style="display: flex; justify-content: flex-end">
+      <el-button plain @click="exportDetailOrders">导出明细 XLSX</el-button>
+    </div>
     <el-descriptions v-if="detail" border :column="2">
       <el-descriptions-item label="结算单号">{{ detail.statement_no }}</el-descriptions-item>
       <el-descriptions-item label="客户">{{ detail.client_name }}</el-descriptions-item>
@@ -203,13 +229,18 @@ onMounted(loadStatements)
       <el-descriptions-item label="备注" :span="2">{{ detail.remark || '-' }}</el-descriptions-item>
     </el-descriptions>
     <el-table
-      v-if="detail?.meta?.order_ids?.length"
-      :data="detail.meta.order_ids.map((id, idx) => ({ idx: idx + 1, id }))"
+      v-if="detail?.orders?.length"
+      :data="detail.orders"
       size="small"
       class="mt-12"
     >
-      <el-table-column prop="idx" label="#" width="60" />
-      <el-table-column prop="id" label="关联订单ID" min-width="120" />
+      <el-table-column prop="id" label="订单ID" width="90" />
+      <el-table-column prop="order_no" label="订单号" min-width="150" />
+      <el-table-column prop="client_name" label="客户" min-width="120" />
+      <el-table-column prop="status" label="状态" min-width="100" />
+      <el-table-column prop="freight_base_amount" label="基础运费" min-width="110" />
+      <el-table-column prop="freight_loss_deduct_amount" label="亏吨扣减" min-width="110" />
+      <el-table-column prop="freight_amount" label="应结运费" min-width="110" />
     </el-table>
     <template #footer>
       <el-button @click="detailDialogVisible = false">关闭</el-button>
