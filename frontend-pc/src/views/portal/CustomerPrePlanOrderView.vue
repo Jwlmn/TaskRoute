@@ -7,6 +7,7 @@ import { getLabel } from '../../utils/labels'
 const loading = ref(false)
 const creating = ref(false)
 const dialogVisible = ref(false)
+const dialogMode = ref('create')
 const orders = ref([])
 const cargoCategories = ref([])
 
@@ -29,6 +30,7 @@ const auditStatusTypeMap = {
 }
 
 const form = reactive({
+  id: null,
   cargo_category_id: null,
   client_name: '',
   pickup_address: '',
@@ -46,6 +48,7 @@ const form = reactive({
 })
 
 const resetForm = () => {
+  form.id = null
   form.cargo_category_id = null
   form.client_name = ''
   form.pickup_address = ''
@@ -63,6 +66,7 @@ const resetForm = () => {
 }
 
 const buildPayload = () => ({
+  id: form.id,
   cargo_category_id: Number(form.cargo_category_id),
   client_name: form.client_name,
   pickup_address: form.pickup_address,
@@ -78,6 +82,33 @@ const buildPayload = () => ({
   loss_allowance_kg: form.loss_allowance_kg ?? 0,
   loss_deduct_unit_price: form.loss_deduct_unit_price,
 })
+
+const openCreate = () => {
+  dialogMode.value = 'create'
+  resetForm()
+  dialogVisible.value = true
+}
+
+const openEdit = (row) => {
+  if (row.audit_status !== 'rejected') return
+  dialogMode.value = 'edit'
+  form.id = row.id
+  form.cargo_category_id = row.cargo_category_id
+  form.client_name = row.client_name || ''
+  form.pickup_address = row.pickup_address || ''
+  form.dropoff_address = row.dropoff_address || ''
+  form.cargo_weight_kg = Number(row.cargo_weight_kg || 0)
+  form.cargo_volume_m3 = Number(row.cargo_volume_m3 || 0)
+  form.expected_pickup_at = row.expected_pickup_at || ''
+  form.expected_delivery_at = row.expected_delivery_at || ''
+  form.freight_calc_scheme = row.freight_calc_scheme || ''
+  form.freight_unit_price = row.freight_unit_price != null ? Number(row.freight_unit_price) : null
+  form.freight_trip_count = row.freight_trip_count != null ? Number(row.freight_trip_count) : 1
+  form.actual_delivered_weight_kg = row.actual_delivered_weight_kg != null ? Number(row.actual_delivered_weight_kg) : null
+  form.loss_allowance_kg = row.loss_allowance_kg != null ? Number(row.loss_allowance_kg) : 0
+  form.loss_deduct_unit_price = row.loss_deduct_unit_price != null ? Number(row.loss_deduct_unit_price) : null
+  dialogVisible.value = true
+}
 
 const loadMeta = async () => {
   const { data } = await api.get('/meta')
@@ -99,8 +130,13 @@ const loadOrders = async () => {
 const submit = async () => {
   creating.value = true
   try {
-    await api.post('/pre-plan-order/customer-submit', buildPayload())
-    ElMessage.success('计划单提交成功，等待审核')
+    if (dialogMode.value === 'create') {
+      await api.post('/pre-plan-order/customer-submit', buildPayload())
+      ElMessage.success('计划单提交成功，等待审核')
+    } else {
+      await api.post('/pre-plan-order/customer-update', buildPayload())
+      ElMessage.success('驳回计划单已更新，请重新提报')
+    }
     dialogVisible.value = false
     resetForm()
     await loadOrders()
@@ -108,6 +144,17 @@ const submit = async () => {
     ElMessage.error(error?.response?.data?.message || '提交失败')
   } finally {
     creating.value = false
+  }
+}
+
+const resubmitOrder = async (row) => {
+  if (row.audit_status !== 'rejected') return
+  try {
+    await api.post('/pre-plan-order/customer-resubmit', { id: row.id })
+    ElMessage.success('已重新提报，等待审核')
+    await loadOrders()
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '重提失败')
   }
 }
 
@@ -123,7 +170,7 @@ onMounted(async () => {
         <div class="card-title">客户计划单</div>
         <div>
           <el-button class="mr-8" plain @click="loadOrders">刷新</el-button>
-          <el-button type="primary" @click="dialogVisible = true">提交计划单</el-button>
+          <el-button type="primary" @click="openCreate">提交计划单</el-button>
         </div>
       </div>
     </template>
@@ -146,10 +193,35 @@ onMounted(async () => {
         </template>
       </el-table-column>
       <el-table-column prop="audit_remark" label="审核备注" min-width="180" />
+      <el-table-column label="操作" min-width="180" fixed="right">
+        <template #default="{ row }">
+          <el-button
+            link
+            type="primary"
+            :disabled="row.audit_status !== 'rejected'"
+            @click="openEdit(row)"
+          >
+            编辑
+          </el-button>
+          <el-button
+            link
+            type="warning"
+            :disabled="row.audit_status !== 'rejected'"
+            @click="resubmitOrder(row)"
+          >
+            重新提报
+          </el-button>
+        </template>
+      </el-table-column>
     </el-table>
   </el-card>
 
-  <el-dialog v-model="dialogVisible" title="提交客户计划单" width="760px" destroy-on-close>
+  <el-dialog
+    v-model="dialogVisible"
+    :title="dialogMode === 'create' ? '提交客户计划单' : '编辑驳回计划单'"
+    width="760px"
+    destroy-on-close
+  >
     <el-form label-width="120px">
       <el-row :gutter="12">
         <el-col :span="12">
@@ -232,7 +304,9 @@ onMounted(async () => {
     </el-form>
     <template #footer>
       <el-button @click="dialogVisible = false">取消</el-button>
-      <el-button type="primary" :loading="creating" @click="submit">提交审核</el-button>
+      <el-button type="primary" :loading="creating" @click="submit">
+        {{ dialogMode === 'create' ? '提交审核' : '保存修改' }}
+      </el-button>
     </template>
   </el-dialog>
 </template>
