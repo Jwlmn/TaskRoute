@@ -1,11 +1,12 @@
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../../services/api'
 import { getLabel, roleLabelMap, userStatusLabelMap } from '../../utils/labels'
 
 const loading = ref(false)
 const users = ref([])
+const sites = ref([])
 const dialogVisible = ref(false)
 const dialogMode = ref('create')
 
@@ -17,6 +18,9 @@ const form = reactive({
   status: 'active',
   phone: '',
   permissions: [],
+  data_scope_type: 'all',
+  region_codes: [],
+  site_ids: [],
   password: '',
 })
 
@@ -33,6 +37,54 @@ const permissionOptions = [
   { label: '操作审计', value: 'audit_log' },
 ]
 
+const regionOptions = computed(() => {
+  const map = new Map()
+  for (const item of sites.value) {
+    if (!item?.region_code) continue
+    map.set(item.region_code, item.region_code)
+  }
+  return Array.from(map.keys()).map((value) => ({ label: value, value }))
+})
+
+const siteOptions = computed(() =>
+  sites.value.map((item) => ({
+    label: `${item.name} (${item.region_code || '-'})`,
+    value: Number(item.id),
+  })),
+)
+
+const buildScopePayload = () => {
+  if (form.data_scope_type === 'region') {
+    return {
+      data_scope_type: 'region',
+      data_scope: { region_codes: form.region_codes },
+    }
+  }
+  if (form.data_scope_type === 'site') {
+    return {
+      data_scope_type: 'site',
+      data_scope: { site_ids: form.site_ids },
+    }
+  }
+  return {
+    data_scope_type: 'all',
+    data_scope: null,
+  }
+}
+
+const dataScopeLabel = (row) => {
+  if (row.data_scope_type === 'region') {
+    const codes = Array.isArray(row.data_scope?.region_codes) ? row.data_scope.region_codes : []
+    return codes.length ? `区域：${codes.join('、')}` : '区域：未配置'
+  }
+  if (row.data_scope_type === 'site') {
+    const ids = Array.isArray(row.data_scope?.site_ids) ? row.data_scope.site_ids : []
+    const labels = ids.map((id) => siteOptions.value.find((item) => item.value === Number(id))?.label || `站点#${id}`)
+    return labels.length ? `站点：${labels.join('、')}` : '站点：未配置'
+  }
+  return '全部数据'
+}
+
 const resetForm = () => {
   form.id = null
   form.account = ''
@@ -41,6 +93,9 @@ const resetForm = () => {
   form.status = 'active'
   form.phone = ''
   form.permissions = []
+  form.data_scope_type = 'all'
+  form.region_codes = []
+  form.site_ids = []
   form.password = ''
 }
 
@@ -51,6 +106,15 @@ const fetchUsers = async () => {
     users.value = data.data || []
   } finally {
     loading.value = false
+  }
+}
+
+const fetchSites = async () => {
+  try {
+    const { data } = await api.post('/resource/site/list', { status: 'active' })
+    sites.value = Array.isArray(data?.data) ? data.data : []
+  } catch {
+    sites.value = []
   }
 }
 
@@ -69,12 +133,16 @@ const openEdit = (row) => {
   form.status = row.status
   form.phone = row.phone || ''
   form.permissions = Array.isArray(row.permissions) ? row.permissions : []
+  form.data_scope_type = row.data_scope_type || 'all'
+  form.region_codes = Array.isArray(row.data_scope?.region_codes) ? [...row.data_scope.region_codes] : []
+  form.site_ids = Array.isArray(row.data_scope?.site_ids) ? row.data_scope.site_ids.map((id) => Number(id)) : []
   form.password = ''
   dialogVisible.value = true
 }
 
 const submit = async () => {
   try {
+    const scopePayload = buildScopePayload()
     if (dialogMode.value === 'create') {
       await api.post('/user/create', {
         account: form.account,
@@ -84,6 +152,7 @@ const submit = async () => {
         phone: form.phone,
         permissions: form.permissions,
         password: form.password,
+        ...scopePayload,
       })
       ElMessage.success('账号创建成功')
     } else {
@@ -95,10 +164,9 @@ const submit = async () => {
         status: form.status,
         phone: form.phone,
         permissions: form.permissions,
+        ...scopePayload,
       }
-      if (form.password) {
-        payload.password = form.password
-      }
+      if (form.password) payload.password = form.password
       await api.post('/user/update', payload)
       ElMessage.success('账号更新成功')
     }
@@ -109,8 +177,8 @@ const submit = async () => {
   }
 }
 
-onMounted(() => {
-  fetchUsers()
+onMounted(async () => {
+  await Promise.all([fetchSites(), fetchUsers()])
 })
 </script>
 
@@ -131,6 +199,11 @@ onMounted(() => {
           {{ getLabel(roleLabelMap, row.role) }}
         </template>
       </el-table-column>
+      <el-table-column label="数据范围" min-width="260" show-overflow-tooltip>
+        <template #default="{ row }">
+          {{ dataScopeLabel(row) }}
+        </template>
+      </el-table-column>
       <el-table-column label="状态" min-width="90">
         <template #default="{ row }">
           {{ getLabel(userStatusLabelMap, row.status) }}
@@ -147,7 +220,7 @@ onMounted(() => {
   <el-dialog
     v-model="dialogVisible"
     :title="dialogMode === 'create' ? '新增账号' : '编辑账号'"
-    width="520px"
+    width="560px"
   >
     <el-form label-position="top">
       <el-form-item label="账号">
@@ -172,6 +245,23 @@ onMounted(() => {
       </el-form-item>
       <el-form-item label="手机号">
         <el-input v-model="form.phone" />
+      </el-form-item>
+      <el-form-item label="数据范围">
+        <el-radio-group v-model="form.data_scope_type">
+          <el-radio-button label="all">全部数据</el-radio-button>
+          <el-radio-button label="region">按区域</el-radio-button>
+          <el-radio-button label="site">按站点</el-radio-button>
+        </el-radio-group>
+      </el-form-item>
+      <el-form-item v-if="form.data_scope_type === 'region'" label="可见区域">
+        <el-select v-model="form.region_codes" multiple clearable collapse-tags style="width: 100%">
+          <el-option v-for="item in regionOptions" :key="item.value" :label="item.label" :value="item.value" />
+        </el-select>
+      </el-form-item>
+      <el-form-item v-if="form.data_scope_type === 'site'" label="可见站点">
+        <el-select v-model="form.site_ids" multiple clearable collapse-tags style="width: 100%">
+          <el-option v-for="item in siteOptions" :key="item.value" :label="item.label" :value="item.value" />
+        </el-select>
       </el-form-item>
       <el-form-item label="附加权限">
         <el-select v-model="form.permissions" multiple clearable collapse-tags style="width: 100%">

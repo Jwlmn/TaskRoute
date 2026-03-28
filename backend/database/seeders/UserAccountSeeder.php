@@ -17,6 +17,8 @@ class UserAccountSeeder extends Seeder
                 'phone' => '13800000001',
                 'role' => 'admin',
                 'status' => 'active',
+                'data_scope_type' => 'all',
+                'data_scope' => null,
                 'password' => Hash::make('password'),
             ]
         );
@@ -29,6 +31,8 @@ class UserAccountSeeder extends Seeder
                 'phone' => '13800000002',
                 'role' => 'dispatcher',
                 'status' => 'active',
+                'data_scope_type' => 'all',
+                'data_scope' => null,
                 'password' => Hash::make('password'),
             ]
         );
@@ -41,6 +45,8 @@ class UserAccountSeeder extends Seeder
                 'phone' => '13800000003',
                 'role' => 'driver',
                 'status' => 'active',
+                'data_scope_type' => 'site',
+                'data_scope' => ['site_ids' => [1]],
                 'password' => Hash::make('password'),
             ]
         );
@@ -53,6 +59,8 @@ class UserAccountSeeder extends Seeder
                 'phone' => '13800000004',
                 'role' => 'driver',
                 'status' => 'active',
+                'data_scope_type' => 'site',
+                'data_scope' => ['site_ids' => [3]],
                 'password' => Hash::make('password'),
             ]
         );
@@ -65,6 +73,8 @@ class UserAccountSeeder extends Seeder
                 'phone' => '13800000005',
                 'role' => 'driver',
                 'status' => 'active',
+                'data_scope_type' => 'site',
+                'data_scope' => ['site_ids' => [6]],
                 'password' => Hash::make('password'),
             ]
         );
@@ -77,6 +87,8 @@ class UserAccountSeeder extends Seeder
                 'phone' => '13800000006',
                 'role' => 'customer',
                 'status' => 'active',
+                'data_scope_type' => 'all',
+                'data_scope' => null,
                 'password' => Hash::make('password'),
             ]
         );

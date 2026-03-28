@@ -15,6 +15,7 @@ class Vehicle extends Model
         'plate_number',
         'name',
         'vehicle_type',
+        'site_id',
         'driver_id',
         'max_weight_kg',
         'max_volume_m3',
@@ -37,5 +38,10 @@ class Vehicle extends Model
     public function driver(): BelongsTo
     {
         return $this->belongsTo(User::class, 'driver_id');
+    }
+
+    public function site(): BelongsTo
+    {
+        return $this->belongsTo(LogisticsSite::class, 'site_id');
     }
 }

@@ -10,6 +10,7 @@ import {
 
 const loading = ref(false)
 const rows = ref([])
+const sites = ref([])
 const dialogVisible = ref(false)
 const dialogMode = ref('create')
 const cargoCategoryOptions = ref([])
@@ -27,6 +28,7 @@ const form = reactive({
   plate_number: '',
   name: '',
   vehicle_type: 'van',
+  site_id: null,
   driver_id: null,
   max_weight_kg: 0,
   max_volume_m3: 0,
@@ -57,6 +59,7 @@ const resetForm = () => {
   form.plate_number = ''
   form.name = ''
   form.vehicle_type = 'van'
+  form.site_id = null
   form.driver_id = null
   form.max_weight_kg = 0
   form.max_volume_m3 = 0
@@ -81,6 +84,15 @@ const fetchCargoCategories = async () => {
     cargoCategoryOptions.value = Array.isArray(data?.cargo_categories) ? data.cargo_categories : []
   } catch {
     cargoCategoryOptions.value = []
+  }
+}
+
+const fetchSites = async () => {
+  try {
+    const { data } = await api.post('/resource/site/list', { status: 'active' })
+    sites.value = Array.isArray(data?.data) ? data.data : []
+  } catch {
+    sites.value = []
   }
 }
 
@@ -122,6 +134,7 @@ const openEdit = (row) => {
   form.plate_number = row.plate_number
   form.name = row.name
   form.vehicle_type = row.vehicle_type
+  form.site_id = row.site_id || row.site?.id || null
   form.driver_id = row.driver_id || null
   form.max_weight_kg = Number(row.max_weight_kg || 0)
   form.max_volume_m3 = Number(row.max_volume_m3 || 0)
@@ -237,6 +250,7 @@ const submit = async () => {
       plate_number: form.plate_number,
       name: form.name,
       vehicle_type: form.vehicle_type,
+      site_id: form.site_id,
       driver_id: form.driver_id,
       max_weight_kg: form.max_weight_kg,
       max_volume_m3: form.max_volume_m3,
@@ -264,7 +278,7 @@ const submit = async () => {
 }
 
 onMounted(async () => {
-  await Promise.all([fetchRows(), fetchCargoCategories(), fetchDriverOptions()])
+  await Promise.all([fetchRows(), fetchCargoCategories(), fetchDriverOptions(), fetchSites()])
 })
 </script>
 
@@ -288,6 +302,11 @@ onMounted(async () => {
       <el-table-column label="绑定司机" min-width="150">
         <template #default="{ row }">
           {{ row.driver?.name ? `${row.driver.name}（${row.driver.account}）` : '未绑定' }}
+        </template>
+      </el-table-column>
+      <el-table-column label="所属站点" min-width="180" show-overflow-tooltip>
+        <template #default="{ row }">
+          {{ row.site?.name ? `${row.site.name}（${row.site.region_code || '-'}）` : '未设置' }}
         </template>
       </el-table-column>
       <el-table-column prop="max_weight_kg" label="载重(kg)" min-width="100" />
@@ -346,6 +365,18 @@ onMounted(async () => {
               <el-option label="卡车" value="truck" />
               <el-option label="罐车" value="tank" />
               <el-option label="冷链车" value="coldchain" />
+            </el-select>
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="所属站点">
+            <el-select v-model="form.site_id" style="width: 100%" placeholder="请选择站点">
+              <el-option
+                v-for="item in sites"
+                :key="item.id"
+                :label="`${item.name}（${item.region_code || '-'}）`"
+                :value="item.id"
+              />
             </el-select>
           </el-form-item>
         </el-col>
@@ -461,8 +492,11 @@ onMounted(async () => {
         </template>
         <template #default>
           <el-descriptions :column="2" border size="small" class="mb-12">
-            <el-descriptions-item label="车辆">
+          <el-descriptions-item label="车辆">
               {{ selectedVehicle?.plate_number || '-' }}｜{{ selectedVehicle?.name || '-' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="所属站点">
+              {{ selectedVehicle?.site?.name ? `${selectedVehicle.site.name}（${selectedVehicle.site.region_code || '-'}）` : '未设置' }}
             </el-descriptions-item>
             <el-descriptions-item label="绑定司机">
               {{ selectedVehicle?.driver?.name ? `${selectedVehicle.driver.name}（${selectedVehicle.driver.account}）` : '未绑定' }}

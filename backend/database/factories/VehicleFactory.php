@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Models\LogisticsSite;
 use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -28,6 +29,7 @@ class VehicleFactory extends Factory
             ->whereNotIn('id', $occupiedDriverIds)
             ->inRandomOrder()
             ->value('id');
+        $siteId = LogisticsSite::query()->inRandomOrder()->value('id');
         $compartmentEnabled = $vehicleType === 'tank';
         $compartments = $compartmentEnabled
             ? [
@@ -48,6 +50,7 @@ class VehicleFactory extends Factory
             'plate_number' => $prefix.$suffix,
             'name' => fake()->randomElement(['厢式车', '冷链车', '罐车', '平板车']).fake()->numberBetween(1, 99).'号',
             'vehicle_type' => $vehicleType,
+            'site_id' => $siteId,
             'driver_id' => $driverId,
             'max_weight_kg' => fake()->numberBetween(3000, 20000),
             'max_volume_m3' => fake()->randomFloat(2, 8, 45),

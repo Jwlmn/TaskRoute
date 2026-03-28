@@ -59,9 +59,11 @@ const splitParts = ref([])
 const createForm = reactive({
   cargo_category_id: null,
   client_name: '',
+  pickup_site_id: null,
   pickup_address: '',
   pickup_contact_name: '',
   pickup_contact_phone: '',
+  dropoff_site_id: null,
   dropoff_address: '',
   dropoff_contact_name: '',
   dropoff_contact_phone: '',
@@ -80,9 +82,11 @@ const createForm = reactive({
 const editForm = reactive({
   cargo_category_id: null,
   client_name: '',
+  pickup_site_id: null,
   pickup_address: '',
   pickup_contact_name: '',
   pickup_contact_phone: '',
+  dropoff_site_id: null,
   dropoff_address: '',
   dropoff_contact_name: '',
   dropoff_contact_phone: '',
@@ -208,9 +212,11 @@ const formatDateTime = (value) => {
 const resetCreateForm = () => {
   createForm.cargo_category_id = null
   createForm.client_name = ''
+  createForm.pickup_site_id = null
   createForm.pickup_address = ''
   createForm.pickup_contact_name = ''
   createForm.pickup_contact_phone = ''
+  createForm.dropoff_site_id = null
   createForm.dropoff_address = ''
   createForm.dropoff_contact_name = ''
   createForm.dropoff_contact_phone = ''
@@ -230,9 +236,11 @@ const resetCreateForm = () => {
 const resetEditForm = () => {
   editForm.cargo_category_id = null
   editForm.client_name = ''
+  editForm.pickup_site_id = null
   editForm.pickup_address = ''
   editForm.pickup_contact_name = ''
   editForm.pickup_contact_phone = ''
+  editForm.dropoff_site_id = null
   editForm.dropoff_address = ''
   editForm.dropoff_contact_name = ''
   editForm.dropoff_contact_phone = ''
@@ -261,9 +269,11 @@ const resetManualDispatchForm = () => {
 const fillOrderForm = (target, row) => {
   target.cargo_category_id = row.cargo_category_id
   target.client_name = row.client_name || ''
+  target.pickup_site_id = row.pickup_site_id || null
   target.pickup_address = row.pickup_address || ''
   target.pickup_contact_name = row.pickup_contact_name || ''
   target.pickup_contact_phone = row.pickup_contact_phone || ''
+  target.dropoff_site_id = row.dropoff_site_id || null
   target.dropoff_address = row.dropoff_address || ''
   target.dropoff_contact_name = row.dropoff_contact_name || ''
   target.dropoff_contact_phone = row.dropoff_contact_phone || ''
@@ -290,9 +300,11 @@ const normalizeDate = (value) => {
 const buildOrderPayload = (form) => ({
   cargo_category_id: Number(form.cargo_category_id),
   client_name: form.client_name,
+  pickup_site_id: form.pickup_site_id || null,
   pickup_address: form.pickup_address,
   pickup_contact_name: form.pickup_contact_name || null,
   pickup_contact_phone: form.pickup_contact_phone || null,
+  dropoff_site_id: form.dropoff_site_id || null,
   dropoff_address: form.dropoff_address,
   dropoff_contact_name: form.dropoff_contact_name || null,
   dropoff_contact_phone: form.dropoff_contact_phone || null,
@@ -307,6 +319,15 @@ const buildOrderPayload = (form) => ({
   expected_pickup_at: normalizeDate(form.expected_pickup_at),
   expected_delivery_at: normalizeDate(form.expected_delivery_at),
 })
+
+const syncAddressBySite = (form, field) => {
+  const siteIdKey = `${field}_site_id`
+  const addressKey = `${field}_address`
+  const site = sites.value.find((item) => Number(item.id) === Number(form[siteIdKey]))
+  if (site?.address) {
+    form[addressKey] = site.address
+  }
+}
 
 const loadMeta = async () => {
   loadingMeta.value = true
@@ -1507,6 +1528,19 @@ onMounted(() => {
           </el-form-item>
         </el-col>
       </el-row>
+      <el-form-item label="装货站点">
+        <el-select
+          v-model="createForm.pickup_site_id"
+          clearable
+          filterable
+          :loading="loadingSites"
+          placeholder="优先选择装货站点"
+          style="width: 100%"
+          @change="syncAddressBySite(createForm, 'pickup')"
+        >
+          <el-option v-for="site in sites" :key="`pickup-${site.id}`" :label="`${site.name}｜${site.address}`" :value="site.id" />
+        </el-select>
+      </el-form-item>
       <el-form-item label="装货地" prop="pickup_address">
         <el-select
           v-model="createForm.pickup_address"
@@ -1519,6 +1553,19 @@ onMounted(() => {
           style="width: 100%"
         >
           <el-option v-for="site in sites" :key="site.id" :label="`${site.name}｜${site.address}`" :value="site.address" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="卸货站点">
+        <el-select
+          v-model="createForm.dropoff_site_id"
+          clearable
+          filterable
+          :loading="loadingSites"
+          placeholder="优先选择卸货站点"
+          style="width: 100%"
+          @change="syncAddressBySite(createForm, 'dropoff')"
+        >
+          <el-option v-for="site in sites" :key="`dropoff-${site.id}`" :label="`${site.name}｜${site.address}`" :value="site.id" />
         </el-select>
       </el-form-item>
       <el-form-item label="卸货地" prop="dropoff_address">
@@ -1698,6 +1745,19 @@ onMounted(() => {
           </el-form-item>
         </el-col>
       </el-row>
+      <el-form-item label="装货站点">
+        <el-select
+          v-model="editForm.pickup_site_id"
+          clearable
+          filterable
+          :loading="loadingSites"
+          placeholder="优先选择装货站点"
+          style="width: 100%"
+          @change="syncAddressBySite(editForm, 'pickup')"
+        >
+          <el-option v-for="site in sites" :key="`edit-pickup-${site.id}`" :label="`${site.name}｜${site.address}`" :value="site.id" />
+        </el-select>
+      </el-form-item>
       <el-form-item label="装货地" prop="pickup_address">
         <el-select
           v-model="editForm.pickup_address"
@@ -1710,6 +1770,19 @@ onMounted(() => {
           style="width: 100%"
         >
           <el-option v-for="site in sites" :key="`edit-p-${site.id}`" :label="`${site.name}｜${site.address}`" :value="site.address" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="卸货站点">
+        <el-select
+          v-model="editForm.dropoff_site_id"
+          clearable
+          filterable
+          :loading="loadingSites"
+          placeholder="优先选择卸货站点"
+          style="width: 100%"
+          @change="syncAddressBySite(editForm, 'dropoff')"
+        >
+          <el-option v-for="site in sites" :key="`edit-dropoff-${site.id}`" :label="`${site.name}｜${site.address}`" :value="site.id" />
         </el-select>
       </el-form-item>
       <el-form-item label="卸货地" prop="dropoff_address">

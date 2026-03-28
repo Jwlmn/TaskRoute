@@ -14,9 +14,11 @@ return new class extends Migration
             $table->foreignId('cargo_category_id')->constrained()->cascadeOnDelete();
             $table->foreignId('submitter_id')->nullable()->constrained('users')->nullOnDelete();
             $table->string('client_name');
+            $table->foreignId('pickup_site_id')->nullable()->constrained('logistics_sites')->nullOnDelete();
             $table->string('pickup_address');
             $table->string('pickup_contact_name', 64)->nullable();
             $table->string('pickup_contact_phone', 32)->nullable();
+            $table->foreignId('dropoff_site_id')->nullable()->constrained('logistics_sites')->nullOnDelete();
             $table->string('dropoff_address');
             $table->string('dropoff_contact_name', 64)->nullable();
             $table->string('dropoff_contact_phone', 32)->nullable();

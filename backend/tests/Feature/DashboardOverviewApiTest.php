@@ -6,6 +6,7 @@ use App\Models\CargoCategory;
 use App\Models\DispatchTask;
 use App\Models\DriverLocation;
 use App\Models\ElectronicDocument;
+use App\Models\LogisticsSite;
 use App\Models\PrePlanOrder;
 use App\Models\TaskWaypoint;
 use App\Models\User;
@@ -36,11 +37,30 @@ class DashboardOverviewApiTest extends TestCase
             'role' => 'driver',
             'status' => 'active',
         ]);
+        $siteA = LogisticsSite::factory()->create([
+            'name' => '看板站点A',
+            'region_code' => 'SH-PD',
+            'site_type' => 'both',
+            'status' => 'active',
+        ]);
+        $siteB = LogisticsSite::factory()->create([
+            'name' => '看板站点B',
+            'region_code' => 'SH-JD',
+            'site_type' => 'both',
+            'status' => 'active',
+        ]);
+        $siteC = LogisticsSite::factory()->create([
+            'name' => '看板站点C',
+            'region_code' => 'SH-PT',
+            'site_type' => 'both',
+            'status' => 'active',
+        ]);
 
         $vehicleA = Vehicle::query()->create([
             'plate_number' => '沪DASH001',
             'name' => '看板测试车A',
             'vehicle_type' => 'truck',
+            'site_id' => $siteA->id,
             'driver_id' => $driverA->id,
             'max_weight_kg' => 8000,
             'max_volume_m3' => 20,
@@ -50,6 +70,7 @@ class DashboardOverviewApiTest extends TestCase
             'plate_number' => '沪DASH002',
             'name' => '看板测试车B',
             'vehicle_type' => 'truck',
+            'site_id' => $siteB->id,
             'driver_id' => $driverB->id,
             'max_weight_kg' => 8000,
             'max_volume_m3' => 20,
@@ -59,6 +80,7 @@ class DashboardOverviewApiTest extends TestCase
             'plate_number' => '沪DASH003',
             'name' => '看板测试车C',
             'vehicle_type' => 'truck',
+            'site_id' => $siteC->id,
             'driver_id' => $driverC->id,
             'max_weight_kg' => 8000,
             'max_volume_m3' => 20,
@@ -74,7 +96,9 @@ class DashboardOverviewApiTest extends TestCase
             'order_no' => 'PO-DASH-001',
             'cargo_category_id' => $cargo->id,
             'client_name' => '测试客户A',
+            'pickup_site_id' => $siteA->id,
             'pickup_address' => '上海A',
+            'dropoff_site_id' => $siteB->id,
             'dropoff_address' => '上海B',
             'status' => 'pending',
             'audit_status' => 'approved',
@@ -83,7 +107,9 @@ class DashboardOverviewApiTest extends TestCase
             'order_no' => 'PO-DASH-002',
             'cargo_category_id' => $cargo->id,
             'client_name' => '测试客户B',
+            'pickup_site_id' => $siteA->id,
             'pickup_address' => '上海C',
+            'dropoff_site_id' => $siteB->id,
             'dropoff_address' => '上海D',
             'status' => 'pending',
             'audit_status' => 'approved',
@@ -92,7 +118,9 @@ class DashboardOverviewApiTest extends TestCase
             'order_no' => 'PO-DASH-003',
             'cargo_category_id' => $cargo->id,
             'client_name' => '测试客户C',
+            'pickup_site_id' => $siteA->id,
             'pickup_address' => '上海E',
+            'dropoff_site_id' => $siteC->id,
             'dropoff_address' => '上海F',
             'status' => 'pending',
             'audit_status' => 'pending_approval',
@@ -101,7 +129,9 @@ class DashboardOverviewApiTest extends TestCase
             'order_no' => 'PO-DASH-004',
             'cargo_category_id' => $cargo->id,
             'client_name' => '测试客户D',
+            'pickup_site_id' => $siteB->id,
             'pickup_address' => '上海G',
+            'dropoff_site_id' => $siteC->id,
             'dropoff_address' => '上海H',
             'status' => 'completed',
             'expected_delivery_at' => now()->addHour(),
@@ -113,7 +143,9 @@ class DashboardOverviewApiTest extends TestCase
             'order_no' => 'PO-DASH-005',
             'cargo_category_id' => $cargo->id,
             'client_name' => '测试客户E',
+            'pickup_site_id' => $siteB->id,
             'pickup_address' => '上海I',
+            'dropoff_site_id' => $siteC->id,
             'dropoff_address' => '上海J',
             'status' => 'completed',
             'expected_delivery_at' => now()->subHour(),
@@ -125,7 +157,9 @@ class DashboardOverviewApiTest extends TestCase
             'order_no' => 'PO-DASH-006',
             'cargo_category_id' => $cargo->id,
             'client_name' => '测试客户F',
+            'pickup_site_id' => $siteB->id,
             'pickup_address' => '上海K',
+            'dropoff_site_id' => $siteC->id,
             'dropoff_address' => '上海L',
             'status' => 'completed',
             'expected_delivery_at' => now()->subDay(),
@@ -275,5 +309,96 @@ class DashboardOverviewApiTest extends TestCase
             ->assertJsonPath('rates.vehicle_utilization_rate', 33.33)
             ->assertJsonPath('rates.on_time_order_rate', 50)
             ->assertJsonPath('rates.receipt_upload_rate', 50);
+    }
+
+    public function test_region_scoped_dispatcher_only_sees_scoped_dashboard_metrics(): void
+    {
+        $siteInScope = LogisticsSite::factory()->create([
+            'region_code' => 'SH-PD',
+            'site_type' => 'both',
+            'status' => 'active',
+        ]);
+        $siteOutScope = LogisticsSite::factory()->create([
+            'region_code' => 'SH-JD',
+            'site_type' => 'both',
+            'status' => 'active',
+        ]);
+        $dispatcher = User::factory()->create([
+            'role' => 'dispatcher',
+            'status' => 'active',
+            'data_scope_type' => 'region',
+            'data_scope' => ['region_codes' => ['SH-PD']],
+        ]);
+        $driverA = User::factory()->create(['role' => 'driver', 'status' => 'active']);
+        $driverB = User::factory()->create(['role' => 'driver', 'status' => 'active']);
+
+        $vehicleInScope = Vehicle::query()->create([
+            'plate_number' => '沪SCOPE001',
+            'name' => '范围内车辆',
+            'vehicle_type' => 'truck',
+            'site_id' => $siteInScope->id,
+            'driver_id' => $driverA->id,
+            'max_weight_kg' => 8000,
+            'max_volume_m3' => 20,
+            'status' => 'busy',
+        ]);
+        Vehicle::query()->create([
+            'plate_number' => '沪SCOPE002',
+            'name' => '范围外车辆',
+            'vehicle_type' => 'truck',
+            'site_id' => $siteOutScope->id,
+            'driver_id' => $driverB->id,
+            'max_weight_kg' => 8000,
+            'max_volume_m3' => 20,
+            'status' => 'idle',
+        ]);
+
+        $cargo = CargoCategory::query()->create([
+            'name' => '范围测试货品',
+            'code' => 'scope-goods',
+        ]);
+
+        PrePlanOrder::query()->create([
+            'order_no' => 'PO-SCOPE-001',
+            'cargo_category_id' => $cargo->id,
+            'client_name' => '范围内客户',
+            'pickup_site_id' => $siteInScope->id,
+            'pickup_address' => '范围内提货地',
+            'dropoff_site_id' => $siteInScope->id,
+            'dropoff_address' => '范围内卸货地',
+            'status' => 'pending',
+            'audit_status' => 'approved',
+        ]);
+        PrePlanOrder::query()->create([
+            'order_no' => 'PO-SCOPE-002',
+            'cargo_category_id' => $cargo->id,
+            'client_name' => '范围外客户',
+            'pickup_site_id' => $siteOutScope->id,
+            'pickup_address' => '范围外提货地',
+            'dropoff_site_id' => $siteOutScope->id,
+            'dropoff_address' => '范围外卸货地',
+            'status' => 'pending',
+            'audit_status' => 'approved',
+        ]);
+
+        DispatchTask::query()->create([
+            'task_no' => 'DT-SCOPE-001',
+            'vehicle_id' => $vehicleInScope->id,
+            'driver_id' => $driverA->id,
+            'dispatcher_id' => $dispatcher->id,
+            'status' => 'assigned',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        Sanctum::actingAs($dispatcher);
+
+        $response = $this->postJson('/api/v1/dashboard/overview', []);
+
+        $response->assertOk()
+            ->assertJsonPath('metrics.pending_pre_plan_orders', 1)
+            ->assertJsonPath('metrics.assigned_tasks', 1)
+            ->assertJsonPath('metrics.busy_vehicles', 1)
+            ->assertJsonPath('metrics.total_vehicles', 1);
     }
 }

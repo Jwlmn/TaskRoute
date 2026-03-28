@@ -13,6 +13,7 @@ return new class extends Migration
             $table->string('plate_number')->unique();
             $table->string('name');
             $table->string('vehicle_type');
+            $table->foreignId('site_id')->nullable()->constrained('logistics_sites')->nullOnDelete();
             $table->foreignId('driver_id')->nullable()->constrained('users')->nullOnDelete();
             $table->unique('driver_id');
             $table->decimal('max_weight_kg', 10, 2)->default(0);

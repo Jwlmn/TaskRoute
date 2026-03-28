@@ -7,11 +7,16 @@ use App\Models\DispatchTask;
 use App\Models\DriverLocation;
 use App\Models\PrePlanOrder;
 use App\Models\Vehicle;
+use App\Services\Auth\DataScopeService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 
 class DashboardOverviewController extends Controller
 {
+    public function __construct(private readonly DataScopeService $dataScopeService)
+    {
+    }
+
     public function __invoke(): JsonResponse
     {
         $now = CarbonImmutable::now();
@@ -19,7 +24,7 @@ class DashboardOverviewController extends Controller
         $todayEnd = $now->endOfDay();
         $onlineThreshold = $now->subMinutes(15);
 
-        $pendingPrePlanOrders = PrePlanOrder::query()
+        $pendingPrePlanOrders = $this->dataScopeService->applyPrePlanOrderScope(PrePlanOrder::query(), request()->user())
             ->where('status', 'pending')
             ->where(function ($query): void {
                 $query->whereNull('audit_status')
@@ -27,15 +32,15 @@ class DashboardOverviewController extends Controller
             })
             ->count();
 
-        $pendingApprovalOrders = PrePlanOrder::query()
+        $pendingApprovalOrders = $this->dataScopeService->applyPrePlanOrderScope(PrePlanOrder::query(), request()->user())
             ->where('audit_status', 'pending_approval')
             ->count();
 
-        $inProgressTasks = DispatchTask::query()
+        $inProgressTasks = $this->dataScopeService->applyDispatchTaskScope(DispatchTask::query(), request()->user())
             ->where('status', 'in_progress')
             ->count();
 
-        $assignedTasks = DispatchTask::query()
+        $assignedTasks = $this->dataScopeService->applyDispatchTaskScope(DispatchTask::query(), request()->user())
             ->where('status', 'assigned')
             ->count();
 
@@ -44,25 +49,25 @@ class DashboardOverviewController extends Controller
             ->distinct('driver_id')
             ->count('driver_id');
 
-        $exceptionAlerts = DispatchTask::query()
+        $exceptionAlerts = $this->dataScopeService->applyDispatchTaskScope(DispatchTask::query(), request()->user())
             ->where('status', 'cancelled')
             ->count();
 
-        $totalVehicles = Vehicle::query()->count();
-        $busyVehicles = Vehicle::query()
+        $totalVehicles = $this->dataScopeService->applyVehicleScope(Vehicle::query(), request()->user())->count();
+        $busyVehicles = $this->dataScopeService->applyVehicleScope(Vehicle::query(), request()->user())
             ->where('status', 'busy')
             ->count();
 
-        $todayCreatedTasks = DispatchTask::query()
+        $todayCreatedTasks = $this->dataScopeService->applyDispatchTaskScope(DispatchTask::query(), request()->user())
             ->whereBetween('created_at', [$todayStart, $todayEnd])
             ->count();
 
-        $todayCompletedTasks = DispatchTask::query()
+        $todayCompletedTasks = $this->dataScopeService->applyDispatchTaskScope(DispatchTask::query(), request()->user())
             ->where('status', 'completed')
             ->whereBetween('updated_at', [$todayStart, $todayEnd])
             ->count();
 
-        $todayCompletedOrdersQuery = PrePlanOrder::query()
+        $todayCompletedOrdersQuery = $this->dataScopeService->applyPrePlanOrderScope(PrePlanOrder::query(), request()->user())
             ->where('status', 'completed')
             ->whereBetween('updated_at', [$todayStart, $todayEnd]);
 
@@ -77,7 +82,7 @@ class DashboardOverviewController extends Controller
             ->whereNotNull('expected_delivery_at')
             ->count();
 
-        $todayReceiptUploadedTasks = DispatchTask::query()
+        $todayReceiptUploadedTasks = $this->dataScopeService->applyDispatchTaskScope(DispatchTask::query(), request()->user())
             ->where('status', 'completed')
             ->whereBetween('updated_at', [$todayStart, $todayEnd])
             ->whereHas('documents', function ($query) use ($todayStart, $todayEnd): void {

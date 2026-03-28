@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Services\Auth\CaptchaService;
+use App\Services\Auth\DataScopeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -12,7 +13,10 @@ use Illuminate\Support\Facades\Hash;
 
 class AuthController extends Controller
 {
-    public function __construct(private readonly CaptchaService $captchaService)
+    public function __construct(
+        private readonly CaptchaService $captchaService,
+        private readonly DataScopeService $dataScopeService,
+    )
     {
     }
 
@@ -60,9 +64,7 @@ class AuthController extends Controller
         return response()->json([
             'token' => $token,
             'token_type' => 'Bearer',
-            'user' => array_merge($user->toArray(), [
-                'permissions' => $user->resolvePermissions(),
-            ]),
+            'user' => $this->dataScopeService->serializeUser($user),
         ]);
     }
 
@@ -73,9 +75,7 @@ class AuthController extends Controller
             return response()->json(null, 401);
         }
 
-        return response()->json(array_merge($user->toArray(), [
-            'permissions' => $user->resolvePermissions(),
-        ]));
+        return response()->json($this->dataScopeService->serializeUser($user));
     }
 
     public function logout(Request $request): JsonResponse

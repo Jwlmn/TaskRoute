@@ -34,6 +34,10 @@ class UserFactory extends Factory
         return [
             'account' => fake()->unique()->userName(),
             'name' => fake()->name(),
+            'role' => fake()->randomElement(['dispatcher', 'driver', 'customer']),
+            'status' => 'active',
+            'data_scope_type' => 'all',
+            'data_scope' => null,
             'password' => static::$password ??= Hash::make('password'),
             'remember_token' => Str::random(10),
         ];

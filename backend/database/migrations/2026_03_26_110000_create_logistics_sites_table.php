@@ -13,6 +13,8 @@ return new class extends Migration
             $table->string('site_no')->unique();
             $table->string('name');
             $table->enum('site_type', ['pickup', 'dropoff', 'both'])->default('both');
+            $table->string('organization_code', 64)->default('SH');
+            $table->string('region_code', 64)->default('SH-PD')->index();
             $table->string('contact_person')->nullable();
             $table->string('contact_phone', 32)->nullable();
             $table->string('address');
@@ -28,4 +30,3 @@ return new class extends Migration
         Schema::dropIfExists('logistics_sites');
     }
 };
-

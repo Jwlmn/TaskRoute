@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\CargoCategory;
+use App\Models\LogisticsSite;
 use App\Models\PrePlanOrder;
 use Illuminate\Database\Seeder;
 
@@ -25,14 +26,24 @@ class PrePlanOrderSeeder extends Seeder
         ];
 
         foreach ($mockOrders as [$no, $cargoId, $client, $pickup, $dropoff, $weight, $volume, $start, $end]) {
+            $pickupSiteId = LogisticsSite::query()
+                ->where('address', $pickup)
+                ->orWhere('name', $pickup)
+                ->value('id');
+            $dropoffSiteId = LogisticsSite::query()
+                ->where('address', $dropoff)
+                ->orWhere('name', $dropoff)
+                ->value('id');
             PrePlanOrder::query()->updateOrCreate(
                 ['order_no' => $no],
                 [
                     'cargo_category_id' => $cargoId,
                     'client_name' => $client,
+                    'pickup_site_id' => $pickupSiteId,
                     'pickup_address' => $pickup,
                     'pickup_contact_name' => '装货联系人',
                     'pickup_contact_phone' => '13900000001',
+                    'dropoff_site_id' => $dropoffSiteId,
                     'dropoff_address' => $dropoff,
                     'dropoff_contact_name' => '收货联系人',
                     'dropoff_contact_phone' => '13900000002',

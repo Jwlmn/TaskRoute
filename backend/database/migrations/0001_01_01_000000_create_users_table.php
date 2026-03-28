@@ -18,6 +18,8 @@ return new class extends Migration
             $table->string('phone', 32)->nullable();
             $table->enum('role', ['admin', 'dispatcher', 'driver', 'customer'])->default('driver');
             $table->enum('status', ['active', 'inactive'])->default('active');
+            $table->enum('data_scope_type', ['all', 'region', 'site'])->default('all');
+            $table->json('data_scope')->nullable();
             $table->string('password');
             $table->rememberToken();
             $table->timestamps();

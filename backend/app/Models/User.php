@@ -5,6 +5,7 @@ namespace App\Models;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
@@ -28,6 +29,8 @@ class User extends Authenticatable
         'phone',
         'role',
         'status',
+        'data_scope_type',
+        'data_scope',
         'password',
     ];
 
@@ -50,6 +53,36 @@ class User extends Authenticatable
     {
         return [
             'password' => 'hashed',
+            'data_scope' => 'array',
+        ];
+    }
+
+    public function vehicle(): HasOne
+    {
+        return $this->hasOne(Vehicle::class, 'driver_id');
+    }
+
+    /**
+     * @return array{type:string,region_codes:array<int,string>,site_ids:array<int,int>}
+     */
+    public function resolveDataScope(): array
+    {
+        $dataScope = is_array($this->data_scope) ? $this->data_scope : [];
+
+        return [
+            'type' => $this->data_scope_type ?: 'all',
+            'region_codes' => collect($dataScope['region_codes'] ?? [])
+                ->map(fn ($code) => trim((string) $code))
+                ->filter()
+                ->unique()
+                ->values()
+                ->all(),
+            'site_ids' => collect($dataScope['site_ids'] ?? [])
+                ->map(fn ($id) => (int) $id)
+                ->filter(fn ($id) => $id > 0)
+                ->unique()
+                ->values()
+                ->all(),
         ];
     }
 

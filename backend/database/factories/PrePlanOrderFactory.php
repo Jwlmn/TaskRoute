@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Models\CargoCategory;
+use App\Models\LogisticsSite;
 use App\Models\PrePlanOrder;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
@@ -18,16 +19,20 @@ class PrePlanOrderFactory extends Factory
     {
         $pickupTime = fake()->dateTimeBetween('+1 hour', '+2 days');
         $deliveryTime = (clone $pickupTime)->modify('+'.fake()->numberBetween(1, 6).' hours');
+        $pickupSite = LogisticsSite::query()->whereIn('site_type', ['pickup', 'both'])->inRandomOrder()->first();
+        $dropoffSite = LogisticsSite::query()->whereIn('site_type', ['dropoff', 'both'])->inRandomOrder()->first();
 
         return [
             'order_no' => 'PO-MOCK-'.Str::upper(Str::random(8)),
             'cargo_category_id' => CargoCategory::query()->inRandomOrder()->value('id')
                 ?? CargoCategory::factory()->create()->id,
             'client_name' => fake()->company(),
-            'pickup_address' => fake()->address(),
+            'pickup_site_id' => $pickupSite?->id,
+            'pickup_address' => $pickupSite?->address ?? fake()->address(),
             'pickup_contact_name' => fake()->name(),
             'pickup_contact_phone' => fake()->numerify('13#########'),
-            'dropoff_address' => fake()->address(),
+            'dropoff_site_id' => $dropoffSite?->id,
+            'dropoff_address' => $dropoffSite?->address ?? fake()->address(),
             'dropoff_contact_name' => fake()->name(),
             'dropoff_contact_phone' => fake()->numerify('13#########'),
             'cargo_weight_kg' => fake()->randomFloat(2, 100, 10000),

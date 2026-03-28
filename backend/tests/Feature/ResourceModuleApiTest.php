@@ -32,6 +32,8 @@ class ResourceModuleApiTest extends TestCase
         $response = $this->postJson('/api/v1/resource/site/create', [
             'name' => '测试提货点',
             'site_type' => 'pickup',
+            'organization_code' => 'SH',
+            'region_code' => 'SH-PD',
             'address' => '上海市浦东新区测试路1号',
             'contact_person' => '测试联系人',
             'contact_phone' => '13988888888',
@@ -80,12 +82,14 @@ class ResourceModuleApiTest extends TestCase
         $this->seed(DatabaseSeeder::class);
         $admin = User::query()->where('account', 'admin')->firstOrFail();
         $driver = User::query()->where('account', 'driver')->firstOrFail();
+        $site = \App\Models\LogisticsSite::query()->firstOrFail();
         Sanctum::actingAs($admin);
 
         $response = $this->postJson('/api/v1/resource/vehicle/create', [
             'plate_number' => '沪C66666',
             'name' => '新增测试车',
             'vehicle_type' => 'truck',
+            'site_id' => $site->id,
             'driver_id' => $driver->id,
             'max_weight_kg' => 10000,
             'max_volume_m3' => 20,

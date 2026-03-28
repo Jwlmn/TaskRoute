@@ -13,6 +13,8 @@ const form = reactive({
   id: null,
   name: '',
   site_type: 'both',
+  organization_code: 'SH',
+  region_code: 'SH-PD',
   address: '',
   contact_person: '',
   contact_phone: '',
@@ -23,6 +25,8 @@ const resetForm = () => {
   form.id = null
   form.name = ''
   form.site_type = 'both'
+  form.organization_code = 'SH'
+  form.region_code = 'SH-PD'
   form.address = ''
   form.contact_person = ''
   form.contact_phone = ''
@@ -50,6 +54,8 @@ const openEdit = (row) => {
   form.id = row.id
   form.name = row.name
   form.site_type = row.site_type
+  form.organization_code = row.organization_code || 'SH'
+  form.region_code = row.region_code || 'SH-PD'
   form.address = row.address
   form.contact_person = row.contact_person || ''
   form.contact_phone = row.contact_phone || ''
@@ -62,6 +68,8 @@ const submit = async () => {
     const payload = {
       name: form.name,
       site_type: form.site_type,
+      organization_code: form.organization_code,
+      region_code: form.region_code,
       address: form.address,
       contact_person: form.contact_person,
       contact_phone: form.contact_phone,
@@ -103,6 +111,7 @@ onMounted(() => {
           {{ getLabel(siteTypeLabelMap, row.site_type) }}
         </template>
       </el-table-column>
+      <el-table-column prop="region_code" label="区域编码" min-width="110" />
       <el-table-column prop="contact_person" label="联系人" min-width="100" />
       <el-table-column prop="contact_phone" label="联系电话" min-width="120" />
       <el-table-column prop="address" label="地址" min-width="200" />
@@ -134,6 +143,12 @@ onMounted(() => {
           <el-option label="收货点" value="dropoff" />
           <el-option label="提货+收货" value="both" />
         </el-select>
+      </el-form-item>
+      <el-form-item label="组织编码">
+        <el-input v-model="form.organization_code" />
+      </el-form-item>
+      <el-form-item label="区域编码">
+        <el-input v-model="form.region_code" placeholder="例如 SH-PD" />
       </el-form-item>
       <el-form-item label="地址">
         <el-input v-model="form.address" />

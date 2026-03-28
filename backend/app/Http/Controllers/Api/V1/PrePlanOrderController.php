@@ -3,10 +3,13 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
-use App\Models\PrePlanOrder;
 use App\Models\CargoCategory;
 use App\Models\FreightRateTemplate;
+use App\Models\LogisticsSite;
+use App\Models\PrePlanOrder;
 use App\Models\SystemMessage;
+use App\Services\Auth\DataScopeService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -16,6 +19,10 @@ use Throwable;
 
 class PrePlanOrderController extends Controller
 {
+    public function __construct(private readonly DataScopeService $dataScopeService)
+    {
+    }
+
     public function index(Request $request): JsonResponse
     {
         $payload = $request->validate([
@@ -24,13 +31,15 @@ class PrePlanOrderController extends Controller
             'audit_status' => ['nullable', 'in:pending_approval,approved,rejected'],
             'is_locked' => ['nullable', 'boolean'],
             'cargo_category_id' => ['nullable', 'integer', 'exists:cargo_categories,id'],
+            'pickup_site_id' => ['nullable', 'integer', 'exists:logistics_sites,id'],
+            'dropoff_site_id' => ['nullable', 'integer', 'exists:logistics_sites,id'],
             'trace_type' => ['nullable', 'in:origin,split,merge'],
             'expected_pickup_from' => ['nullable', 'date'],
             'expected_pickup_to' => ['nullable', 'date'],
         ]);
 
         return response()->json(
-            PrePlanOrder::query()
+            $this->scopedOrderQuery($request)
                 ->when($payload['keyword'] ?? null, function ($query, $keyword): void {
                     $kw = trim((string) $keyword);
                     if ($kw === '') {
@@ -49,6 +58,8 @@ class PrePlanOrderController extends Controller
                 ->when($payload['audit_status'] ?? null, fn ($query, $auditStatus) => $query->where('audit_status', $auditStatus))
                 ->when(array_key_exists('is_locked', $payload), fn ($query) => $query->where('is_locked', (bool) $payload['is_locked']))
                 ->when($payload['cargo_category_id'] ?? null, fn ($query, $cargoCategoryId) => $query->where('cargo_category_id', (int) $cargoCategoryId))
+                ->when($payload['pickup_site_id'] ?? null, fn ($query, $pickupSiteId) => $query->where('pickup_site_id', (int) $pickupSiteId))
+                ->when($payload['dropoff_site_id'] ?? null, fn ($query, $dropoffSiteId) => $query->where('dropoff_site_id', (int) $dropoffSiteId))
                 ->when($payload['trace_type'] ?? null, function ($query, $traceType): void {
                     if ($traceType === 'split') {
                         $query->whereNotNull('meta->split_from_id');
@@ -73,9 +84,11 @@ class PrePlanOrderController extends Controller
         $payload = $request->validate([
             'cargo_category_id' => ['required', 'integer', 'exists:cargo_categories,id'],
             'client_name' => ['required', 'string', 'max:255'],
+            'pickup_site_id' => ['nullable', 'integer', 'exists:logistics_sites,id'],
             'pickup_address' => ['required', 'string', 'max:255'],
             'pickup_contact_name' => ['nullable', 'string', 'max:64'],
             'pickup_contact_phone' => ['nullable', 'string', 'max:32'],
+            'dropoff_site_id' => ['nullable', 'integer', 'exists:logistics_sites,id'],
             'dropoff_address' => ['required', 'string', 'max:255'],
             'dropoff_contact_name' => ['nullable', 'string', 'max:64'],
             'dropoff_contact_phone' => ['nullable', 'string', 'max:32'],
@@ -97,6 +110,10 @@ class PrePlanOrderController extends Controller
         $payload['audit_status'] = 'approved';
         $payload['audited_by'] = (int) $request->user()->id;
         $payload['audited_at'] = now();
+        $payload = $this->prepareOrderPayload($payload);
+        if (! $this->dataScopeService->canAccessSites($request->user(), [$payload['pickup_site_id'] ?? null, $payload['dropoff_site_id'] ?? null])) {
+            return response()->json(['message' => '当前账号不可创建该范围内的计划单'], 403);
+        }
         $payload = $this->applyFreightTemplateToPayload($payload);
 
         $order = PrePlanOrder::query()->create($payload);
@@ -112,9 +129,11 @@ class PrePlanOrderController extends Controller
             'orders' => ['required', 'array', 'min:1', 'max:200'],
             'orders.*.cargo_category_id' => ['required', 'integer', 'exists:cargo_categories,id'],
             'orders.*.client_name' => ['required', 'string', 'max:255'],
+            'orders.*.pickup_site_id' => ['nullable', 'integer', 'exists:logistics_sites,id'],
             'orders.*.pickup_address' => ['required', 'string', 'max:255'],
             'orders.*.pickup_contact_name' => ['nullable', 'string', 'max:64'],
             'orders.*.pickup_contact_phone' => ['nullable', 'string', 'max:32'],
+            'orders.*.dropoff_site_id' => ['nullable', 'integer', 'exists:logistics_sites,id'],
             'orders.*.dropoff_address' => ['required', 'string', 'max:255'],
             'orders.*.dropoff_contact_name' => ['nullable', 'string', 'max:64'],
             'orders.*.dropoff_contact_phone' => ['nullable', 'string', 'max:32'],
@@ -138,6 +157,10 @@ class PrePlanOrderController extends Controller
                 $orderPayload['audit_status'] = 'approved';
                 $orderPayload['audited_by'] = (int) $request->user()->id;
                 $orderPayload['audited_at'] = now();
+                $orderPayload = $this->prepareOrderPayload($orderPayload);
+                if (! $this->dataScopeService->canAccessSites($request->user(), [$orderPayload['pickup_site_id'] ?? null, $orderPayload['dropoff_site_id'] ?? null])) {
+                    abort(403, '当前账号不可创建该范围内的计划单');
+                }
                 $orderPayload = $this->applyFreightTemplateToPayload($orderPayload);
 
                 $order = PrePlanOrder::query()->create($orderPayload);
@@ -227,6 +250,11 @@ class PrePlanOrderController extends Controller
                 if ($orderPayload['freight_calc_scheme'] !== 'by_trip') {
                     $orderPayload['freight_trip_count'] = null;
                 }
+                $orderPayload = $this->prepareOrderPayload($orderPayload);
+                if (! $this->dataScopeService->canAccessSites($request->user(), [$orderPayload['pickup_site_id'] ?? null, $orderPayload['dropoff_site_id'] ?? null])) {
+                    $errors[] = ['line' => $line, 'message' => '当前账号不可导入该范围内的计划单'];
+                    continue;
+                }
                 $orderPayload = $this->applyFreightTemplateToPayload($orderPayload);
 
                 $created[] = PrePlanOrder::query()->create($orderPayload);
@@ -248,9 +276,11 @@ class PrePlanOrderController extends Controller
         $payload = $request->validate([
             'cargo_category_id' => ['required', 'integer', 'exists:cargo_categories,id'],
             'client_name' => ['required', 'string', 'max:255'],
+            'pickup_site_id' => ['nullable', 'integer', 'exists:logistics_sites,id'],
             'pickup_address' => ['required', 'string', 'max:255'],
             'pickup_contact_name' => ['nullable', 'string', 'max:64'],
             'pickup_contact_phone' => ['nullable', 'string', 'max:32'],
+            'dropoff_site_id' => ['nullable', 'integer', 'exists:logistics_sites,id'],
             'dropoff_address' => ['required', 'string', 'max:255'],
             'dropoff_contact_name' => ['nullable', 'string', 'max:64'],
             'dropoff_contact_phone' => ['nullable', 'string', 'max:32'],
@@ -274,6 +304,7 @@ class PrePlanOrderController extends Controller
         $payload['audited_at'] = null;
         $payload['audit_remark'] = null;
         $payload['status'] = 'pending';
+        $payload = $this->prepareOrderPayload($payload);
         $payload = $this->applyFreightTemplateToPayload($payload);
 
         $order = PrePlanOrder::query()->create($payload);
@@ -290,7 +321,7 @@ class PrePlanOrderController extends Controller
         ]);
 
         return response()->json(
-            PrePlanOrder::query()
+            $this->scopedOrderQuery($request)
                 ->where('submitter_id', (int) $request->user()->id)
                 ->when($payload['audit_status'] ?? null, fn ($query, $auditStatus) => $query->where('audit_status', $auditStatus))
                 ->latest()
@@ -304,7 +335,7 @@ class PrePlanOrderController extends Controller
             'id' => ['required', 'integer', 'exists:pre_plan_orders,id'],
         ]);
 
-        $order = PrePlanOrder::query()->findOrFail($payload['id']);
+        $order = $this->scopedOrderQuery($request)->findOrFail($payload['id']);
         if ((int) $order->submitter_id !== (int) $request->user()->id) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
@@ -318,9 +349,11 @@ class PrePlanOrderController extends Controller
             'id' => ['required', 'integer', 'exists:pre_plan_orders,id'],
             'cargo_category_id' => ['sometimes', 'integer', 'exists:cargo_categories,id'],
             'client_name' => ['sometimes', 'string', 'max:255'],
+            'pickup_site_id' => ['sometimes', 'nullable', 'integer', 'exists:logistics_sites,id'],
             'pickup_address' => ['sometimes', 'string', 'max:255'],
             'pickup_contact_name' => ['sometimes', 'nullable', 'string', 'max:64'],
             'pickup_contact_phone' => ['sometimes', 'nullable', 'string', 'max:32'],
+            'dropoff_site_id' => ['sometimes', 'nullable', 'integer', 'exists:logistics_sites,id'],
             'dropoff_address' => ['sometimes', 'string', 'max:255'],
             'dropoff_contact_name' => ['sometimes', 'nullable', 'string', 'max:64'],
             'dropoff_contact_phone' => ['sometimes', 'nullable', 'string', 'max:32'],
@@ -337,7 +370,7 @@ class PrePlanOrderController extends Controller
             'meta' => ['sometimes', 'array'],
         ]);
 
-        $order = PrePlanOrder::query()->findOrFail($payload['id']);
+        $order = $this->scopedOrderQuery($request)->findOrFail($payload['id']);
         if ((int) $order->submitter_id !== (int) $request->user()->id) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
@@ -349,6 +382,7 @@ class PrePlanOrderController extends Controller
         }
 
         unset($payload['id']);
+        $payload = $this->prepareOrderPayload($payload, $order);
         $order->fill($payload);
         $this->appendOrderHistory($order, 'customer_update', $request, [
             'updated_fields' => array_values(array_keys($payload)),
@@ -365,7 +399,7 @@ class PrePlanOrderController extends Controller
         ]);
 
         return DB::transaction(function () use ($payload, $request): JsonResponse {
-            $order = PrePlanOrder::query()->lockForUpdate()->findOrFail($payload['id']);
+            $order = $this->scopedOrderQuery($request)->lockForUpdate()->findOrFail($payload['id']);
             if ((int) $order->submitter_id !== (int) $request->user()->id) {
                 return response()->json(['message' => 'Forbidden'], 403);
             }
@@ -396,7 +430,7 @@ class PrePlanOrderController extends Controller
         ]);
 
         return response()->json(
-            PrePlanOrder::query()
+            $this->scopedOrderQuery($request)
                 ->when($payload['audit_status'] ?? null, fn ($query, $auditStatus) => $query->where('audit_status', $auditStatus))
                 ->when($payload['submitter_id'] ?? null, fn ($query, $submitterId) => $query->where('submitter_id', $submitterId))
                 ->when(array_key_exists('is_locked', $payload), fn ($query) => $query->where('is_locked', (bool) $payload['is_locked']))
@@ -411,7 +445,7 @@ class PrePlanOrderController extends Controller
             'id' => ['required', 'integer', 'exists:pre_plan_orders,id'],
         ]);
 
-        $order = PrePlanOrder::query()->findOrFail($payload['id']);
+        $order = $this->scopedOrderQuery($request)->findOrFail($payload['id']);
         if (! $this->canPerformOrderAction($order, 'lock')) {
             return response()->json(['message' => '当前状态下预计划单不可锁定'], 422);
         }
@@ -429,7 +463,7 @@ class PrePlanOrderController extends Controller
             'id' => ['required', 'integer', 'exists:pre_plan_orders,id'],
         ]);
 
-        $order = PrePlanOrder::query()->findOrFail($payload['id']);
+        $order = $this->scopedOrderQuery($request)->findOrFail($payload['id']);
         if (! $this->canPerformOrderAction($order, 'unlock')) {
             return response()->json(['message' => '当前状态下预计划单不可解锁'], 422);
         }
@@ -448,7 +482,7 @@ class PrePlanOrderController extends Controller
             'void_remark' => ['required', 'string', 'max:255'],
         ]);
 
-        $order = PrePlanOrder::query()->findOrFail($payload['id']);
+        $order = $this->scopedOrderQuery($request)->findOrFail($payload['id']);
         if (! $this->canPerformOrderAction($order, 'void')) {
             return response()->json(['message' => '当前状态下预计划单不可作废'], 422);
         }
@@ -477,7 +511,7 @@ class PrePlanOrderController extends Controller
         ]);
 
         $result = DB::transaction(function () use ($payload, $request): array {
-            $source = PrePlanOrder::query()->lockForUpdate()->findOrFail($payload['id']);
+            $source = $this->scopedOrderQuery($request)->lockForUpdate()->findOrFail($payload['id']);
             if (! $this->canSplitOrMerge($source)) {
                 abort(422, '当前计划单不允许拆单（需为待调度、未锁定、未执行且未作废）');
             }
@@ -556,7 +590,7 @@ class PrePlanOrderController extends Controller
 
         $result = DB::transaction(function () use ($payload, $request): array {
             $ids = collect($payload['ids'])->map(fn ($id) => (int) $id)->unique()->values();
-            $orders = PrePlanOrder::query()
+            $orders = $this->scopedOrderQuery($request)
                 ->whereIn('id', $ids->all())
                 ->lockForUpdate()
                 ->get();
@@ -650,7 +684,7 @@ class PrePlanOrderController extends Controller
         ]);
 
         $order = DB::transaction(function () use ($payload, $request): PrePlanOrder {
-            $order = PrePlanOrder::query()->lockForUpdate()->findOrFail($payload['id']);
+            $order = $this->scopedOrderQuery($request)->lockForUpdate()->findOrFail($payload['id']);
             if ($order->audit_status !== 'pending_approval') {
                 abort(422, '仅待审核计划单可执行审核通过');
             }
@@ -698,7 +732,7 @@ class PrePlanOrderController extends Controller
 
         $approvedCount = DB::transaction(function () use ($payload, $request): int {
             $ids = collect($payload['ids'])->map(fn ($id) => (int) $id)->unique()->values();
-            $orders = PrePlanOrder::query()->whereIn('id', $ids->all())->lockForUpdate()->get();
+            $orders = $this->scopedOrderQuery($request)->whereIn('id', $ids->all())->lockForUpdate()->get();
             $count = 0;
             foreach ($orders as $order) {
                 if ($order->audit_status !== 'pending_approval') {
@@ -728,7 +762,7 @@ class PrePlanOrderController extends Controller
         ]);
 
         $order = DB::transaction(function () use ($payload, $request): PrePlanOrder {
-            $order = PrePlanOrder::query()->lockForUpdate()->findOrFail($payload['id']);
+            $order = $this->scopedOrderQuery($request)->lockForUpdate()->findOrFail($payload['id']);
             if ($order->audit_status !== 'pending_approval') {
                 abort(422, '仅待审核计划单可执行驳回');
             }
@@ -776,7 +810,7 @@ class PrePlanOrderController extends Controller
 
         $rejectedCount = DB::transaction(function () use ($payload, $request): int {
             $ids = collect($payload['ids'])->map(fn ($id) => (int) $id)->unique()->values();
-            $orders = PrePlanOrder::query()->whereIn('id', $ids->all())->lockForUpdate()->get();
+            $orders = $this->scopedOrderQuery($request)->whereIn('id', $ids->all())->lockForUpdate()->get();
             $count = 0;
             foreach ($orders as $order) {
                 if ($order->audit_status !== 'pending_approval') {
@@ -822,7 +856,7 @@ class PrePlanOrderController extends Controller
         ]);
 
         $timeoutHours = (int) ($payload['timeout_hours'] ?? 4);
-        $orders = PrePlanOrder::query()
+        $orders = $this->scopedOrderQuery($request)
             ->where('audit_status', 'pending_approval')
             ->where('created_at', '<=', now()->subHours($timeoutHours))
             ->get(['id', 'order_no', 'created_at']);
@@ -858,7 +892,7 @@ class PrePlanOrderController extends Controller
             'id' => ['required', 'integer', 'exists:pre_plan_orders,id'],
         ]);
 
-        $order = PrePlanOrder::query()->findOrFail((int) $payload['id']);
+        $order = $this->scopedOrderQuery($request)->findOrFail((int) $payload['id']);
         $snapshot = data_get($order->meta, 'rejected_snapshot');
         if (! is_array($snapshot)) {
             return response()->json([
@@ -901,7 +935,7 @@ class PrePlanOrderController extends Controller
         $page = (int) ($payload['page'] ?? 1);
         $pageSize = (int) ($payload['page_size'] ?? 20);
 
-        $orders = PrePlanOrder::query()
+        $orders = $this->scopedOrderQuery($request)
             ->when($keyword !== '', fn ($query) => $query->where(function ($sub) use ($keyword): void {
                 $sub->where('order_no', 'like', "%{$keyword}%")
                     ->orWhere('client_name', 'like', "%{$keyword}%");
@@ -952,6 +986,8 @@ class PrePlanOrderController extends Controller
 
     public function show(PrePlanOrder $prePlanOrder): JsonResponse
     {
+        abort_unless($this->scopedOrderQuery(request())->whereKey($prePlanOrder->id)->exists(), 404);
+
         return response()->json($prePlanOrder);
     }
 
@@ -961,7 +997,7 @@ class PrePlanOrderController extends Controller
             'id' => ['required', 'integer', 'exists:pre_plan_orders,id'],
         ]);
 
-        $prePlanOrder = PrePlanOrder::query()->findOrFail($payload['id']);
+        $prePlanOrder = $this->scopedOrderQuery($request)->findOrFail($payload['id']);
 
         return response()->json($prePlanOrder);
     }
@@ -975,9 +1011,11 @@ class PrePlanOrderController extends Controller
         $payload = $request->validate([
             'cargo_category_id' => ['sometimes', 'integer', 'exists:cargo_categories,id'],
             'client_name' => ['sometimes', 'string', 'max:255'],
+            'pickup_site_id' => ['sometimes', 'nullable', 'integer', 'exists:logistics_sites,id'],
             'pickup_address' => ['sometimes', 'string', 'max:255'],
             'pickup_contact_name' => ['sometimes', 'nullable', 'string', 'max:64'],
             'pickup_contact_phone' => ['sometimes', 'nullable', 'string', 'max:32'],
+            'dropoff_site_id' => ['sometimes', 'nullable', 'integer', 'exists:logistics_sites,id'],
             'dropoff_address' => ['sometimes', 'string', 'max:255'],
             'dropoff_contact_name' => ['sometimes', 'nullable', 'string', 'max:64'],
             'dropoff_contact_phone' => ['sometimes', 'nullable', 'string', 'max:32'],
@@ -995,6 +1033,7 @@ class PrePlanOrderController extends Controller
             'meta' => ['sometimes', 'array'],
         ]);
 
+        $payload = $this->prepareOrderPayload($payload, $prePlanOrder);
         $prePlanOrder->update($payload);
 
         return response()->json($prePlanOrder->fresh());
@@ -1006,9 +1045,11 @@ class PrePlanOrderController extends Controller
             'id' => ['required', 'integer', 'exists:pre_plan_orders,id'],
             'cargo_category_id' => ['sometimes', 'integer', 'exists:cargo_categories,id'],
             'client_name' => ['sometimes', 'string', 'max:255'],
+            'pickup_site_id' => ['sometimes', 'nullable', 'integer', 'exists:logistics_sites,id'],
             'pickup_address' => ['sometimes', 'string', 'max:255'],
             'pickup_contact_name' => ['sometimes', 'nullable', 'string', 'max:64'],
             'pickup_contact_phone' => ['sometimes', 'nullable', 'string', 'max:32'],
+            'dropoff_site_id' => ['sometimes', 'nullable', 'integer', 'exists:logistics_sites,id'],
             'dropoff_address' => ['sometimes', 'string', 'max:255'],
             'dropoff_contact_name' => ['sometimes', 'nullable', 'string', 'max:64'],
             'dropoff_contact_phone' => ['sometimes', 'nullable', 'string', 'max:32'],
@@ -1026,11 +1067,12 @@ class PrePlanOrderController extends Controller
             'meta' => ['sometimes', 'array'],
         ]);
 
-        $prePlanOrder = PrePlanOrder::query()->findOrFail($payload['id']);
+        $prePlanOrder = $this->scopedOrderQuery($request)->findOrFail($payload['id']);
         if (! $this->canPerformOrderAction($prePlanOrder, 'edit')) {
             return response()->json(['message' => '当前状态下预计划单不可修改'], 422);
         }
         unset($payload['id']);
+        $payload = $this->prepareOrderPayload($payload, $prePlanOrder);
         $prePlanOrder->fill($payload);
         $this->appendOrderHistory($prePlanOrder, 'dispatcher_update', $request, [
             'updated_fields' => array_values(array_keys($payload)),
@@ -1038,6 +1080,68 @@ class PrePlanOrderController extends Controller
         $prePlanOrder->save();
 
         return response()->json($prePlanOrder->fresh());
+    }
+
+    private function scopedOrderQuery(Request $request): Builder
+    {
+        return $this->dataScopeService->applyPrePlanOrderScope(
+            PrePlanOrder::query(),
+            $request->user()
+        );
+    }
+
+    private function prepareOrderPayload(array $payload, ?PrePlanOrder $current = null): array
+    {
+        $payload = $this->hydrateSiteReference($payload, 'pickup_site_id', 'pickup_address', $current?->pickup_site_id, $current?->pickup_address);
+        $payload = $this->hydrateSiteReference($payload, 'dropoff_site_id', 'dropoff_address', $current?->dropoff_site_id, $current?->dropoff_address);
+
+        return $payload;
+    }
+
+    private function hydrateSiteReference(
+        array $payload,
+        string $siteIdKey,
+        string $addressKey,
+        ?int $currentSiteId = null,
+        ?string $currentAddress = null,
+    ): array {
+        $siteIdProvided = array_key_exists($siteIdKey, $payload);
+        $addressProvided = array_key_exists($addressKey, $payload);
+        $siteId = $siteIdProvided ? (int) ($payload[$siteIdKey] ?? 0) : $currentSiteId;
+        $address = $addressProvided ? trim((string) ($payload[$addressKey] ?? '')) : (string) ($currentAddress ?? '');
+
+        if ($siteIdProvided && ($payload[$siteIdKey] === null || (int) $payload[$siteIdKey] <= 0)) {
+            $payload[$siteIdKey] = null;
+
+            return $payload;
+        }
+
+        if ($siteId > 0) {
+            $site = LogisticsSite::query()->find($siteId);
+            if ($site) {
+                $payload[$siteIdKey] = (int) $site->id;
+                if (! $addressProvided || $address === '') {
+                    $payload[$addressKey] = (string) $site->address;
+                }
+            }
+
+            return $payload;
+        }
+
+        if (! $addressProvided || $address === '') {
+            return $payload;
+        }
+
+        $matchedSiteId = LogisticsSite::query()
+            ->where(function (Builder $query) use ($address): void {
+                $query->where('address', $address)
+                    ->orWhere('name', $address);
+            })
+            ->value('id');
+
+        $payload[$siteIdKey] = $matchedSiteId ? (int) $matchedSiteId : null;
+
+        return $payload;
     }
 
     private function canModifyOrder(PrePlanOrder $prePlanOrder, bool $ignoreLock = false): bool

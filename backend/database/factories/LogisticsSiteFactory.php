@@ -16,11 +16,14 @@ class LogisticsSiteFactory extends Factory
     public function definition(): array
     {
         $name = fake()->city().fake()->randomElement(['配送中心', '仓库', '门店', '站点']);
+        $regionCode = fake()->randomElement(['SH-PD', 'SH-JD', 'SH-PT', 'SH-MH']);
 
         return [
             'site_no' => 'SITE-MOCK-'.Str::upper(Str::random(6)),
             'name' => $name,
             'site_type' => fake()->randomElement(['pickup', 'dropoff', 'both']),
+            'organization_code' => 'SH',
+            'region_code' => $regionCode,
             'contact_person' => fake()->name(),
             'contact_phone' => '13'.fake()->numerify('#########'),
             'address' => fake()->address(),
@@ -30,4 +33,3 @@ class LogisticsSiteFactory extends Factory
         ];
     }
 }
-

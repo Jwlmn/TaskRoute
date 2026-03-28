@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\DispatchTask;
 use App\Models\Vehicle;
+use App\Services\Auth\DataScopeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -13,6 +14,10 @@ use Illuminate\Validation\ValidationException;
 
 class DispatchTaskController extends Controller
 {
+    public function __construct(private readonly DataScopeService $dataScopeService)
+    {
+    }
+
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -20,14 +25,11 @@ class DispatchTaskController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        $query = DispatchTask::query()->with([
-            'vehicle:id,plate_number,name',
+        $query = $this->dataScopeService->applyDispatchTaskScope(DispatchTask::query(), $user)->with([
+            'vehicle:id,plate_number,name,site_id',
             'driver:id,account,name',
-            'orders:id,order_no,client_name,pickup_address,pickup_contact_name,pickup_contact_phone,dropoff_address,dropoff_contact_name,dropoff_contact_phone,cargo_category_id,status',
+            'orders:id,order_no,client_name,pickup_site_id,pickup_address,pickup_contact_name,pickup_contact_phone,dropoff_site_id,dropoff_address,dropoff_contact_name,dropoff_contact_phone,cargo_category_id,status',
         ]);
-        if ($user && $user->hasRole('driver')) {
-            $query->where('driver_id', $user->id);
-        }
 
         return response()->json(
             $query->latest()->paginate(20)
@@ -53,6 +55,12 @@ class DispatchTaskController extends Controller
         ]);
 
         $payload['task_no'] = 'DT-'.now()->format('Ymd').'-'.Str::upper(Str::random(6));
+        if (array_key_exists('vehicle_id', $payload) && $payload['vehicle_id'] && ! $this->dataScopeService->canAccessSite(
+            $request->user(),
+            Vehicle::query()->where('id', (int) $payload['vehicle_id'])->value('site_id')
+        )) {
+            return response()->json(['message' => '当前账号不可创建该站点任务'], 403);
+        }
 
         $task = DispatchTask::query()->create($payload);
 
@@ -66,9 +74,9 @@ class DispatchTaskController extends Controller
         }
 
         $dispatchTask->loadMissing([
-            'vehicle:id,plate_number,name',
+            'vehicle:id,plate_number,name,site_id',
             'driver:id,account,name',
-            'orders:id,order_no,client_name,pickup_address,pickup_contact_name,pickup_contact_phone,dropoff_address,dropoff_contact_name,dropoff_contact_phone,status',
+            'orders:id,order_no,client_name,pickup_site_id,pickup_address,pickup_contact_name,pickup_contact_phone,dropoff_site_id,dropoff_address,dropoff_contact_name,dropoff_contact_phone,status',
         ]);
 
         return response()->json($dispatchTask);
@@ -80,15 +88,16 @@ class DispatchTaskController extends Controller
             'id' => ['required', 'integer', 'exists:dispatch_tasks,id'],
         ]);
 
-        $dispatchTask = DispatchTask::query()->findOrFail($payload['id']);
+        $dispatchTask = $this->dataScopeService->applyDispatchTaskScope(DispatchTask::query(), $request->user())
+            ->findOrFail($payload['id']);
         if (! $this->canAccessTask($request, $dispatchTask)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
         $dispatchTask->loadMissing([
-            'vehicle:id,plate_number,name',
+            'vehicle:id,plate_number,name,site_id',
             'driver:id,account,name',
-            'orders:id,order_no,client_name,pickup_address,pickup_contact_name,pickup_contact_phone,dropoff_address,dropoff_contact_name,dropoff_contact_phone,status',
+            'orders:id,order_no,client_name,pickup_site_id,pickup_address,pickup_contact_name,pickup_contact_phone,dropoff_site_id,dropoff_address,dropoff_contact_name,dropoff_contact_phone,status',
         ]);
 
         return response()->json($dispatchTask);
@@ -125,6 +134,12 @@ class DispatchTaskController extends Controller
             $payload['driver_id'] = $payload['vehicle_id']
                 ? Vehicle::query()->where('id', (int) $payload['vehicle_id'])->value('driver_id')
                 : null;
+        }
+        if (array_key_exists('vehicle_id', $payload) && $payload['vehicle_id'] && ! $this->dataScopeService->canAccessSite(
+            $request->user(),
+            Vehicle::query()->where('id', (int) $payload['vehicle_id'])->value('site_id')
+        )) {
+            return response()->json(['message' => '当前账号不可修改为该站点任务'], 403);
         }
 
         $dispatchTask->update($payload);
@@ -166,6 +181,12 @@ class DispatchTaskController extends Controller
                 ? Vehicle::query()->where('id', (int) $payload['vehicle_id'])->value('driver_id')
                 : null;
         }
+        if (array_key_exists('vehicle_id', $payload) && $payload['vehicle_id'] && ! $this->dataScopeService->canAccessSite(
+            $request->user(),
+            Vehicle::query()->where('id', (int) $payload['vehicle_id'])->value('site_id')
+        )) {
+            return response()->json(['message' => '当前账号不可修改为该站点任务'], 403);
+        }
         $dispatchTask->update($payload);
 
         return response()->json($dispatchTask->fresh());
@@ -185,8 +206,8 @@ class DispatchTaskController extends Controller
         $targetStatus = $payload['status'] ?? 'pending';
         $keyword = trim((string) ($payload['task_no'] ?? ''));
 
-        $tasks = DispatchTask::query()
-            ->with(['vehicle:id,plate_number,name', 'driver:id,account,name'])
+        $tasks = $this->dataScopeService->applyDispatchTaskScope(DispatchTask::query(), $request->user())
+            ->with(['vehicle:id,plate_number,name,site_id', 'driver:id,account,name'])
             ->latest()
             ->get()
             ->filter(function (DispatchTask $task) use ($targetStatus, $keyword): bool {
@@ -219,7 +240,8 @@ class DispatchTaskController extends Controller
             'status' => ['nullable', 'in:pending,scheduled,in_progress,completed,cancelled'],
         ]);
 
-        $dispatchTask = DispatchTask::query()->findOrFail((int) $payload['task_id']);
+        $dispatchTask = $this->dataScopeService->applyDispatchTaskScope(DispatchTask::query(), $request->user())
+            ->findOrFail((int) $payload['task_id']);
         if (! $this->canAccessTask($request, $dispatchTask)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
@@ -240,7 +262,9 @@ class DispatchTaskController extends Controller
                 'pre_plan_orders.id',
                 'pre_plan_orders.order_no',
                 'pre_plan_orders.client_name',
+                'pre_plan_orders.pickup_site_id',
                 'pre_plan_orders.pickup_address',
+                'pre_plan_orders.dropoff_site_id',
                 'pre_plan_orders.dropoff_address',
                 'pre_plan_orders.pickup_contact_name',
                 'pre_plan_orders.pickup_contact_phone',
@@ -282,7 +306,9 @@ class DispatchTaskController extends Controller
         }
 
         return DB::transaction(function () use ($payload, $request): JsonResponse {
-            $task = DispatchTask::query()->lockForUpdate()->findOrFail($payload['task_id']);
+            $task = $this->dataScopeService->applyDispatchTaskScope(DispatchTask::query(), $request->user())
+                ->lockForUpdate()
+                ->findOrFail($payload['task_id']);
             $routeMeta = is_array($task->route_meta) ? $task->route_meta : [];
             $exception = is_array($routeMeta['exception'] ?? null) ? $routeMeta['exception'] : null;
             if (! $exception) {
@@ -322,6 +348,11 @@ class DispatchTaskController extends Controller
                     ->where('status', 'idle')
                     ->with('driver:id,role,status')
                     ->first();
+                if (! $vehicle || ! $this->dataScopeService->canAccessSite($request->user(), (int) $vehicle->site_id)) {
+                    throw ValidationException::withMessages([
+                        'reassign_vehicle_id' => '目标车辆不在当前账号可管理范围内',
+                    ]);
+                }
                 if (! $vehicle || ! $vehicle->driver_id || ! $vehicle->driver || $vehicle->driver->role !== 'driver' || $vehicle->driver->status !== 'active') {
                     throw ValidationException::withMessages([
                         'reassign_vehicle_id' => '目标车辆必须为空闲且绑定启用司机',
@@ -388,15 +419,11 @@ class DispatchTaskController extends Controller
             return false;
         }
 
-        if ($user->hasAnyRole(['admin', 'dispatcher'])) {
-            return true;
-        }
+        $scopedTask = $this->dataScopeService->applyDispatchTaskScope(DispatchTask::query(), $user)
+            ->whereKey($dispatchTask->id)
+            ->exists();
 
-        if ($user->hasRole('driver')) {
-            return (int) $dispatchTask->driver_id === (int) $user->id;
-        }
-
-        return false;
+        return $scopedTask;
     }
 
     private function canModifyTask(DispatchTask $dispatchTask): bool
