@@ -31,7 +31,11 @@ class PrePlanOrderSeeder extends Seeder
                     'cargo_category_id' => $cargoId,
                     'client_name' => $client,
                     'pickup_address' => $pickup,
+                    'pickup_contact_name' => '装货联系人',
+                    'pickup_contact_phone' => '13900000001',
                     'dropoff_address' => $dropoff,
+                    'dropoff_contact_name' => '收货联系人',
+                    'dropoff_contact_phone' => '13900000002',
                     'cargo_weight_kg' => $weight,
                     'cargo_volume_m3' => $volume,
                     'expected_pickup_at' => now()->addHours($start),
@@ -42,4 +46,3 @@ class PrePlanOrderSeeder extends Seeder
         }
     }
 }
-

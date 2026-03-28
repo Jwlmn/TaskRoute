@@ -34,7 +34,11 @@ const form = reactive({
   cargo_category_id: null,
   client_name: '',
   pickup_address: '',
+  pickup_contact_name: '',
+  pickup_contact_phone: '',
   dropoff_address: '',
+  dropoff_contact_name: '',
+  dropoff_contact_phone: '',
   cargo_weight_kg: null,
   cargo_volume_m3: null,
   expected_pickup_at: '',
@@ -52,7 +56,11 @@ const resetForm = () => {
   form.cargo_category_id = null
   form.client_name = ''
   form.pickup_address = ''
+  form.pickup_contact_name = ''
+  form.pickup_contact_phone = ''
   form.dropoff_address = ''
+  form.dropoff_contact_name = ''
+  form.dropoff_contact_phone = ''
   form.cargo_weight_kg = null
   form.cargo_volume_m3 = null
   form.expected_pickup_at = ''
@@ -70,7 +78,11 @@ const buildPayload = () => ({
   cargo_category_id: Number(form.cargo_category_id),
   client_name: form.client_name,
   pickup_address: form.pickup_address,
+  pickup_contact_name: form.pickup_contact_name || null,
+  pickup_contact_phone: form.pickup_contact_phone || null,
   dropoff_address: form.dropoff_address,
+  dropoff_contact_name: form.dropoff_contact_name || null,
+  dropoff_contact_phone: form.dropoff_contact_phone || null,
   cargo_weight_kg: form.cargo_weight_kg,
   cargo_volume_m3: form.cargo_volume_m3,
   expected_pickup_at: form.expected_pickup_at || null,
@@ -96,7 +108,11 @@ const openEdit = (row) => {
   form.cargo_category_id = row.cargo_category_id
   form.client_name = row.client_name || ''
   form.pickup_address = row.pickup_address || ''
+  form.pickup_contact_name = row.pickup_contact_name || ''
+  form.pickup_contact_phone = row.pickup_contact_phone || ''
   form.dropoff_address = row.dropoff_address || ''
+  form.dropoff_contact_name = row.dropoff_contact_name || ''
+  form.dropoff_contact_phone = row.dropoff_contact_phone || ''
   form.cargo_weight_kg = Number(row.cargo_weight_kg || 0)
   form.cargo_volume_m3 = Number(row.cargo_volume_m3 || 0)
   form.expected_pickup_at = row.expected_pickup_at || ''
@@ -179,7 +195,17 @@ onMounted(async () => {
       <el-table-column prop="order_no" label="订单号" min-width="170" />
       <el-table-column prop="client_name" label="客户" min-width="120" />
       <el-table-column prop="pickup_address" label="装货地" min-width="170" />
+      <el-table-column label="装货联系人" min-width="150">
+        <template #default="{ row }">
+          {{ row.pickup_contact_name || '-' }} / {{ row.pickup_contact_phone || '-' }}
+        </template>
+      </el-table-column>
       <el-table-column prop="dropoff_address" label="卸货地" min-width="170" />
+      <el-table-column label="收货联系人" min-width="150">
+        <template #default="{ row }">
+          {{ row.dropoff_contact_name || '-' }} / {{ row.dropoff_contact_phone || '-' }}
+        </template>
+      </el-table-column>
       <el-table-column label="运价方式" min-width="100">
         <template #default="{ row }">
           {{ getLabel(freightSchemeLabelMap, row.freight_calc_scheme) }}
@@ -245,9 +271,33 @@ onMounted(async () => {
       <el-form-item label="装货地">
         <el-input v-model="form.pickup_address" />
       </el-form-item>
+      <el-row :gutter="12">
+        <el-col :span="12">
+          <el-form-item label="装货联系人">
+            <el-input v-model="form.pickup_contact_name" />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="装货联系电话">
+            <el-input v-model="form.pickup_contact_phone" />
+          </el-form-item>
+        </el-col>
+      </el-row>
       <el-form-item label="卸货地">
         <el-input v-model="form.dropoff_address" />
       </el-form-item>
+      <el-row :gutter="12">
+        <el-col :span="12">
+          <el-form-item label="收货联系人">
+            <el-input v-model="form.dropoff_contact_name" />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="收货联系电话">
+            <el-input v-model="form.dropoff_contact_phone" />
+          </el-form-item>
+        </el-col>
+      </el-row>
       <el-row :gutter="12">
         <el-col :span="12">
           <el-form-item label="重量(kg)">

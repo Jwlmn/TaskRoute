@@ -34,7 +34,11 @@ const createForm = reactive({
   cargo_category_id: null,
   client_name: '',
   pickup_address: '',
+  pickup_contact_name: '',
+  pickup_contact_phone: '',
   dropoff_address: '',
+  dropoff_contact_name: '',
+  dropoff_contact_phone: '',
   cargo_weight_kg: null,
   cargo_volume_m3: null,
   freight_calc_scheme: '',
@@ -51,7 +55,11 @@ const editForm = reactive({
   cargo_category_id: null,
   client_name: '',
   pickup_address: '',
+  pickup_contact_name: '',
+  pickup_contact_phone: '',
   dropoff_address: '',
+  dropoff_contact_name: '',
+  dropoff_contact_phone: '',
   cargo_weight_kg: null,
   cargo_volume_m3: null,
   freight_calc_scheme: '',
@@ -139,7 +147,11 @@ const resetCreateForm = () => {
   createForm.cargo_category_id = null
   createForm.client_name = ''
   createForm.pickup_address = ''
+  createForm.pickup_contact_name = ''
+  createForm.pickup_contact_phone = ''
   createForm.dropoff_address = ''
+  createForm.dropoff_contact_name = ''
+  createForm.dropoff_contact_phone = ''
   createForm.cargo_weight_kg = null
   createForm.cargo_volume_m3 = null
   createForm.freight_calc_scheme = ''
@@ -157,7 +169,11 @@ const resetEditForm = () => {
   editForm.cargo_category_id = null
   editForm.client_name = ''
   editForm.pickup_address = ''
+  editForm.pickup_contact_name = ''
+  editForm.pickup_contact_phone = ''
   editForm.dropoff_address = ''
+  editForm.dropoff_contact_name = ''
+  editForm.dropoff_contact_phone = ''
   editForm.cargo_weight_kg = null
   editForm.cargo_volume_m3 = null
   editForm.freight_calc_scheme = ''
@@ -184,7 +200,11 @@ const fillOrderForm = (target, row) => {
   target.cargo_category_id = row.cargo_category_id
   target.client_name = row.client_name || ''
   target.pickup_address = row.pickup_address || ''
+  target.pickup_contact_name = row.pickup_contact_name || ''
+  target.pickup_contact_phone = row.pickup_contact_phone || ''
   target.dropoff_address = row.dropoff_address || ''
+  target.dropoff_contact_name = row.dropoff_contact_name || ''
+  target.dropoff_contact_phone = row.dropoff_contact_phone || ''
   target.cargo_weight_kg = row.cargo_weight_kg
   target.cargo_volume_m3 = row.cargo_volume_m3
   target.freight_calc_scheme = row.freight_calc_scheme || ''
@@ -209,7 +229,11 @@ const buildOrderPayload = (form) => ({
   cargo_category_id: Number(form.cargo_category_id),
   client_name: form.client_name,
   pickup_address: form.pickup_address,
+  pickup_contact_name: form.pickup_contact_name || null,
+  pickup_contact_phone: form.pickup_contact_phone || null,
   dropoff_address: form.dropoff_address,
+  dropoff_contact_name: form.dropoff_contact_name || null,
+  dropoff_contact_phone: form.dropoff_contact_phone || null,
   cargo_weight_kg: form.cargo_weight_kg,
   cargo_volume_m3: form.cargo_volume_m3,
   freight_calc_scheme: form.freight_calc_scheme || null,
@@ -452,7 +476,17 @@ onMounted(() => {
       <el-table-column prop="order_no" label="预计划单号" min-width="180" />
       <el-table-column prop="client_name" label="客户" min-width="120" />
       <el-table-column prop="pickup_address" label="装货地" min-width="180" />
+      <el-table-column label="装货联系人" min-width="150">
+        <template #default="{ row }">
+          {{ row.pickup_contact_name || '-' }} / {{ row.pickup_contact_phone || '-' }}
+        </template>
+      </el-table-column>
       <el-table-column prop="dropoff_address" label="卸货地" min-width="180" />
+      <el-table-column label="收货联系人" min-width="150">
+        <template #default="{ row }">
+          {{ row.dropoff_contact_name || '-' }} / {{ row.dropoff_contact_phone || '-' }}
+        </template>
+      </el-table-column>
       <el-table-column label="货品分类" min-width="130">
         <template #default="{ row }">
           {{ cargoCategoryMap[row.cargo_category_id] || `分类#${row.cargo_category_id}` }}
@@ -568,6 +602,30 @@ onMounted(() => {
           <el-option v-for="site in sites" :key="`dropoff-${site.id}`" :label="`${site.name}｜${site.address}`" :value="site.address" />
         </el-select>
       </el-form-item>
+      <el-row :gutter="12">
+        <el-col :span="12">
+          <el-form-item label="装货联系人">
+            <el-input v-model="createForm.pickup_contact_name" placeholder="请输入装货联系人" />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="装货联系电话">
+            <el-input v-model="createForm.pickup_contact_phone" placeholder="请输入装货联系电话" />
+          </el-form-item>
+        </el-col>
+      </el-row>
+      <el-row :gutter="12">
+        <el-col :span="12">
+          <el-form-item label="收货联系人">
+            <el-input v-model="createForm.dropoff_contact_name" placeholder="请输入收货联系人" />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="收货联系电话">
+            <el-input v-model="createForm.dropoff_contact_phone" placeholder="请输入收货联系电话" />
+          </el-form-item>
+        </el-col>
+      </el-row>
       <el-row :gutter="12">
         <el-col :span="12">
           <el-form-item label="重量(kg)">
@@ -735,6 +793,30 @@ onMounted(() => {
           <el-option v-for="site in sites" :key="`edit-d-${site.id}`" :label="`${site.name}｜${site.address}`" :value="site.address" />
         </el-select>
       </el-form-item>
+      <el-row :gutter="12">
+        <el-col :span="12">
+          <el-form-item label="装货联系人">
+            <el-input v-model="editForm.pickup_contact_name" placeholder="请输入装货联系人" />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="装货联系电话">
+            <el-input v-model="editForm.pickup_contact_phone" placeholder="请输入装货联系电话" />
+          </el-form-item>
+        </el-col>
+      </el-row>
+      <el-row :gutter="12">
+        <el-col :span="12">
+          <el-form-item label="收货联系人">
+            <el-input v-model="editForm.dropoff_contact_name" placeholder="请输入收货联系人" />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="收货联系电话">
+            <el-input v-model="editForm.dropoff_contact_phone" placeholder="请输入收货联系电话" />
+          </el-form-item>
+        </el-col>
+      </el-row>
       <el-row :gutter="12">
         <el-col :span="12">
           <el-form-item label="重量(kg)">

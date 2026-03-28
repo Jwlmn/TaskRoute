@@ -27,7 +27,11 @@ class PrePlanOrderAuditApiTest extends TestCase
             'cargo_category_id' => $cargo->id,
             'client_name' => '客户自助下单A',
             'pickup_address' => '上海仓A',
+            'pickup_contact_name' => '装货联系人A',
+            'pickup_contact_phone' => '13911110001',
             'dropoff_address' => '上海店B',
+            'dropoff_contact_name' => '收货联系人A',
+            'dropoff_contact_phone' => '13911110002',
             'cargo_weight_kg' => 1200,
             'cargo_volume_m3' => 3.5,
             'freight_calc_scheme' => 'by_weight',
@@ -35,11 +39,17 @@ class PrePlanOrderAuditApiTest extends TestCase
         ]);
         $submitResponse->assertCreated()
             ->assertJsonPath('audit_status', 'pending_approval')
-            ->assertJsonPath('submitter_id', $customer->id);
+            ->assertJsonPath('submitter_id', $customer->id)
+            ->assertJsonPath('pickup_contact_name', '装货联系人A')
+            ->assertJsonPath('dropoff_contact_name', '收货联系人A');
         $orderId = (int) $submitResponse->json('id');
 
         $listResponse = $this->postJson('/api/v1/pre-plan-order/customer-list', []);
-        $listResponse->assertOk()->assertJsonPath('data.0.id', $orderId);
+        $listResponse->assertOk();
+        $this->assertTrue(
+            collect($listResponse->json('data'))->contains(fn (array $item): bool => (int) ($item['id'] ?? 0) === $orderId),
+            '客户订单列表应包含刚提交的计划单'
+        );
 
         Sanctum::actingAs($dispatcher);
         $approveResponse = $this->postJson('/api/v1/pre-plan-order/audit-approve', [
@@ -129,10 +139,12 @@ class PrePlanOrderAuditApiTest extends TestCase
 
         Sanctum::actingAs($customer);
         $messageListResponse = $this->postJson('/api/v1/message/list', ['unread_only' => true]);
-        $messageListResponse->assertOk()
-            ->assertJsonPath('data.0.meta.order_id', $orderId)
-            ->assertJsonPath('data.0.meta.audit_status', 'rejected');
-        $messageId = (int) $messageListResponse->json('data.0.id');
+        $messageListResponse->assertOk();
+        $targetMessage = collect($messageListResponse->json('data'))
+            ->first(fn (array $item): bool => (int) data_get($item, 'meta.order_id') === $orderId);
+        $this->assertNotNull($targetMessage, '客户未读消息中应包含当前驳回订单的审核消息');
+        $this->assertSame('rejected', data_get($targetMessage, 'meta.audit_status'));
+        $messageId = (int) data_get($targetMessage, 'id');
 
         $this->postJson('/api/v1/message/read', ['id' => $messageId])
             ->assertOk();

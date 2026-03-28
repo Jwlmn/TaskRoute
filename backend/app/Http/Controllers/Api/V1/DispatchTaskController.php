@@ -23,7 +23,7 @@ class DispatchTaskController extends Controller
         $query = DispatchTask::query()->with([
             'vehicle:id,plate_number,name',
             'driver:id,account,name',
-            'orders:id,order_no,client_name,pickup_address,dropoff_address,cargo_category_id,status',
+            'orders:id,order_no,client_name,pickup_address,pickup_contact_name,pickup_contact_phone,dropoff_address,dropoff_contact_name,dropoff_contact_phone,cargo_category_id,status',
         ]);
         if ($user && $user->role === 'driver') {
             $query->where('driver_id', $user->id);
@@ -68,7 +68,7 @@ class DispatchTaskController extends Controller
         $dispatchTask->loadMissing([
             'vehicle:id,plate_number,name',
             'driver:id,account,name',
-            'orders:id,order_no,client_name,status',
+            'orders:id,order_no,client_name,pickup_address,pickup_contact_name,pickup_contact_phone,dropoff_address,dropoff_contact_name,dropoff_contact_phone,status',
         ]);
 
         return response()->json($dispatchTask);
@@ -88,7 +88,7 @@ class DispatchTaskController extends Controller
         $dispatchTask->loadMissing([
             'vehicle:id,plate_number,name',
             'driver:id,account,name',
-            'orders:id,order_no,client_name,status',
+            'orders:id,order_no,client_name,pickup_address,pickup_contact_name,pickup_contact_phone,dropoff_address,dropoff_contact_name,dropoff_contact_phone,status',
         ]);
 
         return response()->json($dispatchTask);

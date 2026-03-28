@@ -325,7 +325,13 @@ onMounted(async () => {
           <el-descriptions-item label="状态">{{ getOrderTaskStatusLabel(selectedOrder.status) }}</el-descriptions-item>
           <el-descriptions-item label="货品分类ID">{{ selectedOrder.cargo_category_id || '-' }}</el-descriptions-item>
           <el-descriptions-item label="装货地址">{{ selectedOrder.pickup_address || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="装货联系人">
+            {{ selectedOrder.pickup_contact_name || '-' }} / {{ selectedOrder.pickup_contact_phone || '-' }}
+          </el-descriptions-item>
           <el-descriptions-item label="卸货地址">{{ selectedOrder.dropoff_address || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="收货联系人">
+            {{ selectedOrder.dropoff_contact_name || '-' }} / {{ selectedOrder.dropoff_contact_phone || '-' }}
+          </el-descriptions-item>
           <el-descriptions-item label="重量(kg)">{{ selectedOrder.cargo_weight_kg ?? '-' }}</el-descriptions-item>
           <el-descriptions-item label="体积(m³)">{{ selectedOrder.cargo_volume_m3 ?? '-' }}</el-descriptions-item>
           <el-descriptions-item label="期望提货时间">{{ formatDateTime(selectedOrder.expected_pickup_at) }}</el-descriptions-item>

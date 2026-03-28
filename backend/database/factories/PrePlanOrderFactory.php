@@ -25,7 +25,11 @@ class PrePlanOrderFactory extends Factory
                 ?? CargoCategory::factory()->create()->id,
             'client_name' => fake()->company(),
             'pickup_address' => fake()->address(),
+            'pickup_contact_name' => fake()->name(),
+            'pickup_contact_phone' => fake()->numerify('13#########'),
             'dropoff_address' => fake()->address(),
+            'dropoff_contact_name' => fake()->name(),
+            'dropoff_contact_phone' => fake()->numerify('13#########'),
             'cargo_weight_kg' => fake()->randomFloat(2, 100, 10000),
             'cargo_volume_m3' => fake()->randomFloat(2, 1, 30),
             'expected_pickup_at' => $pickupTime,
@@ -37,4 +41,3 @@ class PrePlanOrderFactory extends Factory
         ];
     }
 }
-

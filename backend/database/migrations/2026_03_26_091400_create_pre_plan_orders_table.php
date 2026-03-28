@@ -15,7 +15,11 @@ return new class extends Migration
             $table->foreignId('submitter_id')->nullable()->constrained('users')->nullOnDelete();
             $table->string('client_name');
             $table->string('pickup_address');
+            $table->string('pickup_contact_name', 64)->nullable();
+            $table->string('pickup_contact_phone', 32)->nullable();
             $table->string('dropoff_address');
+            $table->string('dropoff_contact_name', 64)->nullable();
+            $table->string('dropoff_contact_phone', 32)->nullable();
             $table->decimal('cargo_weight_kg', 10, 2)->default(0);
             $table->decimal('cargo_volume_m3', 10, 2)->default(0);
             $table->enum('freight_calc_scheme', ['by_weight', 'by_volume', 'by_trip'])->nullable();

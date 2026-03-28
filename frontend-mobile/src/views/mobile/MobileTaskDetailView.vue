@@ -488,7 +488,13 @@ onUnmounted(() => {
             </div>
             <div class="mobile-order-line">客户：{{ order.client_name || '-' }}</div>
             <div class="mobile-order-line">装货地：{{ order.pickup_address || '-' }}</div>
+            <div class="mobile-order-line">
+              装货联系人：{{ order.pickup_contact_name || '-' }} / {{ order.pickup_contact_phone || '-' }}
+            </div>
             <div class="mobile-order-line">卸货地：{{ order.dropoff_address || '-' }}</div>
+            <div class="mobile-order-line">
+              收货联系人：{{ order.dropoff_contact_name || '-' }} / {{ order.dropoff_contact_phone || '-' }}
+            </div>
             <div class="mobile-order-line">
               重量/体积：{{ formatCargoValue(order.cargo_weight_kg, 'kg') }} / {{ formatCargoValue(order.cargo_volume_m3, 'm³') }}
             </div>
