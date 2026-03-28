@@ -17,6 +17,12 @@ return new class extends Migration
             $table->string('dropoff_address');
             $table->decimal('cargo_weight_kg', 10, 2)->default(0);
             $table->decimal('cargo_volume_m3', 10, 2)->default(0);
+            $table->enum('freight_calc_scheme', ['by_weight', 'by_volume', 'by_trip', 'by_loss_ton'])->nullable();
+            $table->decimal('freight_unit_price', 10, 2)->nullable();
+            $table->unsignedInteger('freight_trip_count')->default(1);
+            $table->decimal('freight_loss_ton_kg', 10, 2)->nullable();
+            $table->decimal('freight_amount', 12, 2)->nullable();
+            $table->timestamp('freight_calculated_at')->nullable();
             $table->timestamp('expected_pickup_at')->nullable();
             $table->timestamp('expected_delivery_at')->nullable();
             $table->enum('status', ['pending', 'scheduled', 'in_progress', 'completed', 'cancelled'])->default('pending');
@@ -30,4 +36,3 @@ return new class extends Migration
         Schema::dropIfExists('pre_plan_orders');
     }
 };
-

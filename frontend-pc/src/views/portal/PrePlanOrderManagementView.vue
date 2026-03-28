@@ -36,6 +36,10 @@ const createForm = reactive({
   dropoff_address: '',
   cargo_weight_kg: null,
   cargo_volume_m3: null,
+  freight_calc_scheme: '',
+  freight_unit_price: null,
+  freight_trip_count: 1,
+  freight_loss_ton_kg: null,
   expected_pickup_at: '',
   expected_delivery_at: '',
 })
@@ -47,6 +51,10 @@ const editForm = reactive({
   dropoff_address: '',
   cargo_weight_kg: null,
   cargo_volume_m3: null,
+  freight_calc_scheme: '',
+  freight_unit_price: null,
+  freight_trip_count: 1,
+  freight_loss_ton_kg: null,
   expected_pickup_at: '',
   expected_delivery_at: '',
   status: '',
@@ -77,6 +85,20 @@ const statusTypeMap = {
 const editableStatusSet = new Set(['pending', 'scheduled', 'in_progress'])
 const dispatchableStatusSet = new Set(['pending', 'scheduled'])
 
+const freightSchemeLabelMap = {
+  by_weight: '按重量',
+  by_volume: '按体积',
+  by_trip: '按趟',
+  by_loss_ton: '按亏吨',
+}
+
+const freightSchemeOptions = [
+  { label: '按重量（元/吨）', value: 'by_weight' },
+  { label: '按体积（元/m³）', value: 'by_volume' },
+  { label: '按趟（元/趟）', value: 'by_trip' },
+  { label: '按亏吨（元/亏吨）', value: 'by_loss_ton' },
+]
+
 const cargoCategoryMap = computed(() => {
   const map = {}
   for (const item of cargoCategories.value) {
@@ -106,6 +128,10 @@ const resetCreateForm = () => {
   createForm.dropoff_address = ''
   createForm.cargo_weight_kg = null
   createForm.cargo_volume_m3 = null
+  createForm.freight_calc_scheme = ''
+  createForm.freight_unit_price = null
+  createForm.freight_trip_count = 1
+  createForm.freight_loss_ton_kg = null
   createForm.expected_pickup_at = ''
   createForm.expected_delivery_at = ''
   createFormRef.value?.clearValidate()
@@ -118,6 +144,10 @@ const resetEditForm = () => {
   editForm.dropoff_address = ''
   editForm.cargo_weight_kg = null
   editForm.cargo_volume_m3 = null
+  editForm.freight_calc_scheme = ''
+  editForm.freight_unit_price = null
+  editForm.freight_trip_count = 1
+  editForm.freight_loss_ton_kg = null
   editForm.expected_pickup_at = ''
   editForm.expected_delivery_at = ''
   editForm.status = ''
@@ -139,6 +169,10 @@ const fillOrderForm = (target, row) => {
   target.dropoff_address = row.dropoff_address || ''
   target.cargo_weight_kg = row.cargo_weight_kg
   target.cargo_volume_m3 = row.cargo_volume_m3
+  target.freight_calc_scheme = row.freight_calc_scheme || ''
+  target.freight_unit_price = row.freight_unit_price
+  target.freight_trip_count = row.freight_trip_count || 1
+  target.freight_loss_ton_kg = row.freight_loss_ton_kg
   target.expected_pickup_at = row.expected_pickup_at ? formatDateTime(row.expected_pickup_at).replace(' ', 'T') : ''
   target.expected_delivery_at = row.expected_delivery_at ? formatDateTime(row.expected_delivery_at).replace(' ', 'T') : ''
 }
@@ -158,6 +192,10 @@ const buildOrderPayload = (form) => ({
   dropoff_address: form.dropoff_address,
   cargo_weight_kg: form.cargo_weight_kg,
   cargo_volume_m3: form.cargo_volume_m3,
+  freight_calc_scheme: form.freight_calc_scheme || null,
+  freight_unit_price: form.freight_calc_scheme ? form.freight_unit_price : null,
+  freight_trip_count: form.freight_calc_scheme === 'by_trip' ? form.freight_trip_count : null,
+  freight_loss_ton_kg: form.freight_calc_scheme === 'by_loss_ton' ? form.freight_loss_ton_kg : null,
   expected_pickup_at: normalizeDate(form.expected_pickup_at),
   expected_delivery_at: normalizeDate(form.expected_delivery_at),
 })
@@ -360,6 +398,16 @@ onMounted(() => {
       </el-table-column>
       <el-table-column prop="cargo_weight_kg" label="重量(kg)" min-width="100" />
       <el-table-column prop="cargo_volume_m3" label="体积(m³)" min-width="100" />
+      <el-table-column label="运费方案" min-width="130">
+        <template #default="{ row }">
+          {{ getLabel(freightSchemeLabelMap, row.freight_calc_scheme) }}
+        </template>
+      </el-table-column>
+      <el-table-column label="已算运费(元)" min-width="120">
+        <template #default="{ row }">
+          {{ row.freight_amount ?? '-' }}
+        </template>
+      </el-table-column>
       <el-table-column label="预计提货" min-width="160">
         <template #default="{ row }">
           {{ formatDateTime(row.expected_pickup_at) }}
@@ -465,6 +513,56 @@ onMounted(() => {
           </el-form-item>
         </el-col>
       </el-row>
+      <el-divider content-position="left">运费计算方案</el-divider>
+      <el-row :gutter="12">
+        <el-col :span="12">
+          <el-form-item label="计算方式">
+            <el-select v-model="createForm.freight_calc_scheme" placeholder="请选择运费方案" style="width: 100%">
+              <el-option
+                v-for="item in freightSchemeOptions"
+                :key="`create-freight-${item.value}`"
+                :label="item.label"
+                :value="item.value"
+              />
+            </el-select>
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="单价">
+            <el-input-number
+              v-model="createForm.freight_unit_price"
+              :min="0"
+              :precision="2"
+              :controls="false"
+              style="width: 100%"
+              placeholder="请输入运费单价"
+            />
+          </el-form-item>
+        </el-col>
+      </el-row>
+      <el-row :gutter="12">
+        <el-col :span="12">
+          <el-form-item label="趟数（按趟）" v-if="createForm.freight_calc_scheme === 'by_trip'">
+            <el-input-number
+              v-model="createForm.freight_trip_count"
+              :min="1"
+              :precision="0"
+              style="width: 100%"
+            />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="亏吨标准重量kg（按亏吨）" v-if="createForm.freight_calc_scheme === 'by_loss_ton'">
+            <el-input-number
+              v-model="createForm.freight_loss_ton_kg"
+              :min="0"
+              :precision="2"
+              :controls="false"
+              style="width: 100%"
+            />
+          </el-form-item>
+        </el-col>
+      </el-row>
     </el-form>
     <template #footer>
       <el-button @click="createDialogVisible = false">取消</el-button>
@@ -552,6 +650,56 @@ onMounted(() => {
               type="datetime"
               value-format="YYYY-MM-DD HH:mm:ss"
               placeholder="请选择预计送达时间"
+              style="width: 100%"
+            />
+          </el-form-item>
+        </el-col>
+      </el-row>
+      <el-divider content-position="left">运费计算方案</el-divider>
+      <el-row :gutter="12">
+        <el-col :span="12">
+          <el-form-item label="计算方式">
+            <el-select v-model="editForm.freight_calc_scheme" placeholder="请选择运费方案" style="width: 100%">
+              <el-option
+                v-for="item in freightSchemeOptions"
+                :key="`edit-freight-${item.value}`"
+                :label="item.label"
+                :value="item.value"
+              />
+            </el-select>
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="单价">
+            <el-input-number
+              v-model="editForm.freight_unit_price"
+              :min="0"
+              :precision="2"
+              :controls="false"
+              style="width: 100%"
+              placeholder="请输入运费单价"
+            />
+          </el-form-item>
+        </el-col>
+      </el-row>
+      <el-row :gutter="12">
+        <el-col :span="12">
+          <el-form-item label="趟数（按趟）" v-if="editForm.freight_calc_scheme === 'by_trip'">
+            <el-input-number
+              v-model="editForm.freight_trip_count"
+              :min="1"
+              :precision="0"
+              style="width: 100%"
+            />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="亏吨标准重量kg（按亏吨）" v-if="editForm.freight_calc_scheme === 'by_loss_ton'">
+            <el-input-number
+              v-model="editForm.freight_loss_ton_kg"
+              :min="0"
+              :precision="2"
+              :controls="false"
               style="width: 100%"
             />
           </el-form-item>

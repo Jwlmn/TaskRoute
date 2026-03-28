@@ -346,4 +346,103 @@ class DriverTaskExecutionApiTest extends TestCase
             'description' => '不同异常请求',
         ])->assertStatus(422)->assertJsonPath('message', '当前任务已有待处理异常，请勿重复上报');
     }
+
+    public function test_order_completed_will_auto_calculate_freight_by_weight(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $driver = User::query()->where('account', 'driver')->firstOrFail();
+        $vehicle = Vehicle::query()->where('driver_id', $driver->id)->where('status', 'idle')->firstOrFail();
+        $gasoline = CargoCategory::query()->where('code', 'gasoline')->firstOrFail();
+
+        $order = PrePlanOrder::query()->create([
+            'order_no' => 'PO-FREIGHT-WEIGHT',
+            'cargo_category_id' => $gasoline->id,
+            'client_name' => '运费重量方案客户',
+            'pickup_address' => '上海装货点A',
+            'dropoff_address' => '上海卸货点B',
+            'cargo_weight_kg' => 3500,
+            'cargo_volume_m3' => 6,
+            'status' => 'pending',
+            'freight_calc_scheme' => 'by_weight',
+            'freight_unit_price' => 120,
+        ]);
+
+        Sanctum::actingAs($dispatcher);
+        $createResponse = $this->postJson('/api/v1/dispatch/manual-create-tasks', [
+            'assignments' => [
+                [
+                    'vehicle_id' => $vehicle->id,
+                    'order_ids' => [$order->id],
+                ],
+            ],
+        ]);
+        $taskId = (int) $createResponse->json('created_task_ids.0');
+
+        Sanctum::actingAs($driver);
+        $detailResponse = $this->postJson('/api/v1/driver-task/detail', ['task_id' => $taskId]);
+        $waypointId = (int) $detailResponse->json('waypoints.0.id');
+        $this->postJson('/api/v1/driver-task/start', ['task_id' => $taskId])->assertOk();
+        $this->postJson('/api/v1/driver-task/waypoint-complete', [
+            'task_id' => $taskId,
+            'waypoint_id' => $waypointId,
+        ])->assertOk();
+
+        $this->assertDatabaseHas('pre_plan_orders', [
+            'id' => $order->id,
+            'status' => 'completed',
+            'freight_amount' => 420.00,
+        ]);
+    }
+
+    public function test_order_completed_will_auto_calculate_freight_by_loss_ton(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $driver = User::query()->where('account', 'driver')->firstOrFail();
+        $vehicle = Vehicle::query()->where('driver_id', $driver->id)->where('status', 'idle')->firstOrFail();
+        $gasoline = CargoCategory::query()->where('code', 'gasoline')->firstOrFail();
+
+        $order = PrePlanOrder::query()->create([
+            'order_no' => 'PO-FREIGHT-LOSS',
+            'cargo_category_id' => $gasoline->id,
+            'client_name' => '运费亏吨方案客户',
+            'pickup_address' => '上海装货点C',
+            'dropoff_address' => '上海卸货点D',
+            'cargo_weight_kg' => 3500,
+            'cargo_volume_m3' => 6,
+            'status' => 'pending',
+            'freight_calc_scheme' => 'by_loss_ton',
+            'freight_unit_price' => 300,
+            'freight_loss_ton_kg' => 5000,
+        ]);
+
+        Sanctum::actingAs($dispatcher);
+        $createResponse = $this->postJson('/api/v1/dispatch/manual-create-tasks', [
+            'assignments' => [
+                [
+                    'vehicle_id' => $vehicle->id,
+                    'order_ids' => [$order->id],
+                ],
+            ],
+        ]);
+        $taskId = (int) $createResponse->json('created_task_ids.0');
+
+        Sanctum::actingAs($driver);
+        $detailResponse = $this->postJson('/api/v1/driver-task/detail', ['task_id' => $taskId]);
+        $waypointId = (int) $detailResponse->json('waypoints.0.id');
+        $this->postJson('/api/v1/driver-task/start', ['task_id' => $taskId])->assertOk();
+        $this->postJson('/api/v1/driver-task/waypoint-complete', [
+            'task_id' => $taskId,
+            'waypoint_id' => $waypointId,
+        ])->assertOk();
+
+        $this->assertDatabaseHas('pre_plan_orders', [
+            'id' => $order->id,
+            'status' => 'completed',
+            'freight_amount' => 450.00,
+        ]);
+    }
 }

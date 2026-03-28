@@ -19,6 +19,12 @@ class PrePlanOrder extends Model
         'dropoff_address',
         'cargo_weight_kg',
         'cargo_volume_m3',
+        'freight_calc_scheme',
+        'freight_unit_price',
+        'freight_trip_count',
+        'freight_loss_ton_kg',
+        'freight_amount',
+        'freight_calculated_at',
         'expected_pickup_at',
         'expected_delivery_at',
         'status',
@@ -30,6 +36,7 @@ class PrePlanOrder extends Model
         return [
             'expected_pickup_at' => 'datetime',
             'expected_delivery_at' => 'datetime',
+            'freight_calculated_at' => 'datetime',
             'meta' => 'array',
         ];
     }

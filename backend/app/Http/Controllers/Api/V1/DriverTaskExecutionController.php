@@ -250,7 +250,15 @@ class DriverTaskExecutionController extends Controller
 
             $task->status = 'completed';
             $task->save();
-            $task->orders()->update(['status' => 'completed']);
+            $task->loadMissing('orders');
+            foreach ($task->orders as $order) {
+                $freight = $this->calculateFreightAmount($order);
+                $order->status = 'completed';
+                $order->freight_amount = $freight['amount'];
+                $order->freight_calculated_at = $freight['amount'] === null ? null : now();
+                $order->meta = $this->mergeFreightMeta($order, $freight);
+                $order->save();
+            }
 
             if ($task->vehicle_id) {
                 Vehicle::query()->where('id', (int) $task->vehicle_id)->update(['status' => 'idle']);
@@ -360,6 +368,52 @@ class DriverTaskExecutionController extends Controller
     {
         $meta = is_array($task->route_meta) ? $task->route_meta : [];
         return ($meta['exception']['status'] ?? null) === 'pending';
+    }
+
+    private function calculateFreightAmount(PrePlanOrder $order): array
+    {
+        $scheme = (string) ($order->freight_calc_scheme ?? '');
+        $unitPrice = (float) ($order->freight_unit_price ?? 0);
+        if ($scheme === '' || $unitPrice <= 0) {
+            return ['amount' => null, 'base_value' => null, 'unit_price' => $unitPrice, 'scheme' => $scheme];
+        }
+
+        $baseValue = null;
+        if ($scheme === 'by_weight') {
+            $baseValue = max(0, (float) $order->cargo_weight_kg) / 1000;
+        } elseif ($scheme === 'by_volume') {
+            $baseValue = max(0, (float) $order->cargo_volume_m3);
+        } elseif ($scheme === 'by_trip') {
+            $baseValue = max(1, (int) ($order->freight_trip_count ?? 1));
+        } elseif ($scheme === 'by_loss_ton') {
+            $lossKg = max(0, (float) ($order->freight_loss_ton_kg ?? 0) - (float) $order->cargo_weight_kg);
+            $baseValue = $lossKg / 1000;
+        }
+
+        if ($baseValue === null) {
+            return ['amount' => null, 'base_value' => null, 'unit_price' => $unitPrice, 'scheme' => $scheme];
+        }
+
+        return [
+            'amount' => round($baseValue * $unitPrice, 2),
+            'base_value' => round((float) $baseValue, 4),
+            'unit_price' => round($unitPrice, 2),
+            'scheme' => $scheme,
+        ];
+    }
+
+    private function mergeFreightMeta(PrePlanOrder $order, array $freight): array
+    {
+        $meta = is_array($order->meta) ? $order->meta : [];
+        $meta['freight_calc'] = [
+            'scheme' => $freight['scheme'] ?? null,
+            'base_value' => $freight['base_value'] ?? null,
+            'unit_price' => $freight['unit_price'] ?? null,
+            'amount' => $freight['amount'] ?? null,
+            'calculated_at' => now()->toDateTimeString(),
+        ];
+
+        return $meta;
     }
 
     private function autoDispatchNextTrip(DispatchTask $completedTask): void
