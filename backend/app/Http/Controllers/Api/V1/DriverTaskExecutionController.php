@@ -254,6 +254,8 @@ class DriverTaskExecutionController extends Controller
             foreach ($task->orders as $order) {
                 $freight = $this->calculateFreightAmount($order);
                 $order->status = 'completed';
+                $order->freight_base_amount = $freight['base_amount'];
+                $order->freight_loss_deduct_amount = $freight['loss_deduct_amount'];
                 $order->freight_amount = $freight['amount'];
                 $order->freight_calculated_at = $freight['amount'] === null ? null : now();
                 $order->meta = $this->mergeFreightMeta($order, $freight);
@@ -375,7 +377,16 @@ class DriverTaskExecutionController extends Controller
         $scheme = (string) ($order->freight_calc_scheme ?? '');
         $unitPrice = (float) ($order->freight_unit_price ?? 0);
         if ($scheme === '' || $unitPrice <= 0) {
-            return ['amount' => null, 'base_value' => null, 'unit_price' => $unitPrice, 'scheme' => $scheme];
+            return [
+                'amount' => null,
+                'base_value' => null,
+                'unit_price' => $unitPrice,
+                'scheme' => $scheme,
+                'base_amount' => null,
+                'loss_deduct_amount' => null,
+                'loss_kg' => null,
+                'loss_allowance_kg' => null,
+            ];
         }
 
         $baseValue = null;
@@ -391,14 +402,44 @@ class DriverTaskExecutionController extends Controller
         }
 
         if ($baseValue === null) {
-            return ['amount' => null, 'base_value' => null, 'unit_price' => $unitPrice, 'scheme' => $scheme];
+            return [
+                'amount' => null,
+                'base_value' => null,
+                'unit_price' => $unitPrice,
+                'scheme' => $scheme,
+                'base_amount' => null,
+                'loss_deduct_amount' => null,
+                'loss_kg' => null,
+                'loss_allowance_kg' => null,
+            ];
         }
 
+        $baseAmount = round((float) $baseValue * $unitPrice, 2);
+        $lossDeductAmount = 0.0;
+        $lossKg = null;
+        $lossAllowanceKg = max(0, (float) ($order->loss_allowance_kg ?? 0));
+        if ($scheme === 'by_weight') {
+            $expectedWeightKg = max(0, (float) $order->cargo_weight_kg);
+            $actualWeightKg = (float) ($order->actual_delivered_weight_kg ?? $expectedWeightKg);
+            $effectiveLossKg = max(0, $expectedWeightKg - $actualWeightKg - $lossAllowanceKg);
+            $lossKg = round($effectiveLossKg, 2);
+            $lossDeductUnitPrice = (float) ($order->loss_deduct_unit_price ?? $unitPrice);
+            if ($lossDeductUnitPrice > 0 && $effectiveLossKg > 0) {
+                $lossDeductAmount = round(($effectiveLossKg / 1000) * $lossDeductUnitPrice, 2);
+            }
+        }
+
+        $finalAmount = max(0, round($baseAmount - $lossDeductAmount, 2));
+
         return [
-            'amount' => round($baseValue * $unitPrice, 2),
+            'amount' => $finalAmount,
             'base_value' => round((float) $baseValue, 4),
             'unit_price' => round($unitPrice, 2),
             'scheme' => $scheme,
+            'base_amount' => $baseAmount,
+            'loss_deduct_amount' => round($lossDeductAmount, 2),
+            'loss_kg' => $lossKg,
+            'loss_allowance_kg' => round($lossAllowanceKg, 2),
         ];
     }
 
@@ -409,6 +450,10 @@ class DriverTaskExecutionController extends Controller
             'scheme' => $freight['scheme'] ?? null,
             'base_value' => $freight['base_value'] ?? null,
             'unit_price' => $freight['unit_price'] ?? null,
+            'base_amount' => $freight['base_amount'] ?? null,
+            'loss_deduct_amount' => $freight['loss_deduct_amount'] ?? null,
+            'loss_kg' => $freight['loss_kg'] ?? null,
+            'loss_allowance_kg' => $freight['loss_allowance_kg'] ?? null,
             'amount' => $freight['amount'] ?? null,
             'calculated_at' => now()->toDateTimeString(),
         ];

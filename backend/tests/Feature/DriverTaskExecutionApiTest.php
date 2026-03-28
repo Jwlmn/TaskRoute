@@ -363,6 +363,9 @@ class DriverTaskExecutionApiTest extends TestCase
             'pickup_address' => '上海装货点A',
             'dropoff_address' => '上海卸货点B',
             'cargo_weight_kg' => 3500,
+            'actual_delivered_weight_kg' => 2900,
+            'loss_allowance_kg' => 200,
+            'loss_deduct_unit_price' => 150,
             'cargo_volume_m3' => 6,
             'status' => 'pending',
             'freight_calc_scheme' => 'by_weight',
@@ -392,7 +395,9 @@ class DriverTaskExecutionApiTest extends TestCase
         $this->assertDatabaseHas('pre_plan_orders', [
             'id' => $order->id,
             'status' => 'completed',
-            'freight_amount' => 420.00,
+            'freight_base_amount' => 420.00,
+            'freight_loss_deduct_amount' => 60.00,
+            'freight_amount' => 360.00,
         ]);
     }
 
@@ -443,6 +448,58 @@ class DriverTaskExecutionApiTest extends TestCase
             'id' => $order->id,
             'status' => 'completed',
             'freight_amount' => 450.00,
+        ]);
+    }
+
+    public function test_weight_scheme_should_not_deduct_when_loss_within_allowance(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $driver = User::query()->where('account', 'driver')->firstOrFail();
+        $vehicle = Vehicle::query()->where('driver_id', $driver->id)->where('status', 'idle')->firstOrFail();
+        $gasoline = CargoCategory::query()->where('code', 'gasoline')->firstOrFail();
+
+        $order = PrePlanOrder::query()->create([
+            'order_no' => 'PO-FREIGHT-WEIGHT-NO-DEDUCT',
+            'cargo_category_id' => $gasoline->id,
+            'client_name' => '亏吨容差客户',
+            'pickup_address' => '上海装货点E',
+            'dropoff_address' => '上海卸货点F',
+            'cargo_weight_kg' => 30000,
+            'actual_delivered_weight_kg' => 29900,
+            'loss_allowance_kg' => 150,
+            'loss_deduct_unit_price' => 200,
+            'status' => 'pending',
+            'freight_calc_scheme' => 'by_weight',
+            'freight_unit_price' => 100,
+        ]);
+
+        Sanctum::actingAs($dispatcher);
+        $createResponse = $this->postJson('/api/v1/dispatch/manual-create-tasks', [
+            'assignments' => [
+                [
+                    'vehicle_id' => $vehicle->id,
+                    'order_ids' => [$order->id],
+                ],
+            ],
+        ]);
+        $taskId = (int) $createResponse->json('created_task_ids.0');
+
+        Sanctum::actingAs($driver);
+        $detailResponse = $this->postJson('/api/v1/driver-task/detail', ['task_id' => $taskId]);
+        $waypointId = (int) $detailResponse->json('waypoints.0.id');
+        $this->postJson('/api/v1/driver-task/start', ['task_id' => $taskId])->assertOk();
+        $this->postJson('/api/v1/driver-task/waypoint-complete', [
+            'task_id' => $taskId,
+            'waypoint_id' => $waypointId,
+        ])->assertOk();
+
+        $this->assertDatabaseHas('pre_plan_orders', [
+            'id' => $order->id,
+            'freight_base_amount' => 3000.00,
+            'freight_loss_deduct_amount' => 0.00,
+            'freight_amount' => 3000.00,
         ]);
     }
 }

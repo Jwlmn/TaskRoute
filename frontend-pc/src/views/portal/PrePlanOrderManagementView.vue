@@ -39,6 +39,9 @@ const createForm = reactive({
   freight_calc_scheme: '',
   freight_unit_price: null,
   freight_trip_count: 1,
+  actual_delivered_weight_kg: null,
+  loss_allowance_kg: 0,
+  loss_deduct_unit_price: null,
   freight_loss_ton_kg: null,
   expected_pickup_at: '',
   expected_delivery_at: '',
@@ -54,6 +57,9 @@ const editForm = reactive({
   freight_calc_scheme: '',
   freight_unit_price: null,
   freight_trip_count: 1,
+  actual_delivered_weight_kg: null,
+  loss_allowance_kg: 0,
+  loss_deduct_unit_price: null,
   freight_loss_ton_kg: null,
   expected_pickup_at: '',
   expected_delivery_at: '',
@@ -131,6 +137,9 @@ const resetCreateForm = () => {
   createForm.freight_calc_scheme = ''
   createForm.freight_unit_price = null
   createForm.freight_trip_count = 1
+  createForm.actual_delivered_weight_kg = null
+  createForm.loss_allowance_kg = 0
+  createForm.loss_deduct_unit_price = null
   createForm.freight_loss_ton_kg = null
   createForm.expected_pickup_at = ''
   createForm.expected_delivery_at = ''
@@ -147,6 +156,9 @@ const resetEditForm = () => {
   editForm.freight_calc_scheme = ''
   editForm.freight_unit_price = null
   editForm.freight_trip_count = 1
+  editForm.actual_delivered_weight_kg = null
+  editForm.loss_allowance_kg = 0
+  editForm.loss_deduct_unit_price = null
   editForm.freight_loss_ton_kg = null
   editForm.expected_pickup_at = ''
   editForm.expected_delivery_at = ''
@@ -172,6 +184,9 @@ const fillOrderForm = (target, row) => {
   target.freight_calc_scheme = row.freight_calc_scheme || ''
   target.freight_unit_price = row.freight_unit_price
   target.freight_trip_count = row.freight_trip_count || 1
+  target.actual_delivered_weight_kg = row.actual_delivered_weight_kg
+  target.loss_allowance_kg = row.loss_allowance_kg ?? 0
+  target.loss_deduct_unit_price = row.loss_deduct_unit_price
   target.freight_loss_ton_kg = row.freight_loss_ton_kg
   target.expected_pickup_at = row.expected_pickup_at ? formatDateTime(row.expected_pickup_at).replace(' ', 'T') : ''
   target.expected_delivery_at = row.expected_delivery_at ? formatDateTime(row.expected_delivery_at).replace(' ', 'T') : ''
@@ -195,6 +210,9 @@ const buildOrderPayload = (form) => ({
   freight_calc_scheme: form.freight_calc_scheme || null,
   freight_unit_price: form.freight_calc_scheme ? form.freight_unit_price : null,
   freight_trip_count: form.freight_calc_scheme === 'by_trip' ? form.freight_trip_count : null,
+  actual_delivered_weight_kg: form.freight_calc_scheme === 'by_weight' ? form.actual_delivered_weight_kg : null,
+  loss_allowance_kg: form.freight_calc_scheme === 'by_weight' ? form.loss_allowance_kg : null,
+  loss_deduct_unit_price: form.freight_calc_scheme === 'by_weight' ? form.loss_deduct_unit_price : null,
   freight_loss_ton_kg: form.freight_calc_scheme === 'by_loss_ton' ? form.freight_loss_ton_kg : null,
   expected_pickup_at: normalizeDate(form.expected_pickup_at),
   expected_delivery_at: normalizeDate(form.expected_delivery_at),
@@ -405,7 +423,10 @@ onMounted(() => {
       </el-table-column>
       <el-table-column label="已算运费(元)" min-width="120">
         <template #default="{ row }">
-          {{ row.freight_amount ?? '-' }}
+          <div>{{ row.freight_amount ?? '-' }}</div>
+          <div class="text-secondary" v-if="row.freight_base_amount !== null || row.freight_loss_deduct_amount !== null">
+            基础:{{ row.freight_base_amount ?? 0 }} / 扣减:{{ row.freight_loss_deduct_amount ?? 0 }}
+          </div>
         </template>
       </el-table-column>
       <el-table-column label="预计提货" min-width="160">
@@ -563,6 +584,41 @@ onMounted(() => {
           </el-form-item>
         </el-col>
       </el-row>
+      <el-row :gutter="12" v-if="createForm.freight_calc_scheme === 'by_weight'">
+        <el-col :span="8">
+          <el-form-item label="实送重量kg">
+            <el-input-number
+              v-model="createForm.actual_delivered_weight_kg"
+              :min="0"
+              :precision="2"
+              :controls="false"
+              style="width: 100%"
+            />
+          </el-form-item>
+        </el-col>
+        <el-col :span="8">
+          <el-form-item label="允许亏吨kg">
+            <el-input-number
+              v-model="createForm.loss_allowance_kg"
+              :min="0"
+              :precision="2"
+              :controls="false"
+              style="width: 100%"
+            />
+          </el-form-item>
+        </el-col>
+        <el-col :span="8">
+          <el-form-item label="亏吨扣减单价(元/吨)">
+            <el-input-number
+              v-model="createForm.loss_deduct_unit_price"
+              :min="0"
+              :precision="2"
+              :controls="false"
+              style="width: 100%"
+            />
+          </el-form-item>
+        </el-col>
+      </el-row>
     </el-form>
     <template #footer>
       <el-button @click="createDialogVisible = false">取消</el-button>
@@ -697,6 +753,41 @@ onMounted(() => {
           <el-form-item label="亏吨标准重量kg（按亏吨）" v-if="editForm.freight_calc_scheme === 'by_loss_ton'">
             <el-input-number
               v-model="editForm.freight_loss_ton_kg"
+              :min="0"
+              :precision="2"
+              :controls="false"
+              style="width: 100%"
+            />
+          </el-form-item>
+        </el-col>
+      </el-row>
+      <el-row :gutter="12" v-if="editForm.freight_calc_scheme === 'by_weight'">
+        <el-col :span="8">
+          <el-form-item label="实送重量kg">
+            <el-input-number
+              v-model="editForm.actual_delivered_weight_kg"
+              :min="0"
+              :precision="2"
+              :controls="false"
+              style="width: 100%"
+            />
+          </el-form-item>
+        </el-col>
+        <el-col :span="8">
+          <el-form-item label="允许亏吨kg">
+            <el-input-number
+              v-model="editForm.loss_allowance_kg"
+              :min="0"
+              :precision="2"
+              :controls="false"
+              style="width: 100%"
+            />
+          </el-form-item>
+        </el-col>
+        <el-col :span="8">
+          <el-form-item label="亏吨扣减单价(元/吨)">
+            <el-input-number
+              v-model="editForm.loss_deduct_unit_price"
               :min="0"
               :precision="2"
               :controls="false"
