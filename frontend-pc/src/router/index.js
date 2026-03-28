@@ -7,7 +7,6 @@ import ExceptionTaskManagementView from '../views/portal/ExceptionTaskManagement
 import PrePlanOrderManagementView from '../views/portal/PrePlanOrderManagementView.vue'
 import CustomerPrePlanOrderView from '../views/portal/CustomerPrePlanOrderView.vue'
 import MobileTaskCenterView from '../views/portal/MobileTaskCenterView.vue'
-import UserManagementView from '../views/portal/UserManagementView.vue'
 import VehicleManagementView from '../views/portal/VehicleManagementView.vue'
 import PersonnelManagementView from '../views/portal/PersonnelManagementView.vue'
 import SiteManagementView from '../views/portal/SiteManagementView.vue'
@@ -101,12 +100,6 @@ const router = createRouter({
           name: 'mobile-task-center',
           component: MobileTaskCenterView,
           meta: { permission: 'mobile_tasks' },
-        },
-        {
-          path: 'users',
-          name: 'user-management',
-          component: UserManagementView,
-          meta: { permission: 'users' },
         },
         {
           path: 'notifications',

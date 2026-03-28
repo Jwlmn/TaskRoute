@@ -39,7 +39,6 @@ const menuTree = computed(() => {
       index: 'system-center',
       label: '系统管理',
       children: [
-        { index: 'user-management', label: '账号管理', permission: 'users' },
         { index: 'notification-center', label: '通知中心', permission: 'notifications' },
       ],
     },

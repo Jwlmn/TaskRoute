@@ -183,7 +183,7 @@ onMounted(async () => {
   <el-card shadow="never">
     <template #header>
       <div class="table-header">
-        <span class="card-title">人员资源管理</span>
+        <span class="card-title">人员与账号管理</span>
         <div>
           <el-tag v-if="!isAdmin" type="warning" class="mr-8">仅管理员可新增/编辑</el-tag>
           <el-button type="primary" :disabled="!isAdmin" @click="openCreate">新增人员</el-button>

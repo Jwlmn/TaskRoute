@@ -181,6 +181,34 @@ class SmartDispatchApiTest extends TestCase
         $this->seed(DatabaseSeeder::class);
         $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
         Sanctum::actingAs($dispatcher);
+        $gasoline = CargoCategory::query()->where('code', 'gasoline')->firstOrFail();
+        $siteId = (int) \App\Models\LogisticsSite::query()->where('name', '上海油库A')->value('id');
+
+        $vehicle = Vehicle::query()->create([
+            'plate_number' => '沪ZAMAP1',
+            'name' => '高德路线测试车',
+            'vehicle_type' => 'truck',
+            'site_id' => $siteId > 0 ? $siteId : null,
+            'driver_id' => $this->resolveUnboundDriverId(),
+            'max_weight_kg' => 12000,
+            'max_volume_m3' => 20,
+            'status' => 'idle',
+        ]);
+        $order = PrePlanOrder::query()->create([
+            'order_no' => 'PO-TEST-AMAP-1',
+            'cargo_category_id' => $gasoline->id,
+            'client_name' => '高德路线测试客户',
+            'pickup_site_id' => $siteId > 0 ? $siteId : null,
+            'pickup_address' => '上海油库A',
+            'dropoff_site_id' => (int) \App\Models\LogisticsSite::query()->where('name', '上海加油站B')->value('id') ?: null,
+            'dropoff_address' => '上海加油站B',
+            'cargo_weight_kg' => 1000,
+            'cargo_volume_m3' => 5,
+            'expected_pickup_at' => now()->addHour(),
+            'expected_delivery_at' => now()->addHours(2),
+            'status' => 'pending',
+            'audit_status' => 'approved',
+        ]);
 
         Config::set('services.amap.web_key', 'test-key');
         Config::set('services.amap.enable_in_testing', true);
@@ -211,7 +239,10 @@ class SmartDispatchApiTest extends TestCase
             ], 200),
         ]);
 
-        $response = $this->postJson('/api/v1/dispatch/preview');
+        $response = $this->postJson('/api/v1/dispatch/preview', [
+            'vehicle_ids' => [$vehicle->id],
+            'order_ids' => [$order->id],
+        ]);
 
         $response->assertOk()
             ->assertJsonPath('assignments.0.optimizer', 'amap')

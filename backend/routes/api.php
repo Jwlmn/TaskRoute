@@ -14,7 +14,6 @@ use App\Http\Controllers\Api\V1\Resource\ResourceVehicleController;
 use App\Http\Controllers\Api\V1\SmartDispatchController;
 use App\Http\Controllers\Api\V1\FreightRateTemplateController;
 use App\Http\Controllers\Api\V1\SettlementStatementController;
-use App\Http\Controllers\Api\V1\UserManagementController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function (): void {
@@ -122,11 +121,6 @@ Route::prefix('v1')->group(function (): void {
         });
 
         Route::middleware(['role:admin', 'permission:users'])->group(function (): void {
-            Route::post('/user/list', [UserManagementController::class, 'index']);
-            Route::post('/user/create', [UserManagementController::class, 'store']);
-            Route::post('/user/detail', [UserManagementController::class, 'showByPayload']);
-            Route::post('/user/update', [UserManagementController::class, 'updateByPayload']);
-
             Route::post('/resource/personnel/create', [ResourcePersonnelController::class, 'create']);
             Route::post('/resource/personnel/update', [ResourcePersonnelController::class, 'update']);
         });
