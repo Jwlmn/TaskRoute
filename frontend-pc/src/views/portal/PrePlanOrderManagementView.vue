@@ -396,6 +396,13 @@ const downloadImportTemplate = () => {
 
   const dataSheet = XLSX.utils.aoa_to_sheet([headers, exampleRow])
   const tipsSheet = XLSX.utils.aoa_to_sheet(tips)
+  tipsSheet['!merges'] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 7 } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: 7 } },
+    { s: { r: 2, c: 0 }, e: { r: 2, c: 7 } },
+    { s: { r: 3, c: 0 }, e: { r: 3, c: 7 } },
+    { s: { r: 4, c: 0 }, e: { r: 4, c: 7 } },
+  ]
   const workbook = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(workbook, dataSheet, '计划单导入模板')
   XLSX.utils.book_append_sheet(workbook, tipsSheet, '填写说明')
