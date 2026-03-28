@@ -36,6 +36,8 @@ Route::prefix('v1')->group(function (): void {
             Route::post('/pre-plan-order/lock', [PrePlanOrderController::class, 'lock']);
             Route::post('/pre-plan-order/unlock', [PrePlanOrderController::class, 'unlock']);
             Route::post('/pre-plan-order/void', [PrePlanOrderController::class, 'void']);
+            Route::post('/pre-plan-order/split', [PrePlanOrderController::class, 'split']);
+            Route::post('/pre-plan-order/merge', [PrePlanOrderController::class, 'merge']);
             Route::post('/pre-plan-order/audit-list', [PrePlanOrderController::class, 'auditList']);
             Route::post('/pre-plan-order/audit-approve', [PrePlanOrderController::class, 'auditApprove']);
             Route::post('/pre-plan-order/audit-reject', [PrePlanOrderController::class, 'auditReject']);

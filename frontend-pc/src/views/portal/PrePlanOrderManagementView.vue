@@ -28,6 +28,7 @@ const loadingVehicles = ref(false)
 const createDialogVisible = ref(false)
 const batchCreateDialogVisible = ref(false)
 const importDialogVisible = ref(false)
+const splitDialogVisible = ref(false)
 const editDialogVisible = ref(false)
 const manualDispatchDialogVisible = ref(false)
 
@@ -37,6 +38,7 @@ const dispatching = ref(false)
 const auditing = ref(false)
 const managingOrder = ref(false)
 const importing = ref(false)
+const splitting = ref(false)
 
 const currentEditId = ref(null)
 
@@ -46,6 +48,8 @@ const editFormRef = ref()
 const batchCreatePayloadText = ref('')
 const importFile = ref(null)
 const importResult = ref(null)
+const splitTargetOrder = ref(null)
+const splitPartCount = ref(2)
 
 const createForm = reactive({
   cargo_category_id: null,
@@ -417,6 +421,16 @@ const openEditDialog = (row) => {
   editDialogVisible.value = true
 }
 
+const openSplitDialog = (row) => {
+  if (row.status !== 'pending' || row.is_locked || row.status === 'cancelled') {
+    ElMessage.warning('仅待调度且未锁定、未作废的计划单可拆单')
+    return
+  }
+  splitTargetOrder.value = row
+  splitPartCount.value = 2
+  splitDialogVisible.value = true
+}
+
 const parseBatchPayload = () => {
   const lines = String(batchCreatePayloadText.value || '')
     .split('\n')
@@ -685,6 +699,81 @@ const submitImportCsv = async () => {
   }
 }
 
+const submitSplitOrder = async () => {
+  const row = splitTargetOrder.value
+  if (!row?.id) return
+  const count = Number(splitPartCount.value || 0)
+  if (!Number.isInteger(count) || count < 2 || count > 20) {
+    ElMessage.warning('拆分份数需在 2-20 之间')
+    return
+  }
+
+  const weight = Number(row.cargo_weight_kg || 0)
+  const volume = Number(row.cargo_volume_m3 || 0)
+  const parts = []
+  let remainingWeight = weight
+  let remainingVolume = volume
+  for (let i = 0; i < count; i++) {
+    if (i === count - 1) {
+      parts.push({
+        cargo_weight_kg: Number(remainingWeight.toFixed(2)),
+        cargo_volume_m3: Number(remainingVolume.toFixed(2)),
+      })
+      break
+    }
+    const partWeight = Number((weight / count).toFixed(2))
+    const partVolume = Number((volume / count).toFixed(2))
+    remainingWeight -= partWeight
+    remainingVolume -= partVolume
+    parts.push({
+      cargo_weight_kg: partWeight,
+      cargo_volume_m3: partVolume,
+    })
+  }
+
+  splitting.value = true
+  try {
+    await api.post('/pre-plan-order/split', {
+      id: row.id,
+      parts,
+    })
+    ElMessage.success('拆单成功')
+    splitDialogVisible.value = false
+    splitTargetOrder.value = null
+    await loadPrePlanOrders()
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '拆单失败')
+  } finally {
+    splitting.value = false
+  }
+}
+
+const mergeSelectedOrders = async () => {
+  if (selectedOrders.value.length < 2) {
+    ElMessage.warning('请先勾选至少两条计划单再并单')
+    return
+  }
+
+  const invalid = selectedOrders.value.find((row) => row.status !== 'pending' || row.is_locked || row.status === 'cancelled')
+  if (invalid) {
+    ElMessage.warning(`存在不可并单订单：${invalid.order_no}`)
+    return
+  }
+
+  const ids = selectedOrders.value.map((item) => item.id)
+  managingOrder.value = true
+  try {
+    await api.post('/pre-plan-order/merge', { ids })
+    ElMessage.success('并单成功')
+    clearSelection()
+    await loadPrePlanOrders()
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '并单失败')
+  } finally {
+    managingOrder.value = false
+  }
+}
+
 const onSelectionChange = (rows) => {
   selectedOrders.value = rows
 }
@@ -856,6 +945,7 @@ onMounted(() => {
       <div class="table-header">
         <div class="card-title">预计划单管理</div>
         <div>
+          <el-button class="mr-8" plain type="warning" @click="mergeSelectedOrders">并单(选中)</el-button>
           <el-button class="mr-8" plain type="primary" @click="openManualDispatchDialog">手动派单</el-button>
           <el-button class="mr-8" plain @click="downloadImportTemplate">下载模板</el-button>
           <el-button class="mr-8" plain @click="openImportDialog">导入文件</el-button>
@@ -1009,6 +1099,15 @@ onMounted(() => {
             作废
           </el-button>
           <el-button
+            v-if="row.status !== 'cancelled'"
+            link
+            type="primary"
+            :loading="splitting"
+            @click="openSplitDialog(row)"
+          >
+            拆单
+          </el-button>
+          <el-button
             v-if="row.audit_status === 'pending_approval'"
             link
             type="success"
@@ -1030,6 +1129,22 @@ onMounted(() => {
       </el-table-column>
     </el-table>
   </el-card>
+
+  <el-dialog v-model="splitDialogVisible" title="拆分计划单" width="460px" destroy-on-close>
+    <el-form label-width="100px">
+      <el-form-item label="原计划单">
+        <span>{{ splitTargetOrder?.order_no || '-' }}</span>
+      </el-form-item>
+      <el-form-item label="拆分份数">
+        <el-input-number v-model="splitPartCount" :min="2" :max="20" :precision="0" />
+      </el-form-item>
+      <el-alert type="info" :closable="false" show-icon title="系统将按重量/体积等比例拆分，原单自动作废。" />
+    </el-form>
+    <template #footer>
+      <el-button @click="splitDialogVisible = false">取消</el-button>
+      <el-button type="primary" :loading="splitting" @click="submitSplitOrder">确认拆单</el-button>
+    </template>
+  </el-dialog>
 
   <el-dialog v-model="importDialogVisible" title="导入预计划单（XLSX/CSV）" width="760px" destroy-on-close>
     <el-alert

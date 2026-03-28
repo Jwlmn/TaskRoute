@@ -239,4 +239,76 @@ class PrePlanOrderAuditApiTest extends TestCase
             '筛选结果应包含已锁定且关键词匹配的计划单'
         );
     }
+
+    public function test_dispatcher_can_split_pending_pre_plan_order(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $order = PrePlanOrder::query()->where('status', 'pending')->firstOrFail();
+        Sanctum::actingAs($dispatcher);
+
+        $weight = (float) $order->cargo_weight_kg;
+        $volume = (float) $order->cargo_volume_m3;
+        $weightA = round($weight / 2, 2);
+        $weightB = round($weight - $weightA, 2);
+        $volumeA = round($volume / 2, 2);
+        $volumeB = round($volume - $volumeA, 2);
+
+        $response = $this->postJson('/api/v1/pre-plan-order/split', [
+            'id' => $order->id,
+            'parts' => [
+                ['cargo_weight_kg' => $weightA, 'cargo_volume_m3' => $volumeA],
+                ['cargo_weight_kg' => $weightB, 'cargo_volume_m3' => $volumeB],
+            ],
+        ]);
+
+        $response->assertCreated()->assertJsonCount(2, 'created');
+        $this->assertDatabaseHas('pre_plan_orders', [
+            'id' => $order->id,
+            'status' => 'cancelled',
+            'void_remark' => '拆单后原单自动作废',
+        ]);
+    }
+
+    public function test_dispatcher_can_merge_pending_pre_plan_orders(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $base = PrePlanOrder::query()->where('status', 'pending')->firstOrFail();
+        $another = PrePlanOrder::query()->create([
+            'order_no' => 'PO-MERGE-TEST-001',
+            'cargo_category_id' => $base->cargo_category_id,
+            'submitter_id' => $base->submitter_id,
+            'client_name' => $base->client_name,
+            'pickup_address' => $base->pickup_address,
+            'pickup_contact_name' => $base->pickup_contact_name,
+            'pickup_contact_phone' => $base->pickup_contact_phone,
+            'dropoff_address' => $base->dropoff_address,
+            'dropoff_contact_name' => $base->dropoff_contact_name,
+            'dropoff_contact_phone' => $base->dropoff_contact_phone,
+            'cargo_weight_kg' => 1000,
+            'cargo_volume_m3' => 2.5,
+            'audit_status' => $base->audit_status,
+            'status' => 'pending',
+        ]);
+        Sanctum::actingAs($dispatcher);
+
+        $response = $this->postJson('/api/v1/pre-plan-order/merge', [
+            'ids' => [$base->id, $another->id],
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('merged_from_ids.0', $base->id)
+            ->assertJsonPath('merged_from_ids.1', $another->id);
+        $this->assertDatabaseHas('pre_plan_orders', [
+            'id' => $base->id,
+            'status' => 'cancelled',
+        ]);
+        $this->assertDatabaseHas('pre_plan_orders', [
+            'id' => $another->id,
+            'status' => 'cancelled',
+        ]);
+    }
 }

@@ -435,6 +435,166 @@ class PrePlanOrderController extends Controller
         return response()->json($order->fresh());
     }
 
+    public function split(Request $request): JsonResponse
+    {
+        $payload = $request->validate([
+            'id' => ['required', 'integer', 'exists:pre_plan_orders,id'],
+            'parts' => ['required', 'array', 'min:2', 'max:20'],
+            'parts.*.cargo_weight_kg' => ['nullable', 'numeric', 'min:0'],
+            'parts.*.cargo_volume_m3' => ['nullable', 'numeric', 'min:0'],
+            'parts.*.expected_pickup_at' => ['nullable', 'date'],
+            'parts.*.expected_delivery_at' => ['nullable', 'date'],
+        ]);
+
+        $result = DB::transaction(function () use ($payload, $request): array {
+            $source = PrePlanOrder::query()->lockForUpdate()->findOrFail($payload['id']);
+            if (! $this->canSplitOrMerge($source)) {
+                abort(422, '当前计划单不允许拆单（需为待调度、未锁定、未执行且未作废）');
+            }
+
+            $sourceWeight = (float) ($source->cargo_weight_kg ?? 0);
+            $sourceVolume = (float) ($source->cargo_volume_m3 ?? 0);
+            $sumWeight = collect($payload['parts'])->sum(fn ($item) => (float) ($item['cargo_weight_kg'] ?? 0));
+            $sumVolume = collect($payload['parts'])->sum(fn ($item) => (float) ($item['cargo_volume_m3'] ?? 0));
+
+            if ($sourceWeight > 0 && abs($sumWeight - $sourceWeight) > 0.01) {
+                abort(422, '拆单后重量合计必须等于原计划单重量');
+            }
+            if ($sourceVolume > 0 && abs($sumVolume - $sourceVolume) > 0.01) {
+                abort(422, '拆单后体积合计必须等于原计划单体积');
+            }
+
+            $created = [];
+            foreach ($payload['parts'] as $index => $part) {
+                $newPayload = $source->toArray();
+                unset(
+                    $newPayload['id'],
+                    $newPayload['order_no'],
+                    $newPayload['created_at'],
+                    $newPayload['updated_at'],
+                    $newPayload['voided_by'],
+                    $newPayload['voided_at'],
+                    $newPayload['void_remark']
+                );
+                $newPayload['order_no'] = 'PO-'.now()->format('Ymd').'-'.Str::upper(Str::random(6));
+                $newPayload['cargo_weight_kg'] = $part['cargo_weight_kg'] ?? 0;
+                $newPayload['cargo_volume_m3'] = $part['cargo_volume_m3'] ?? 0;
+                $newPayload['expected_pickup_at'] = $part['expected_pickup_at'] ?? $source->expected_pickup_at;
+                $newPayload['expected_delivery_at'] = $part['expected_delivery_at'] ?? $source->expected_delivery_at;
+                $newPayload['meta'] = array_merge(
+                    is_array($source->meta) ? $source->meta : [],
+                    [
+                        'split_from_id' => (int) $source->id,
+                        'split_part_no' => $index + 1,
+                    ]
+                );
+
+                $created[] = PrePlanOrder::query()->create($newPayload);
+            }
+
+            $source->status = 'cancelled';
+            $source->voided_by = (int) $request->user()->id;
+            $source->voided_at = now();
+            $source->void_remark = '拆单后原单自动作废';
+            $source->save();
+
+            return [
+                'source' => $source->fresh(),
+                'created' => collect($created)->values(),
+            ];
+        });
+
+        return response()->json($result, 201);
+    }
+
+    public function merge(Request $request): JsonResponse
+    {
+        $payload = $request->validate([
+            'ids' => ['required', 'array', 'min:2', 'max:20'],
+            'ids.*' => ['integer', 'exists:pre_plan_orders,id'],
+        ]);
+
+        $result = DB::transaction(function () use ($payload, $request): array {
+            $ids = collect($payload['ids'])->map(fn ($id) => (int) $id)->unique()->values();
+            $orders = PrePlanOrder::query()
+                ->whereIn('id', $ids->all())
+                ->lockForUpdate()
+                ->get();
+
+            if ($orders->count() !== $ids->count()) {
+                abort(422, '存在无效计划单，无法并单');
+            }
+
+            foreach ($orders as $order) {
+                if (! $this->canSplitOrMerge($order)) {
+                    abort(422, '所选计划单存在不可并单数据（需为待调度、未锁定、未执行且未作废）');
+                }
+            }
+
+            $base = $orders->first();
+            $mergeKeys = [
+                'cargo_category_id',
+                'client_name',
+                'pickup_address',
+                'dropoff_address',
+                'pickup_contact_name',
+                'pickup_contact_phone',
+                'dropoff_contact_name',
+                'dropoff_contact_phone',
+                'submitter_id',
+                'audit_status',
+            ];
+            foreach ($orders as $order) {
+                foreach ($mergeKeys as $key) {
+                    if ((string) ($order->{$key} ?? '') !== (string) ($base->{$key} ?? '')) {
+                        abort(422, '并单要求客户、货品、装卸地、联系人及审核状态一致');
+                    }
+                }
+            }
+
+            $newPayload = $base->toArray();
+            unset(
+                $newPayload['id'],
+                $newPayload['order_no'],
+                $newPayload['created_at'],
+                $newPayload['updated_at'],
+                $newPayload['voided_by'],
+                $newPayload['voided_at'],
+                $newPayload['void_remark']
+            );
+            $newPayload['order_no'] = 'PO-'.now()->format('Ymd').'-'.Str::upper(Str::random(6));
+            $newPayload['cargo_weight_kg'] = $orders->sum(fn ($item) => (float) ($item->cargo_weight_kg ?? 0));
+            $newPayload['cargo_volume_m3'] = $orders->sum(fn ($item) => (float) ($item->cargo_volume_m3 ?? 0));
+            if ($base->freight_calc_scheme === 'by_trip') {
+                $newPayload['freight_trip_count'] = (int) $orders->sum(fn ($item) => (int) ($item->freight_trip_count ?? 1));
+            }
+            $newPayload['meta'] = array_merge(
+                is_array($base->meta) ? $base->meta : [],
+                [
+                    'merge_from_ids' => $ids->all(),
+                ]
+            );
+
+            $merged = PrePlanOrder::query()->create($newPayload);
+
+            PrePlanOrder::query()
+                ->whereIn('id', $ids->all())
+                ->update([
+                    'status' => 'cancelled',
+                    'voided_by' => (int) $request->user()->id,
+                    'voided_at' => now(),
+                    'void_remark' => sprintf('并单生成新计划单 %s 后自动作废', $merged->order_no),
+                ]);
+
+            return [
+                'merged' => $merged,
+                'merged_from_ids' => $ids->all(),
+            ];
+        });
+
+        return response()->json($result, 201);
+    }
+
     public function auditApprove(Request $request): JsonResponse
     {
         $payload = $request->validate([
@@ -740,5 +900,17 @@ class PrePlanOrderController extends Controller
             return null;
         }
         return (int) $text;
+    }
+
+    private function canSplitOrMerge(PrePlanOrder $order): bool
+    {
+        if ($order->status !== 'pending') {
+            return false;
+        }
+        if ((bool) $order->is_locked || $order->status === 'cancelled') {
+            return false;
+        }
+
+        return $this->canModifyOrder($order);
     }
 }
