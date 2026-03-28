@@ -48,6 +48,27 @@ const fetchHomeStats = async () => {
       return
     }
 
+    if (user.value?.role === 'customer') {
+      const { data } = await api.post('/pre-plan-order/customer-list', {})
+      const list = Array.isArray(data?.data) ? data.data : []
+      const counters = {
+        pending_approval: 0,
+        approved: 0,
+        rejected: 0,
+      }
+      for (const item of list) {
+        const key = item?.audit_status || 'pending_approval'
+        if (counters[key] !== undefined) counters[key] += 1
+      }
+      stats.value = [
+        { label: '待审核', value: counters.pending_approval },
+        { label: '已通过', value: counters.approved },
+        { label: '已驳回', value: counters.rejected },
+      ]
+      generatedAt.value = new Date().toLocaleString('zh-CN', { hour12: false })
+      return
+    }
+
     const { data } = await api.post('/dashboard/overview', {})
     stats.value = [
       { label: '待调度', value: data?.metrics?.pending_pre_plan_orders || 0 },

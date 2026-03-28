@@ -2,6 +2,7 @@ export const roleLabelMap = {
   admin: '管理员',
   dispatcher: '调度员',
   driver: '司机',
+  customer: '客户',
 }
 
 export const userStatusLabelMap = {
@@ -12,6 +13,9 @@ export const userStatusLabelMap = {
 export const taskStatusLabelMap = {
   draft: '草稿',
   assigned: '待接单',
+  pending_approval: '待审核',
+  approved: '已审核',
+  rejected: '已驳回',
   accepted: '已接单',
   pending: '待调度',
   scheduled: '已排程',

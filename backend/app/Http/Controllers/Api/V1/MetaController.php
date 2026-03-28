@@ -13,7 +13,7 @@ class MetaController extends Controller
         return response()->json([
             'app' => 'TaskRoute',
             'version' => 'v1',
-            'roles' => ['admin', 'dispatcher', 'driver'],
+            'roles' => ['admin', 'dispatcher', 'driver', 'customer'],
             'cargo_categories' => CargoCategory::query()
                 ->select(['id', 'name', 'code'])
                 ->orderBy('id')

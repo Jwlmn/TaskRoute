@@ -474,6 +474,7 @@ class DriverTaskExecutionController extends Controller
 
         $orders = PrePlanOrder::query()
             ->where('status', 'pending')
+            ->where('audit_status', 'approved')
             ->whereDoesntHave('dispatchTasks', function ($query): void {
                 $query->whereIn('dispatch_tasks.status', ['draft', 'assigned', 'accepted', 'in_progress']);
             })

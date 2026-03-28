@@ -30,6 +30,15 @@ Route::prefix('v1')->group(function (): void {
             Route::post('/pre-plan-order/create', [PrePlanOrderController::class, 'store']);
             Route::post('/pre-plan-order/detail', [PrePlanOrderController::class, 'showByPayload']);
             Route::post('/pre-plan-order/update', [PrePlanOrderController::class, 'updateByPayload']);
+            Route::post('/pre-plan-order/audit-list', [PrePlanOrderController::class, 'auditList']);
+            Route::post('/pre-plan-order/audit-approve', [PrePlanOrderController::class, 'auditApprove']);
+            Route::post('/pre-plan-order/audit-reject', [PrePlanOrderController::class, 'auditReject']);
+        });
+
+        Route::middleware('role:customer')->group(function (): void {
+            Route::post('/pre-plan-order/customer-submit', [PrePlanOrderController::class, 'customerSubmit']);
+            Route::post('/pre-plan-order/customer-list', [PrePlanOrderController::class, 'customerList']);
+            Route::post('/pre-plan-order/customer-detail', [PrePlanOrderController::class, 'customerDetail']);
         });
 
         Route::post('/dispatch-task/list', [DispatchTaskController::class, 'index']);

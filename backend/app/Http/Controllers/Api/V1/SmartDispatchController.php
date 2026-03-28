@@ -96,6 +96,7 @@ class SmartDispatchController extends Controller
     {
         return PrePlanOrder::query()
             ->whereIn('status', ['pending', 'scheduled'])
+            ->where('audit_status', 'approved')
             ->whereDoesntHave('dispatchTasks', function ($query): void {
                 $query->whereIn('dispatch_tasks.status', ['draft', 'assigned', 'accepted', 'in_progress']);
             })
@@ -134,9 +135,10 @@ class SmartDispatchController extends Controller
         $pendingOrderCount = PrePlanOrder::query()
             ->whereIn('id', $allOrderIds->all())
             ->whereIn('status', ['pending', 'scheduled'])
+            ->where('audit_status', 'approved')
             ->count();
         if ($pendingOrderCount !== $allOrderIds->count()) {
-            abort(422, '存在不可下发的预计划单（状态非待调度/已排程）');
+            abort(422, '存在不可下发的预计划单（状态非待调度/已排程或未审核通过）');
         }
 
         $idleVehicleCount = Vehicle::query()

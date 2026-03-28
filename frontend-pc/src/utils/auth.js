@@ -2,6 +2,7 @@ export const rolePermissions = {
   admin: ['dashboard', 'dispatch', 'users', 'mobile_tasks', 'resources'],
   dispatcher: ['dashboard', 'dispatch', 'mobile_tasks', 'resources'],
   driver: ['dashboard', 'mobile_tasks'],
+  customer: ['dashboard', 'customer_orders'],
 }
 
 export const readCurrentUser = () => {

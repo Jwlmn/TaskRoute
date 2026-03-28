@@ -5,6 +5,7 @@ import DashboardHomeView from '../views/portal/DashboardHomeView.vue'
 import DispatchWorkbenchView from '../views/portal/DispatchWorkbenchView.vue'
 import ExceptionTaskManagementView from '../views/portal/ExceptionTaskManagementView.vue'
 import PrePlanOrderManagementView from '../views/portal/PrePlanOrderManagementView.vue'
+import CustomerPrePlanOrderView from '../views/portal/CustomerPrePlanOrderView.vue'
 import MobileTaskCenterView from '../views/portal/MobileTaskCenterView.vue'
 import UserManagementView from '../views/portal/UserManagementView.vue'
 import VehicleManagementView from '../views/portal/VehicleManagementView.vue'
@@ -41,6 +42,12 @@ const router = createRouter({
           name: 'pre-plan-order-management',
           component: PrePlanOrderManagementView,
           meta: { permission: 'dispatch' },
+        },
+        {
+          path: 'customer/pre-plan-orders',
+          name: 'customer-pre-plan-order',
+          component: CustomerPrePlanOrderView,
+          meta: { permission: 'customer_orders' },
         },
         {
           path: 'dispatch',

@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../../services/api'
 import { getLabel, taskStatusLabelMap } from '../../utils/labels'
 
@@ -23,6 +23,7 @@ const manualDispatchDialogVisible = ref(false)
 const creating = ref(false)
 const editing = ref(false)
 const dispatching = ref(false)
+const auditing = ref(false)
 
 const currentEditId = ref(null)
 
@@ -88,6 +89,17 @@ const statusTypeMap = {
 
 const editableStatusSet = new Set(['pending', 'scheduled', 'in_progress'])
 const dispatchableStatusSet = new Set(['pending', 'scheduled'])
+const auditStatusLabelMap = {
+  pending_approval: '待审核',
+  approved: '已审核',
+  rejected: '已驳回',
+}
+
+const auditStatusTypeMap = {
+  pending_approval: 'warning',
+  approved: 'success',
+  rejected: 'danger',
+}
 
 const freightSchemeLabelMap = {
   by_weight: '按重量',
@@ -314,7 +326,9 @@ const onSelectionChange = (rows) => {
   selectedOrders.value = rows
 }
 
-const selectableOrder = (row) => dispatchableStatusSet.has(row.status)
+const selectableOrder = (row) => canDispatchOrder(row)
+
+const canDispatchOrder = (row) => dispatchableStatusSet.has(row.status) && row.audit_status === 'approved'
 
 const clearSelection = () => {
   tableRef.value?.clearSelection?.()
@@ -327,15 +341,53 @@ const openManualDispatchDialog = async () => {
     return
   }
 
-  const invalid = selectedOrders.value.find((item) => !dispatchableStatusSet.has(item.status))
+  const invalid = selectedOrders.value.find((item) => !canDispatchOrder(item))
   if (invalid) {
-    ElMessage.warning(`存在不可派单状态订单：${invalid.order_no}`)
+    ElMessage.warning(`存在不可派单订单（状态或审核不满足）：${invalid.order_no}`)
     return
   }
 
   resetManualDispatchForm()
   manualDispatchDialogVisible.value = true
   await loadVehicles()
+}
+
+const approveOrder = async (row) => {
+  auditing.value = true
+  try {
+    await api.post('/pre-plan-order/audit-approve', { id: row.id })
+    ElMessage.success('审核通过')
+    await loadPrePlanOrders()
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '审核通过失败')
+  } finally {
+    auditing.value = false
+  }
+}
+
+const rejectOrder = async (row) => {
+  const { value } = await ElMessageBox.prompt('请输入驳回原因', '驳回计划单', {
+    confirmButtonText: '确认驳回',
+    cancelButtonText: '取消',
+    inputPlaceholder: '驳回原因（必填）',
+    inputValidator: (v) => (String(v || '').trim().length > 0 ? true : '请输入驳回原因'),
+  }).catch(() => ({ value: null }))
+
+  if (!value) return
+
+  auditing.value = true
+  try {
+    await api.post('/pre-plan-order/audit-reject', {
+      id: row.id,
+      audit_remark: String(value).trim(),
+    })
+    ElMessage.success('已驳回')
+    await loadPrePlanOrders()
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '驳回失败')
+  } finally {
+    auditing.value = false
+  }
 }
 
 const submitManualDispatch = async () => {
@@ -433,9 +485,35 @@ onMounted(() => {
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="100" fixed="right">
+      <el-table-column label="审核" min-width="130">
+        <template #default="{ row }">
+          <el-tag :type="auditStatusTypeMap[row.audit_status] || 'info'">
+            {{ getLabel(auditStatusLabelMap, row.audit_status) }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column prop="audit_remark" label="审核备注" min-width="160" />
+      <el-table-column label="操作" width="200" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" :disabled="!editableStatusSet.has(row.status)" @click="openEditDialog(row)">编辑</el-button>
+          <el-button
+            v-if="row.audit_status === 'pending_approval'"
+            link
+            type="success"
+            :loading="auditing"
+            @click="approveOrder(row)"
+          >
+            通过
+          </el-button>
+          <el-button
+            v-if="row.audit_status === 'pending_approval'"
+            link
+            type="danger"
+            :loading="auditing"
+            @click="rejectOrder(row)"
+          >
+            驳回
+          </el-button>
         </template>
       </el-table-column>
     </el-table>

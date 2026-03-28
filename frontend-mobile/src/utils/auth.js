@@ -2,6 +2,7 @@ export const rolePermissions = {
   admin: ['dashboard', 'dispatch', 'users', 'mobile_tasks'],
   dispatcher: ['dashboard', 'dispatch', 'mobile_tasks'],
   driver: ['dashboard', 'mobile_tasks'],
+  customer: ['dashboard'],
 }
 
 export const readCurrentUser = () => {
@@ -23,4 +24,3 @@ export const hasPermission = (user, permission) => {
   const permissions = rolePermissions[user.role] || []
   return permissions.includes(permission)
 }
-

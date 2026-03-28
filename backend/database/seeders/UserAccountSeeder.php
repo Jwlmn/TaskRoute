@@ -64,5 +64,16 @@ class UserAccountSeeder extends Seeder
                 'password' => Hash::make('password'),
             ]
         );
+
+        User::query()->updateOrCreate(
+            ['account' => 'customer'],
+            [
+                'name' => '客户A',
+                'phone' => '13800000006',
+                'role' => 'customer',
+                'status' => 'active',
+                'password' => Hash::make('password'),
+            ]
+        );
     }
 }

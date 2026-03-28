@@ -39,6 +39,13 @@ const menuTree = computed(() => {
         { index: 'user-management', label: '账号管理', permission: 'users' },
       ],
     },
+    {
+      index: 'customer-center',
+      label: '客户协同',
+      children: [
+        { index: 'customer-pre-plan-order', label: '客户计划单', permission: 'customer_orders' },
+      ],
+    },
   ]
 
   const filterNodes = (nodes) => {

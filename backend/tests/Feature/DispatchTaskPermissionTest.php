@@ -39,4 +39,14 @@ class DispatchTaskPermissionTest extends TestCase
         $this->assertContains('DT-TEST-OWN', $taskNos);
         $this->assertNotContains('DT-TEST-OTHER', $taskNos);
     }
+
+    public function test_customer_cannot_list_dispatch_tasks(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $customer = User::query()->where('account', 'customer')->firstOrFail();
+        Sanctum::actingAs($customer);
+
+        $this->postJson('/api/v1/dispatch-task/list', [])->assertStatus(403);
+    }
 }

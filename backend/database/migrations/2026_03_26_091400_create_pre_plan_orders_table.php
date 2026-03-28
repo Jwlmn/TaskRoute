@@ -12,6 +12,7 @@ return new class extends Migration
             $table->id();
             $table->string('order_no')->unique();
             $table->foreignId('cargo_category_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('submitter_id')->nullable()->constrained('users')->nullOnDelete();
             $table->string('client_name');
             $table->string('pickup_address');
             $table->string('dropoff_address');
@@ -29,6 +30,10 @@ return new class extends Migration
             $table->timestamp('freight_calculated_at')->nullable();
             $table->timestamp('expected_pickup_at')->nullable();
             $table->timestamp('expected_delivery_at')->nullable();
+            $table->enum('audit_status', ['pending_approval', 'approved', 'rejected'])->default('approved');
+            $table->foreignId('audited_by')->nullable()->constrained('users')->nullOnDelete();
+            $table->timestamp('audited_at')->nullable();
+            $table->string('audit_remark', 255)->nullable();
             $table->enum('status', ['pending', 'scheduled', 'in_progress', 'completed', 'cancelled'])->default('pending');
             $table->json('meta')->nullable();
             $table->timestamps();

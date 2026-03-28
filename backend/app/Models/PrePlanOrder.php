@@ -14,6 +14,7 @@ class PrePlanOrder extends Model
     protected $fillable = [
         'order_no',
         'cargo_category_id',
+        'submitter_id',
         'client_name',
         'pickup_address',
         'dropoff_address',
@@ -31,6 +32,10 @@ class PrePlanOrder extends Model
         'freight_calculated_at',
         'expected_pickup_at',
         'expected_delivery_at',
+        'audit_status',
+        'audited_by',
+        'audited_at',
+        'audit_remark',
         'status',
         'meta',
     ];
@@ -41,6 +46,7 @@ class PrePlanOrder extends Model
             'expected_pickup_at' => 'datetime',
             'expected_delivery_at' => 'datetime',
             'freight_calculated_at' => 'datetime',
+            'audited_at' => 'datetime',
             'meta' => 'array',
         ];
     }

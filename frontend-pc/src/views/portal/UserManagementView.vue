@@ -143,6 +143,7 @@ onMounted(() => {
           <el-option label="管理员" value="admin" />
           <el-option label="调度员" value="dispatcher" />
           <el-option label="司机" value="driver" />
+          <el-option label="客户" value="customer" />
         </el-select>
       </el-form-item>
       <el-form-item label="状态">

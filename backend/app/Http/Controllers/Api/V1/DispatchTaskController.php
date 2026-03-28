@@ -16,6 +16,9 @@ class DispatchTaskController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
+        if (! $user || ! in_array($user->role, ['admin', 'dispatcher', 'driver'], true)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
 
         $query = DispatchTask::query()->with([
             'vehicle:id,plate_number,name',
