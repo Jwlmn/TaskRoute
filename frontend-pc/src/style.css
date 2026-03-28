@@ -121,11 +121,60 @@ body {
   font-weight: 600;
 }
 
+.metric-hint {
+  margin-top: 8px;
+  color: #718096;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .overview-value {
   margin-top: 8px;
   font-size: 28px;
   color: #1d3d8f;
   font-weight: 600;
+}
+
+.dashboard-stat-block {
+  min-height: 120px;
+  padding: 8px 0;
+}
+
+.dashboard-rate-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.dashboard-rate-item {
+  padding: 16px;
+  border: 1px solid #dce5f2;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+}
+
+.dashboard-rate-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.dashboard-rate-label {
+  color: #2d3748;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.dashboard-rate-value {
+  color: #1d4ed8;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.mt-8 {
+  margin-top: 8px;
 }
 
 .card-title {
@@ -307,5 +356,9 @@ body {
 
   .portal-main {
     padding: 12px;
+  }
+
+  .dashboard-rate-grid {
+    grid-template-columns: 1fr;
   }
 }
