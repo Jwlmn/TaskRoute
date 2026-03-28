@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 import * as XLSX from 'xlsx'
@@ -130,6 +130,18 @@ const auditStatusTypeMap = {
   approved: 'success',
   rejected: 'danger',
 }
+
+const mergeCompareKeys = [
+  { key: 'cargo_category_id', label: '货品分类' },
+  { key: 'client_name', label: '客户' },
+  { key: 'pickup_address', label: '装货地' },
+  { key: 'dropoff_address', label: '卸货地' },
+  { key: 'pickup_contact_name', label: '装货联系人' },
+  { key: 'pickup_contact_phone', label: '装货联系电话' },
+  { key: 'dropoff_contact_name', label: '收货联系人' },
+  { key: 'dropoff_contact_phone', label: '收货联系电话' },
+  { key: 'audit_status', label: '审核状态' },
+]
 
 const freightSchemeLabelMap = {
   by_weight: '按重量',
@@ -786,6 +798,54 @@ const submitSplitOrder = async () => {
   }
 }
 
+const getMergeBaseIssues = (row) => {
+  const reasons = []
+  if (row.status !== 'pending') reasons.push('状态非待调度')
+  if (row.is_locked) reasons.push('已锁单')
+  if (row.status === 'cancelled') reasons.push('已作废')
+  return reasons
+}
+
+const getMergeDiffLabels = (base, row) =>
+  mergeCompareKeys
+    .filter((item) => String(row?.[item.key] ?? '') !== String(base?.[item.key] ?? ''))
+    .map((item) => item.label)
+
+const recommendMergeOrders = async () => {
+  if (selectedOrders.value.length !== 1) {
+    ElMessage.warning('请先只勾选 1 条基准单，再执行推荐可并单')
+    return
+  }
+
+  const base = selectedOrders.value[0]
+  const baseIssues = getMergeBaseIssues(base)
+  if (baseIssues.length) {
+    ElMessage.warning(`基准单不可并单：${base.order_no}（${baseIssues.join('、')}）`)
+    return
+  }
+
+  const matched = []
+  for (const row of prePlanOrders.value) {
+    const issues = getMergeBaseIssues(row)
+    const diff = row.id === base.id ? [] : getMergeDiffLabels(base, row)
+    if (!issues.length && !diff.length) {
+      matched.push(row)
+    }
+  }
+
+  if (matched.length < 2) {
+    ElMessage.info(`未找到可与 ${base.order_no} 并单的其他订单，请调整筛选条件后重试`)
+    return
+  }
+
+  clearSelection()
+  await nextTick()
+  for (const row of matched) {
+    tableRef.value?.toggleRowSelection?.(row, true)
+  }
+  ElMessage.success(`已自动勾选 ${matched.length} 条可并单订单（基准单：${base.order_no}）`)
+}
+
 const mergeSelectedOrders = async () => {
   if (selectedOrders.value.length < 2) {
     ElMessage.warning('请先勾选至少两条计划单再并单')
@@ -805,21 +865,8 @@ const mergeSelectedOrders = async () => {
     }
   }
 
-  const compareKeys = [
-    { key: 'cargo_category_id', label: '货品分类' },
-    { key: 'client_name', label: '客户' },
-    { key: 'pickup_address', label: '装货地' },
-    { key: 'dropoff_address', label: '卸货地' },
-    { key: 'pickup_contact_name', label: '装货联系人' },
-    { key: 'pickup_contact_phone', label: '装货联系电话' },
-    { key: 'dropoff_contact_name', label: '收货联系人' },
-    { key: 'dropoff_contact_phone', label: '收货联系电话' },
-    { key: 'audit_status', label: '审核状态' },
-  ]
   for (const row of rest) {
-    const diff = compareKeys
-      .filter((item) => String(row?.[item.key] ?? '') !== String(base?.[item.key] ?? ''))
-      .map((item) => item.label)
+    const diff = getMergeDiffLabels(base, row)
     if (diff.length) {
       issues.push(`${row.order_no}: 与基准单 ${base.order_no} 的${diff.join('、')}不一致`)
     }
@@ -1018,6 +1065,7 @@ onMounted(() => {
       <div class="table-header">
         <div class="card-title">预计划单管理</div>
         <div>
+          <el-button class="mr-8" plain type="info" @click="recommendMergeOrders">推荐可并单</el-button>
           <el-button class="mr-8" plain type="warning" @click="mergeSelectedOrders">并单(选中)</el-button>
           <el-button class="mr-8" plain type="primary" @click="openManualDispatchDialog">手动派单</el-button>
           <el-button class="mr-8" plain @click="downloadImportTemplate">下载模板</el-button>
