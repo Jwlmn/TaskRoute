@@ -15,7 +15,8 @@ import FreightTemplateManagementView from '../views/portal/FreightTemplateManage
 import SettlementManagementView from '../views/portal/SettlementManagementView.vue'
 import NotificationCenterView from '../views/portal/NotificationCenterView.vue'
 import OrderAuditLogView from '../views/portal/OrderAuditLogView.vue'
-import { hasPermission, readCurrentUser } from '../utils/auth'
+import api from '../services/api'
+import { ensureAuthSession, hasPermission, readAuthToken, readCurrentUser } from '../utils/auth'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -124,14 +125,18 @@ const router = createRouter({
   ],
 })
 
-router.beforeEach((to) => {
-  const token = localStorage.getItem('taskroute_token')
-  const user = readCurrentUser()
+router.beforeEach(async (to) => {
+  const token = readAuthToken()
+  let user = readCurrentUser()
 
-  if (to.meta.requiresAuth && !token) {
+  if (token) {
+    user = (await ensureAuthSession(api)) || readCurrentUser()
+  }
+
+  if (to.meta.requiresAuth && !user) {
     return { name: 'login' }
   }
-  if (to.meta.guestOnly && token) {
+  if (to.meta.guestOnly && user) {
     return { name: 'dashboard-home' }
   }
 

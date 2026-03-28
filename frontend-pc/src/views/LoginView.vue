@@ -3,6 +3,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '../services/api'
+import { persistAuthSession } from '../utils/auth'
 
 const router = useRouter()
 const loading = ref(false)
@@ -26,8 +27,7 @@ const submit = async () => {
   loading.value = true
   try {
     const { data } = await api.post('/auth/login', form)
-    localStorage.setItem('taskroute_token', data.token)
-    localStorage.setItem('taskroute_user', JSON.stringify(data.user))
+    persistAuthSession(data.token, data.user)
     ElMessage.success('登录成功')
     await router.push({ name: 'dashboard-home' })
   } catch (error) {

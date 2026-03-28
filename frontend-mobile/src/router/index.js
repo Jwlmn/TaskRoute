@@ -5,7 +5,8 @@ import MobileHomeView from '../views/mobile/MobileHomeView.vue'
 import MobileTaskListView from '../views/mobile/MobileTaskListView.vue'
 import MobileTaskDetailView from '../views/mobile/MobileTaskDetailView.vue'
 import MobileAccountView from '../views/mobile/MobileAccountView.vue'
-import { readCurrentUser } from '../utils/auth'
+import api from '../services/api'
+import { ensureAuthSession, readCurrentUser, readAuthToken } from '../utils/auth'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -30,15 +31,19 @@ const router = createRouter({
   ],
 })
 
-router.beforeEach((to) => {
-  const token = localStorage.getItem('taskroute_token')
-  const user = readCurrentUser()
+router.beforeEach(async (to) => {
+  const token = readAuthToken()
+  let user = readCurrentUser()
 
-  if (to.meta.requiresAuth && !token) {
+  if (token) {
+    user = (await ensureAuthSession(api)) || readCurrentUser()
+  }
+
+  if (to.meta.requiresAuth && !user) {
     return { name: 'login' }
   }
 
-  if (to.meta.guestOnly && token && user) {
+  if (to.meta.guestOnly && user) {
     return { name: 'mobile-home' }
   }
 

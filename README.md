@@ -50,9 +50,10 @@ npm install
 npm run dev
 ```
 
-## 当前已落地的开发骨架（一阶段）
+## 当前已落地能力
 
 - 多角色基础：`admin`、`dispatcher`、`driver`
+- 外部协同角色：`customer`
 - 预计划单模型与接口：`pre_plan_orders`
 - 派车任务模型与接口：`dispatch_tasks`
 - 任务与订单关联：`dispatch_task_orders`
@@ -60,23 +61,28 @@ npm run dev
 - 电子单据：`electronic_documents`
 - 禁混与承运规则：`cargo_incompatibilities`、`vehicle_cargo_rules`
 - API 入口：`/api/v1/meta`、`/api/v1/pre-plan-order/list`、`/api/v1/dispatch-task/list`
-- 鉴权与权限：Sanctum Token + `role` 中间件（`admin`/`dispatcher`/`driver`）
+- 鉴权与权限：Sanctum Token + Spatie Permission，PC/移动端启动时会通过 `/api/v1/auth/me` 校验并恢复登录态
 - 登录安全：图片验证码登录（不开放注册）
-- 智能派单：`/api/v1/dispatch/preview`、`/api/v1/dispatch/create-tasks`
+- 智能派单：`/api/v1/dispatch/preview`、`/api/v1/dispatch/create-tasks`、`/api/v1/dispatch/manual-create-tasks`
+- 审核流与审计：预计划单审核、批量审核、超时提醒、修订对比、操作审计查询
 - 用户管理：管理员账号分配与维护（`/api/v1/user/list`、`/api/v1/user/create`）
 - 资源维护模块：
 - 车辆资源：`/api/v1/resource/vehicle/list|create|detail|update`
 - 人员资源：`/api/v1/resource/personnel/list|create|detail|update`
 - 站点资源（提货点/收货点）：`/api/v1/resource/site/list|create|detail|update`
+- 运费与结算：`/api/v1/freight-template/*`、`/api/v1/settlement/*`
+- 通知中心：站内消息查询、已读、批量已读、置顶
+- 客户协同：客户提报计划单、查单、修改、重提
 - 统一权限体系：PC 与移动端使用同一账号、同一权限模型
 - PC 端：面向管理与调度操作（`frontend-pc`）
 - 移动端：面向任务执行与移动场景操作（`frontend-mobile`）
 
 ## 默认测试账号
 
-- 管理员：`admin` / `admin`
-- 调度员：`dispatcher` / `TaskRoute@123`
-- 司机：`driver` / `TaskRoute@123`
+- 管理员：`admin` / `password`
+- 调度员：`dispatcher` / `password`
+- 司机：`driver` / `password`
+- 客户：`customer` / `password`
 
 登录流程：
 1. 先调用 `GET /api/v1/auth/captcha` 获取验证码 `key` 与图片。
@@ -104,7 +110,6 @@ npm run dev
 
 ## 下一步建议
 
-- 接入认证（Sanctum/JWT）和 RBAC 中间件
-- 智能派单规则引擎（禁混、载重、时间窗、多订单拼单）
-- 对接高德路径优化与司机定位上报接口
-- B 端地图调度大屏与异常告警中心
+- 补齐组织/站点/区域数据隔离与数据范围权限
+- 完善统计分析看板，补充准时率、履约率、车辆利用率、回单及时率等指标
+- 收口前端体积与超大页面拆分，降低维护成本

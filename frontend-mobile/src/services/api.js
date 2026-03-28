@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { clearAuthStorage, readAuthToken } from '../utils/auth'
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api/v1',
@@ -6,15 +7,14 @@ const api = axios.create({
 })
 
 const clearAuthAndRedirect = () => {
-  localStorage.removeItem('taskroute_token')
-  localStorage.removeItem('taskroute_user')
+  clearAuthStorage()
   if (window.location.pathname !== '/login') {
     window.location.href = '/login'
   }
 }
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('taskroute_token')
+  const token = readAuthToken()
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
@@ -24,7 +24,7 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error?.response?.status === 401) {
+    if ([401, 419].includes(error?.response?.status)) {
       clearAuthAndRedirect()
     }
     return Promise.reject(error)

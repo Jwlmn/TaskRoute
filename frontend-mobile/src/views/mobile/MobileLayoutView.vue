@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '../../services/api'
-import { hasPermission, readCurrentUser } from '../../utils/auth'
+import { clearAuthStorage, hasPermission, readCurrentUser } from '../../utils/auth'
 
 const route = useRoute()
 const router = useRouter()
@@ -33,8 +33,7 @@ const logout = async () => {
   } catch {
     // ignore
   } finally {
-    localStorage.removeItem('taskroute_token')
-    localStorage.removeItem('taskroute_user')
+    clearAuthStorage()
     ElMessage.success('已退出登录')
     await router.push({ name: 'login' })
   }
