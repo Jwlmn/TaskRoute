@@ -16,8 +16,22 @@ const form = reactive({
   role: 'driver',
   status: 'active',
   phone: '',
+  permissions: [],
   password: '',
 })
+
+const permissionOptions = [
+  { label: '首页概览', value: 'dashboard' },
+  { label: '预计划/调度', value: 'dispatch' },
+  { label: '资源管理', value: 'resources' },
+  { label: '账号管理', value: 'users' },
+  { label: '移动任务', value: 'mobile_tasks' },
+  { label: '客户计划单', value: 'customer_orders' },
+  { label: '运费规则', value: 'freight_templates' },
+  { label: '结算单', value: 'settlement' },
+  { label: '通知中心', value: 'notifications' },
+  { label: '操作审计', value: 'audit_log' },
+]
 
 const resetForm = () => {
   form.id = null
@@ -26,6 +40,7 @@ const resetForm = () => {
   form.role = 'driver'
   form.status = 'active'
   form.phone = ''
+  form.permissions = []
   form.password = ''
 }
 
@@ -53,6 +68,7 @@ const openEdit = (row) => {
   form.role = row.role
   form.status = row.status
   form.phone = row.phone || ''
+  form.permissions = Array.isArray(row.permissions) ? row.permissions : []
   form.password = ''
   dialogVisible.value = true
 }
@@ -66,6 +82,7 @@ const submit = async () => {
         role: form.role,
         status: form.status,
         phone: form.phone,
+        permissions: form.permissions,
         password: form.password,
       })
       ElMessage.success('账号创建成功')
@@ -77,6 +94,7 @@ const submit = async () => {
         role: form.role,
         status: form.status,
         phone: form.phone,
+        permissions: form.permissions,
       }
       if (form.password) {
         payload.password = form.password
@@ -154,6 +172,11 @@ onMounted(() => {
       </el-form-item>
       <el-form-item label="手机号">
         <el-input v-model="form.phone" />
+      </el-form-item>
+      <el-form-item label="附加权限">
+        <el-select v-model="form.permissions" multiple clearable collapse-tags style="width: 100%">
+          <el-option v-for="item in permissionOptions" :key="item.value" :label="item.label" :value="item.value" />
+        </el-select>
       </el-form-item>
       <el-form-item :label="dialogMode === 'create' ? '登录密码' : '重置密码（留空不改）'">
         <el-input v-model="form.password" type="password" show-password />

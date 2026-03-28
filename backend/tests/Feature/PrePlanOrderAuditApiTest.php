@@ -6,6 +6,7 @@ use App\Models\CargoCategory;
 use App\Models\PrePlanOrder;
 use App\Models\User;
 use App\Models\Vehicle;
+use App\Models\SystemMessage;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
@@ -416,5 +417,74 @@ class PrePlanOrderAuditApiTest extends TestCase
             'id' => $order->id,
             'client_name' => '作废后更新',
         ])->assertStatus(422);
+    }
+
+    public function test_dispatcher_can_batch_audit_and_customer_can_compare_revision(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+        $customer = User::query()->where('account', 'customer')->firstOrFail();
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $cargo = CargoCategory::query()->firstOrFail();
+
+        Sanctum::actingAs($customer);
+        $orderA = $this->postJson('/api/v1/pre-plan-order/customer-submit', [
+            'cargo_category_id' => $cargo->id,
+            'client_name' => '批量审核客户A',
+            'pickup_address' => '地址A',
+            'dropoff_address' => '地址B',
+        ])->json();
+        $orderB = $this->postJson('/api/v1/pre-plan-order/customer-submit', [
+            'cargo_category_id' => $cargo->id,
+            'client_name' => '批量审核客户B',
+            'pickup_address' => '地址C',
+            'dropoff_address' => '地址D',
+        ])->json();
+
+        Sanctum::actingAs($dispatcher);
+        $this->postJson('/api/v1/pre-plan-order/audit-batch-approve', [
+            'ids' => [(int) $orderA['id'], (int) $orderB['id']],
+            'audit_remark' => '批量审核通过',
+        ])->assertOk()->assertJsonPath('approved_count', 2);
+
+        Sanctum::actingAs($customer);
+        $orderC = $this->postJson('/api/v1/pre-plan-order/customer-submit', [
+            'cargo_category_id' => $cargo->id,
+            'client_name' => '版本对比客户',
+            'pickup_address' => '旧地址',
+            'dropoff_address' => '卸货点',
+        ])->json();
+        Sanctum::actingAs($dispatcher);
+        $this->postJson('/api/v1/pre-plan-order/audit-batch-reject', [
+            'ids' => [(int) $orderC['id']],
+            'audit_remark' => '地址信息待补充',
+        ])->assertOk()->assertJsonPath('rejected_count', 1);
+
+        Sanctum::actingAs($customer);
+        $this->postJson('/api/v1/pre-plan-order/customer-update', [
+            'id' => (int) $orderC['id'],
+            'pickup_address' => '新地址（已补充）',
+        ])->assertOk();
+        $this->postJson('/api/v1/pre-plan-order/revision-compare', [
+            'id' => (int) $orderC['id'],
+        ])->assertOk()
+            ->assertJsonPath('has_snapshot', true);
+    }
+
+    public function test_dispatcher_can_trigger_audit_timeout_reminder_and_get_templates(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        Sanctum::actingAs($dispatcher);
+
+        $this->postJson('/api/v1/pre-plan-order/audit-remark-templates', [])
+            ->assertOk()
+            ->assertJsonStructure(['data']);
+
+        $before = SystemMessage::query()->count();
+        $response = $this->postJson('/api/v1/pre-plan-order/audit-timeout-reminder', [
+            'timeout_hours' => 1,
+        ])->assertOk();
+        $this->assertGreaterThanOrEqual(0, (int) $response->json('timeout_count'));
+        $this->assertGreaterThanOrEqual($before, SystemMessage::query()->count());
     }
 }

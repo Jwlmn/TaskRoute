@@ -25,6 +25,7 @@ class User extends Authenticatable
         'phone',
         'role',
         'status',
+        'permissions',
         'password',
     ];
 
@@ -47,6 +48,24 @@ class User extends Authenticatable
     {
         return [
             'password' => 'hashed',
+            'permissions' => 'array',
         ];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function resolvePermissions(): array
+    {
+        $rolePermissions = match ($this->role) {
+            'admin' => ['dashboard', 'dispatch', 'users', 'mobile_tasks', 'resources', 'freight_templates', 'settlement', 'notifications', 'audit_log'],
+            'dispatcher' => ['dashboard', 'dispatch', 'mobile_tasks', 'resources', 'freight_templates', 'settlement', 'notifications', 'audit_log'],
+            'driver' => ['dashboard', 'mobile_tasks', 'notifications'],
+            'customer' => ['dashboard', 'customer_orders', 'notifications'],
+            default => [],
+        };
+        $custom = is_array($this->permissions) ? $this->permissions : [];
+
+        return array_values(array_unique(array_merge($rolePermissions, $custom)));
     }
 }

@@ -31,6 +31,8 @@ class UserManagementController extends Controller
             'phone' => ['nullable', 'string', 'max:32'],
             'role' => ['required', Rule::in(['admin', 'dispatcher', 'driver', 'customer'])],
             'status' => ['nullable', Rule::in(['active', 'inactive'])],
+            'permissions' => ['nullable', 'array'],
+            'permissions.*' => ['string', 'max:64'],
             'password' => ['required', 'string', 'min:8'],
         ]);
 
@@ -66,6 +68,8 @@ class UserManagementController extends Controller
             'phone' => ['sometimes', 'nullable', 'string', 'max:32'],
             'role' => ['sometimes', Rule::in(['admin', 'dispatcher', 'driver', 'customer'])],
             'status' => ['sometimes', Rule::in(['active', 'inactive'])],
+            'permissions' => ['sometimes', 'nullable', 'array'],
+            'permissions.*' => ['string', 'max:64'],
             'password' => ['sometimes', 'string', 'min:8'],
         ]);
 
@@ -87,6 +91,8 @@ class UserManagementController extends Controller
             'phone' => ['sometimes', 'nullable', 'string', 'max:32'],
             'role' => ['sometimes', Rule::in(['admin', 'dispatcher', 'driver', 'customer'])],
             'status' => ['sometimes', Rule::in(['active', 'inactive'])],
+            'permissions' => ['sometimes', 'nullable', 'array'],
+            'permissions.*' => ['string', 'max:64'],
             'password' => ['sometimes', 'string', 'min:8'],
         ]);
 

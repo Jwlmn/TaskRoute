@@ -43,6 +43,11 @@ Route::prefix('v1')->group(function (): void {
             Route::post('/pre-plan-order/audit-list', [PrePlanOrderController::class, 'auditList']);
             Route::post('/pre-plan-order/audit-approve', [PrePlanOrderController::class, 'auditApprove']);
             Route::post('/pre-plan-order/audit-reject', [PrePlanOrderController::class, 'auditReject']);
+            Route::post('/pre-plan-order/audit-batch-approve', [PrePlanOrderController::class, 'auditBatchApprove']);
+            Route::post('/pre-plan-order/audit-batch-reject', [PrePlanOrderController::class, 'auditBatchReject']);
+            Route::post('/pre-plan-order/audit-remark-templates', [PrePlanOrderController::class, 'auditRemarkTemplates']);
+            Route::post('/pre-plan-order/audit-timeout-reminder', [PrePlanOrderController::class, 'auditTimeoutReminder']);
+            Route::post('/pre-plan-order/revision-compare', [PrePlanOrderController::class, 'revisionCompare']);
             Route::post('/freight-template/list', [FreightRateTemplateController::class, 'list']);
             Route::post('/freight-template/create', [FreightRateTemplateController::class, 'create']);
             Route::post('/freight-template/detail', [FreightRateTemplateController::class, 'detail']);
@@ -59,6 +64,7 @@ Route::prefix('v1')->group(function (): void {
             Route::post('/pre-plan-order/customer-detail', [PrePlanOrderController::class, 'customerDetail']);
             Route::post('/pre-plan-order/customer-update', [PrePlanOrderController::class, 'customerUpdate']);
             Route::post('/pre-plan-order/customer-resubmit', [PrePlanOrderController::class, 'customerResubmit']);
+            Route::post('/pre-plan-order/revision-compare', [PrePlanOrderController::class, 'revisionCompare']);
             Route::post('/message/list', [SystemMessageController::class, 'list']);
             Route::post('/message/read', [SystemMessageController::class, 'markRead']);
         });

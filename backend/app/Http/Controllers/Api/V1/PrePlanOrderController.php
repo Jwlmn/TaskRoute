@@ -688,6 +688,38 @@ class PrePlanOrderController extends Controller
         return response()->json($order);
     }
 
+    public function auditBatchApprove(Request $request): JsonResponse
+    {
+        $payload = $request->validate([
+            'ids' => ['required', 'array', 'min:1', 'max:100'],
+            'ids.*' => ['integer', 'exists:pre_plan_orders,id'],
+            'audit_remark' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $approvedCount = DB::transaction(function () use ($payload, $request): int {
+            $ids = collect($payload['ids'])->map(fn ($id) => (int) $id)->unique()->values();
+            $orders = PrePlanOrder::query()->whereIn('id', $ids->all())->lockForUpdate()->get();
+            $count = 0;
+            foreach ($orders as $order) {
+                if ($order->audit_status !== 'pending_approval') {
+                    continue;
+                }
+                $order->audit_status = 'approved';
+                $order->audited_by = (int) $request->user()->id;
+                $order->audited_at = now();
+                $order->audit_remark = $payload['audit_remark'] ?? null;
+                $this->appendOrderHistory($order, 'dispatcher_audit_batch_approve', $request, [
+                    'audit_remark' => $payload['audit_remark'] ?? null,
+                ]);
+                $order->save();
+                $count++;
+            }
+            return $count;
+        });
+
+        return response()->json(['approved_count' => $approvedCount]);
+    }
+
     public function auditReject(Request $request): JsonResponse
     {
         $payload = $request->validate([
@@ -705,6 +737,10 @@ class PrePlanOrderController extends Controller
             $order->audited_by = (int) $request->user()->id;
             $order->audited_at = now();
             $order->audit_remark = $payload['audit_remark'];
+            $meta = is_array($order->meta) ? $order->meta : [];
+            $meta['rejected_snapshot'] = $this->buildRevisionSnapshot($order);
+            $meta['rejected_at'] = now()->toDateTimeString();
+            $order->meta = $meta;
             $this->appendOrderHistory($order, 'dispatcher_audit_reject', $request, [
                 'audit_remark' => $payload['audit_remark'],
             ]);
@@ -728,6 +764,125 @@ class PrePlanOrderController extends Controller
         });
 
         return response()->json($order);
+    }
+
+    public function auditBatchReject(Request $request): JsonResponse
+    {
+        $payload = $request->validate([
+            'ids' => ['required', 'array', 'min:1', 'max:100'],
+            'ids.*' => ['integer', 'exists:pre_plan_orders,id'],
+            'audit_remark' => ['required', 'string', 'max:255'],
+        ]);
+
+        $rejectedCount = DB::transaction(function () use ($payload, $request): int {
+            $ids = collect($payload['ids'])->map(fn ($id) => (int) $id)->unique()->values();
+            $orders = PrePlanOrder::query()->whereIn('id', $ids->all())->lockForUpdate()->get();
+            $count = 0;
+            foreach ($orders as $order) {
+                if ($order->audit_status !== 'pending_approval') {
+                    continue;
+                }
+                $order->audit_status = 'rejected';
+                $order->audited_by = (int) $request->user()->id;
+                $order->audited_at = now();
+                $order->audit_remark = $payload['audit_remark'];
+                $meta = is_array($order->meta) ? $order->meta : [];
+                $meta['rejected_snapshot'] = $this->buildRevisionSnapshot($order);
+                $meta['rejected_at'] = now()->toDateTimeString();
+                $order->meta = $meta;
+                $this->appendOrderHistory($order, 'dispatcher_audit_batch_reject', $request, [
+                    'audit_remark' => $payload['audit_remark'],
+                ]);
+                $order->save();
+                $count++;
+            }
+            return $count;
+        });
+
+        return response()->json(['rejected_count' => $rejectedCount]);
+    }
+
+    public function auditRemarkTemplates(): JsonResponse
+    {
+        return response()->json([
+            'data' => [
+                ['code' => 'ok_basic', 'text' => '资料完整，审核通过'],
+                ['code' => 'ok_schedule', 'text' => '时效与运力匹配，审核通过'],
+                ['code' => 'reject_contact', 'text' => '联系人或联系方式缺失，请补充后重提'],
+                ['code' => 'reject_address', 'text' => '装卸地址信息不完整，请补充后重提'],
+                ['code' => 'reject_price', 'text' => '运费规则不完整，请补充后重提'],
+            ],
+        ]);
+    }
+
+    public function auditTimeoutReminder(Request $request): JsonResponse
+    {
+        $payload = $request->validate([
+            'timeout_hours' => ['nullable', 'integer', 'min:1', 'max:72'],
+        ]);
+
+        $timeoutHours = (int) ($payload['timeout_hours'] ?? 4);
+        $orders = PrePlanOrder::query()
+            ->where('audit_status', 'pending_approval')
+            ->where('created_at', '<=', now()->subHours($timeoutHours))
+            ->get(['id', 'order_no', 'created_at']);
+
+        $targets = \App\Models\User::query()
+            ->whereIn('role', ['admin', 'dispatcher'])
+            ->where('status', 'active')
+            ->get(['id']);
+
+        foreach ($targets as $target) {
+            SystemMessage::query()->create([
+                'user_id' => (int) $target->id,
+                'message_type' => 'audit_reminder',
+                'title' => '待审核计划单超时提醒',
+                'content' => sprintf('当前有 %d 条计划单超过 %d 小时未审核，请及时处理', $orders->count(), $timeoutHours),
+                'meta' => [
+                    'timeout_hours' => $timeoutHours,
+                    'order_ids' => $orders->pluck('id')->values()->all(),
+                ],
+            ]);
+        }
+
+        return response()->json([
+            'timeout_hours' => $timeoutHours,
+            'timeout_count' => $orders->count(),
+            'notified_user_count' => $targets->count(),
+        ]);
+    }
+
+    public function revisionCompare(Request $request): JsonResponse
+    {
+        $payload = $request->validate([
+            'id' => ['required', 'integer', 'exists:pre_plan_orders,id'],
+        ]);
+
+        $order = PrePlanOrder::query()->findOrFail((int) $payload['id']);
+        $snapshot = data_get($order->meta, 'rejected_snapshot');
+        if (! is_array($snapshot)) {
+            return response()->json([
+                'order_id' => (int) $order->id,
+                'has_snapshot' => false,
+                'diffs' => [],
+            ]);
+        }
+        $current = $this->buildRevisionSnapshot($order);
+        $diffs = collect(array_keys($snapshot))
+            ->filter(fn ($key) => (string) ($snapshot[$key] ?? '') !== (string) ($current[$key] ?? ''))
+            ->map(fn ($key) => [
+                'field' => $key,
+                'before' => $snapshot[$key] ?? null,
+                'after' => $current[$key] ?? null,
+            ])
+            ->values()
+            ->all();
+
+        return response()->json([
+            'order_id' => (int) $order->id,
+            'has_snapshot' => true,
+            'diffs' => $diffs,
+        ]);
     }
 
     public function show(PrePlanOrder $prePlanOrder): JsonResponse
@@ -1095,5 +1250,30 @@ class PrePlanOrderController extends Controller
 
         $meta['history'] = array_values($history);
         $order->meta = $meta;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildRevisionSnapshot(PrePlanOrder $order): array
+    {
+        return [
+            'cargo_category_id' => $order->cargo_category_id,
+            'client_name' => $order->client_name,
+            'pickup_address' => $order->pickup_address,
+            'pickup_contact_name' => $order->pickup_contact_name,
+            'pickup_contact_phone' => $order->pickup_contact_phone,
+            'dropoff_address' => $order->dropoff_address,
+            'dropoff_contact_name' => $order->dropoff_contact_name,
+            'dropoff_contact_phone' => $order->dropoff_contact_phone,
+            'cargo_weight_kg' => $order->cargo_weight_kg,
+            'cargo_volume_m3' => $order->cargo_volume_m3,
+            'freight_calc_scheme' => $order->freight_calc_scheme,
+            'freight_unit_price' => $order->freight_unit_price,
+            'loss_allowance_kg' => $order->loss_allowance_kg,
+            'loss_deduct_unit_price' => $order->loss_deduct_unit_price,
+            'expected_pickup_at' => $order->expected_pickup_at?->toDateTimeString(),
+            'expected_delivery_at' => $order->expected_delivery_at?->toDateTimeString(),
+        ];
     }
 }
