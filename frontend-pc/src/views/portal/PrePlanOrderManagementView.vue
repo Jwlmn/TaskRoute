@@ -50,6 +50,7 @@ const importFile = ref(null)
 const importResult = ref(null)
 const splitTargetOrder = ref(null)
 const splitPartCount = ref(2)
+const splitParts = ref([])
 
 const createForm = reactive({
   cargo_category_id: null,
@@ -151,6 +152,8 @@ const cargoCategoryMap = computed(() => {
 })
 
 const selectedOrderIds = computed(() => selectedOrders.value.map((item) => item.id))
+const splitWeightTotal = computed(() => splitParts.value.reduce((sum, part) => sum + Number(part.cargo_weight_kg || 0), 0))
+const splitVolumeTotal = computed(() => splitParts.value.reduce((sum, part) => sum + Number(part.cargo_volume_m3 || 0), 0))
 
 const formatDateTime = (value) => {
   if (!value) return '-'
@@ -428,7 +431,46 @@ const openSplitDialog = (row) => {
   }
   splitTargetOrder.value = row
   splitPartCount.value = 2
+  fillSplitPartsByRatio()
   splitDialogVisible.value = true
+}
+
+const closeSplitDialog = () => {
+  splitDialogVisible.value = false
+  splitTargetOrder.value = null
+  splitParts.value = []
+}
+
+const fillSplitPartsByRatio = () => {
+  const row = splitTargetOrder.value
+  if (!row) return
+  const count = Number(splitPartCount.value || 0)
+  if (!Number.isInteger(count) || count < 2 || count > 20) return
+  const weight = Number(row.cargo_weight_kg || 0)
+  const volume = Number(row.cargo_volume_m3 || 0)
+  const next = []
+  let remainingWeight = weight
+  let remainingVolume = volume
+  for (let i = 0; i < count; i++) {
+    if (i === count - 1) {
+      next.push({
+        seq: i + 1,
+        cargo_weight_kg: Number(remainingWeight.toFixed(2)),
+        cargo_volume_m3: Number(remainingVolume.toFixed(2)),
+      })
+      break
+    }
+    const partWeight = Number((weight / count).toFixed(2))
+    const partVolume = Number((volume / count).toFixed(2))
+    remainingWeight -= partWeight
+    remainingVolume -= partVolume
+    next.push({
+      seq: i + 1,
+      cargo_weight_kg: partWeight,
+      cargo_volume_m3: partVolume,
+    })
+  }
+  splitParts.value = next
 }
 
 const parseBatchPayload = () => {
@@ -707,29 +749,26 @@ const submitSplitOrder = async () => {
     ElMessage.warning('拆分份数需在 2-20 之间')
     return
   }
+  if (splitParts.value.length !== count) {
+    ElMessage.warning('拆分明细与拆分份数不一致，请先点击“按比例填充”')
+    return
+  }
 
   const weight = Number(row.cargo_weight_kg || 0)
   const volume = Number(row.cargo_volume_m3 || 0)
-  const parts = []
-  let remainingWeight = weight
-  let remainingVolume = volume
-  for (let i = 0; i < count; i++) {
-    if (i === count - 1) {
-      parts.push({
-        cargo_weight_kg: Number(remainingWeight.toFixed(2)),
-        cargo_volume_m3: Number(remainingVolume.toFixed(2)),
-      })
-      break
-    }
-    const partWeight = Number((weight / count).toFixed(2))
-    const partVolume = Number((volume / count).toFixed(2))
-    remainingWeight -= partWeight
-    remainingVolume -= partVolume
-    parts.push({
-      cargo_weight_kg: partWeight,
-      cargo_volume_m3: partVolume,
-    })
+  if (Math.abs(splitWeightTotal.value - weight) > 0.01) {
+    ElMessage.warning('拆分重量合计需等于原单重量')
+    return
   }
+  if (Math.abs(splitVolumeTotal.value - volume) > 0.01) {
+    ElMessage.warning('拆分体积合计需等于原单体积')
+    return
+  }
+
+  const parts = splitParts.value.map((item) => ({
+    cargo_weight_kg: Number(item.cargo_weight_kg || 0),
+    cargo_volume_m3: Number(item.cargo_volume_m3 || 0),
+  }))
 
   splitting.value = true
   try {
@@ -738,8 +777,7 @@ const submitSplitOrder = async () => {
       parts,
     })
     ElMessage.success('拆单成功')
-    splitDialogVisible.value = false
-    splitTargetOrder.value = null
+    closeSplitDialog()
     await loadPrePlanOrders()
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '拆单失败')
@@ -1138,10 +1176,32 @@ onMounted(() => {
       <el-form-item label="拆分份数">
         <el-input-number v-model="splitPartCount" :min="2" :max="20" :precision="0" />
       </el-form-item>
-      <el-alert type="info" :closable="false" show-icon title="系统将按重量/体积等比例拆分，原单自动作废。" />
+      <el-form-item>
+        <el-button size="small" @click="fillSplitPartsByRatio">按比例填充</el-button>
+      </el-form-item>
+      <el-table :data="splitParts" size="small" stripe>
+        <el-table-column prop="seq" label="#" width="50" />
+        <el-table-column label="重量(kg)" min-width="120">
+          <template #default="{ row }">
+            <el-input-number v-model="row.cargo_weight_kg" :min="0" :precision="2" :controls="false" style="width: 100%" />
+          </template>
+        </el-table-column>
+        <el-table-column label="体积(m³)" min-width="120">
+          <template #default="{ row }">
+            <el-input-number v-model="row.cargo_volume_m3" :min="0" :precision="2" :controls="false" style="width: 100%" />
+          </template>
+        </el-table-column>
+      </el-table>
+      <div class="mt-12 text-secondary">
+        重量合计：{{ splitWeightTotal.toFixed(2) }} / 原重量：{{ Number(splitTargetOrder?.cargo_weight_kg || 0).toFixed(2) }}
+      </div>
+      <div class="text-secondary">
+        体积合计：{{ splitVolumeTotal.toFixed(2) }} / 原体积：{{ Number(splitTargetOrder?.cargo_volume_m3 || 0).toFixed(2) }}
+      </div>
+      <el-alert class="mt-12" type="info" :closable="false" show-icon title="拆单成功后原单自动作废。" />
     </el-form>
     <template #footer>
-      <el-button @click="splitDialogVisible = false">取消</el-button>
+      <el-button @click="closeSplitDialog">取消</el-button>
       <el-button type="primary" :loading="splitting" @click="submitSplitOrder">确认拆单</el-button>
     </template>
   </el-dialog>
