@@ -11,6 +11,8 @@ import UserManagementView from '../views/portal/UserManagementView.vue'
 import VehicleManagementView from '../views/portal/VehicleManagementView.vue'
 import PersonnelManagementView from '../views/portal/PersonnelManagementView.vue'
 import SiteManagementView from '../views/portal/SiteManagementView.vue'
+import FreightTemplateManagementView from '../views/portal/FreightTemplateManagementView.vue'
+import SettlementManagementView from '../views/portal/SettlementManagementView.vue'
 import { hasPermission, readCurrentUser } from '../utils/auth'
 
 const router = createRouter({
@@ -42,6 +44,12 @@ const router = createRouter({
           name: 'pre-plan-order-management',
           component: PrePlanOrderManagementView,
           meta: { permission: 'dispatch' },
+        },
+        {
+          path: 'settlements',
+          name: 'settlement-management',
+          component: SettlementManagementView,
+          meta: { permission: 'settlement' },
         },
         {
           path: 'customer/pre-plan-orders',
@@ -78,6 +86,12 @@ const router = createRouter({
           name: 'site-management',
           component: SiteManagementView,
           meta: { permission: 'resources' },
+        },
+        {
+          path: 'resources/freight-templates',
+          name: 'freight-template-management',
+          component: FreightTemplateManagementView,
+          meta: { permission: 'freight_templates' },
         },
         {
           path: 'mobile-tasks',

@@ -18,6 +18,7 @@ const menuTree = computed(() => {
       children: [
         { index: 'dashboard-home', label: '首页概览', permission: 'dashboard' },
         { index: 'pre-plan-order-management', label: '预计划单管理', permission: 'dispatch' },
+        { index: 'settlement-management', label: '结算单管理', permission: 'settlement' },
         { index: 'dispatch-workbench', label: '调度任务管理', permission: 'dispatch' },
         { index: 'exception-task-management', label: '异常任务管理', permission: 'dispatch' },
         { index: 'mobile-task-center', label: '司机定位与轨迹回放', permission: 'mobile_tasks' },
@@ -30,6 +31,7 @@ const menuTree = computed(() => {
         { index: 'vehicle-management', label: '车辆管理', permission: 'resources' },
         { index: 'personnel-management', label: '人员管理', permission: 'resources' },
         { index: 'site-management', label: '站点管理', permission: 'resources' },
+        { index: 'freight-template-management', label: '运费规则中心', permission: 'freight_templates' },
       ],
     },
     {

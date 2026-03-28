@@ -17,9 +17,9 @@ class DatabaseSeeder extends Seeder
             VehicleResourceSeeder::class,
             LogisticsSiteSeeder::class,
             CargoRuleSeeder::class,
+            FreightRateTemplateSeeder::class,
             PrePlanOrderSeeder::class,
             MockDataSeeder::class,
         ]);
     }
 }
-

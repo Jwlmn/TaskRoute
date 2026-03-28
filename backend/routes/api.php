@@ -12,6 +12,8 @@ use App\Http\Controllers\Api\V1\Resource\ResourcePersonnelController;
 use App\Http\Controllers\Api\V1\Resource\ResourceSiteController;
 use App\Http\Controllers\Api\V1\Resource\ResourceVehicleController;
 use App\Http\Controllers\Api\V1\SmartDispatchController;
+use App\Http\Controllers\Api\V1\FreightRateTemplateController;
+use App\Http\Controllers\Api\V1\SettlementStatementController;
 use App\Http\Controllers\Api\V1\UserManagementController;
 use Illuminate\Support\Facades\Route;
 
@@ -41,6 +43,14 @@ Route::prefix('v1')->group(function (): void {
             Route::post('/pre-plan-order/audit-list', [PrePlanOrderController::class, 'auditList']);
             Route::post('/pre-plan-order/audit-approve', [PrePlanOrderController::class, 'auditApprove']);
             Route::post('/pre-plan-order/audit-reject', [PrePlanOrderController::class, 'auditReject']);
+            Route::post('/freight-template/list', [FreightRateTemplateController::class, 'list']);
+            Route::post('/freight-template/create', [FreightRateTemplateController::class, 'create']);
+            Route::post('/freight-template/detail', [FreightRateTemplateController::class, 'detail']);
+            Route::post('/freight-template/update', [FreightRateTemplateController::class, 'update']);
+            Route::post('/settlement/list', [SettlementStatementController::class, 'list']);
+            Route::post('/settlement/create', [SettlementStatementController::class, 'create']);
+            Route::post('/settlement/detail', [SettlementStatementController::class, 'detail']);
+            Route::post('/settlement/update', [SettlementStatementController::class, 'update']);
         });
 
         Route::middleware('role:customer')->group(function (): void {

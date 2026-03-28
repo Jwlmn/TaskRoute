@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\PrePlanOrder;
 use App\Models\CargoCategory;
+use App\Models\FreightRateTemplate;
 use App\Models\SystemMessage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -96,6 +97,7 @@ class PrePlanOrderController extends Controller
         $payload['audit_status'] = 'approved';
         $payload['audited_by'] = (int) $request->user()->id;
         $payload['audited_at'] = now();
+        $payload = $this->applyFreightTemplateToPayload($payload);
 
         $order = PrePlanOrder::query()->create($payload);
         $this->appendOrderHistory($order, 'dispatcher_create', $request);
@@ -136,6 +138,7 @@ class PrePlanOrderController extends Controller
                 $orderPayload['audit_status'] = 'approved';
                 $orderPayload['audited_by'] = (int) $request->user()->id;
                 $orderPayload['audited_at'] = now();
+                $orderPayload = $this->applyFreightTemplateToPayload($orderPayload);
 
                 $order = PrePlanOrder::query()->create($orderPayload);
                 $this->appendOrderHistory($order, 'dispatcher_batch_create', $request);
@@ -224,6 +227,7 @@ class PrePlanOrderController extends Controller
                 if ($orderPayload['freight_calc_scheme'] !== 'by_trip') {
                     $orderPayload['freight_trip_count'] = null;
                 }
+                $orderPayload = $this->applyFreightTemplateToPayload($orderPayload);
 
                 $created[] = PrePlanOrder::query()->create($orderPayload);
             } catch (Throwable $e) {
@@ -270,6 +274,7 @@ class PrePlanOrderController extends Controller
         $payload['audited_at'] = null;
         $payload['audit_remark'] = null;
         $payload['status'] = 'pending';
+        $payload = $this->applyFreightTemplateToPayload($payload);
 
         $order = PrePlanOrder::query()->create($payload);
         $this->appendOrderHistory($order, 'customer_submit', $request);
@@ -970,6 +975,70 @@ class PrePlanOrderController extends Controller
         }
 
         return $this->canModifyOrder($order);
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    private function applyFreightTemplateToPayload(array $payload): array
+    {
+        $template = $this->resolveFreightTemplate($payload);
+        if (! $template) {
+            return $payload;
+        }
+
+        if (empty($payload['freight_calc_scheme'])) {
+            $payload['freight_calc_scheme'] = $template->freight_calc_scheme;
+        }
+        if (! array_key_exists('freight_unit_price', $payload) || $payload['freight_unit_price'] === null || $payload['freight_unit_price'] === '') {
+            $payload['freight_unit_price'] = $template->freight_unit_price;
+        }
+        if (($payload['freight_calc_scheme'] ?? null) === 'by_trip') {
+            if (! array_key_exists('freight_trip_count', $payload) || $payload['freight_trip_count'] === null || $payload['freight_trip_count'] === '') {
+                $payload['freight_trip_count'] = $template->freight_trip_count ?: 1;
+            }
+        } else {
+            $payload['freight_trip_count'] = null;
+        }
+        if (! array_key_exists('loss_allowance_kg', $payload) || $payload['loss_allowance_kg'] === null || $payload['loss_allowance_kg'] === '') {
+            $payload['loss_allowance_kg'] = $template->loss_allowance_kg ?? 0;
+        }
+        if (! array_key_exists('loss_deduct_unit_price', $payload) || $payload['loss_deduct_unit_price'] === null || $payload['loss_deduct_unit_price'] === '') {
+            $payload['loss_deduct_unit_price'] = $template->loss_deduct_unit_price;
+        }
+
+        $meta = is_array($payload['meta'] ?? null) ? $payload['meta'] : [];
+        $meta['freight_template_id'] = (int) $template->id;
+        $meta['freight_template_name'] = (string) $template->name;
+        $payload['meta'] = $meta;
+
+        return $payload;
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function resolveFreightTemplate(array $payload): ?FreightRateTemplate
+    {
+        $query = FreightRateTemplate::query()
+            ->where('is_active', true)
+            ->when(! empty($payload['client_name']), fn ($q) => $q->where(function ($sub) use ($payload): void {
+                $sub->whereNull('client_name')->orWhere('client_name', (string) $payload['client_name']);
+            }))
+            ->when(! empty($payload['cargo_category_id']), fn ($q) => $q->where(function ($sub) use ($payload): void {
+                $sub->whereNull('cargo_category_id')->orWhere('cargo_category_id', (int) $payload['cargo_category_id']);
+            }))
+            ->when(! empty($payload['pickup_address']), fn ($q) => $q->where(function ($sub) use ($payload): void {
+                $sub->whereNull('pickup_address')->orWhere('pickup_address', (string) $payload['pickup_address']);
+            }))
+            ->when(! empty($payload['dropoff_address']), fn ($q) => $q->where(function ($sub) use ($payload): void {
+                $sub->whereNull('dropoff_address')->orWhere('dropoff_address', (string) $payload['dropoff_address']);
+            }))
+            ->orderByDesc('priority')
+            ->orderByDesc('id');
+
+        return $query->first();
     }
 
     /**
