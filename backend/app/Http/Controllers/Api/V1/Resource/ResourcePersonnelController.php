@@ -11,6 +11,13 @@ use Illuminate\Validation\Rule;
 
 class ResourcePersonnelController extends Controller
 {
+    private function serializeUser(User $user): array
+    {
+        return array_merge($user->toArray(), [
+            'permissions' => $user->resolvePermissions(),
+        ]);
+    }
+
     public function list(Request $request): JsonResponse
     {
         $payload = $request->validate([
@@ -31,16 +38,13 @@ class ResourcePersonnelController extends Controller
             ->when($payload['status'] ?? null, fn ($query, $status) => $query->where('status', $status))
             ->orderByDesc('id')
             ->paginate(20);
+        $data->getCollection()->transform(fn (User $user) => $this->serializeUser($user));
 
         return response()->json($data);
     }
 
     public function create(Request $request): JsonResponse
     {
-        if ($request->user()?->role !== 'admin') {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
-
         $payload = $request->validate([
             'account' => ['required', 'string', 'max:64', 'unique:users,account'],
             'name' => ['required', 'string', 'max:255'],
@@ -53,9 +57,13 @@ class ResourcePersonnelController extends Controller
         ]);
 
         $payload['status'] ??= 'active';
+        $extraPermissions = $payload['permissions'] ?? [];
+        unset($payload['permissions']);
         $payload['password'] = Hash::make($payload['password']);
+        $user = User::query()->create($payload);
+        $user->syncRoleAndPermissions($user->role, $extraPermissions);
 
-        return response()->json(User::query()->create($payload), 201);
+        return response()->json($this->serializeUser($user->fresh()), 201);
     }
 
     public function detail(Request $request): JsonResponse
@@ -64,15 +72,11 @@ class ResourcePersonnelController extends Controller
             'id' => ['required', 'integer', 'exists:users,id'],
         ]);
 
-        return response()->json(User::query()->findOrFail($payload['id']));
+        return response()->json($this->serializeUser(User::query()->findOrFail($payload['id'])));
     }
 
     public function update(Request $request): JsonResponse
     {
-        if ($request->user()?->role !== 'admin') {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
-
         $payload = $request->validate([
             'id' => ['required', 'integer', 'exists:users,id'],
             'account' => ['sometimes', 'string', 'max:64'],
@@ -95,10 +99,16 @@ class ResourcePersonnelController extends Controller
         if (array_key_exists('password', $payload)) {
             $payload['password'] = Hash::make($payload['password']);
         }
+        $extraPermissions = $payload['permissions'] ?? null;
+        $targetRole = $payload['role'] ?? $user->role;
 
         unset($payload['id']);
+        unset($payload['permissions']);
         $user->update($payload);
+        if (array_key_exists('role', $payload) || $extraPermissions !== null) {
+            $user->syncRoleAndPermissions($targetRole, $extraPermissions ?? []);
+        }
 
-        return response()->json($user->fresh());
+        return response()->json($this->serializeUser($user->fresh()));
     }
 }

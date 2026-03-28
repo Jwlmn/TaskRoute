@@ -10,7 +10,7 @@ class UserAccountSeeder extends Seeder
 {
     public function run(): void
     {
-        User::query()->updateOrCreate(
+        $admin = User::query()->updateOrCreate(
             ['account' => 'admin'],
             [
                 'name' => '系统管理员',
@@ -20,8 +20,9 @@ class UserAccountSeeder extends Seeder
                 'password' => Hash::make('password'),
             ]
         );
+        $admin->syncRoleAndPermissions();
 
-        User::query()->updateOrCreate(
+        $dispatcher = User::query()->updateOrCreate(
             ['account' => 'dispatcher'],
             [
                 'name' => '调度员A',
@@ -31,8 +32,9 @@ class UserAccountSeeder extends Seeder
                 'password' => Hash::make('password'),
             ]
         );
+        $dispatcher->syncRoleAndPermissions();
 
-        User::query()->updateOrCreate(
+        $driver = User::query()->updateOrCreate(
             ['account' => 'driver'],
             [
                 'name' => '司机A',
@@ -42,8 +44,9 @@ class UserAccountSeeder extends Seeder
                 'password' => Hash::make('password'),
             ]
         );
+        $driver->syncRoleAndPermissions();
 
-        User::query()->updateOrCreate(
+        $driver2 = User::query()->updateOrCreate(
             ['account' => 'driver2'],
             [
                 'name' => '司机B',
@@ -53,8 +56,9 @@ class UserAccountSeeder extends Seeder
                 'password' => Hash::make('password'),
             ]
         );
+        $driver2->syncRoleAndPermissions();
 
-        User::query()->updateOrCreate(
+        $driver3 = User::query()->updateOrCreate(
             ['account' => 'driver3'],
             [
                 'name' => '司机C',
@@ -64,8 +68,9 @@ class UserAccountSeeder extends Seeder
                 'password' => Hash::make('password'),
             ]
         );
+        $driver3->syncRoleAndPermissions();
 
-        User::query()->updateOrCreate(
+        $customer = User::query()->updateOrCreate(
             ['account' => 'customer'],
             [
                 'name' => '客户A',
@@ -75,5 +80,6 @@ class UserAccountSeeder extends Seeder
                 'password' => Hash::make('password'),
             ]
         );
+        $customer->syncRoleAndPermissions();
     }
 }

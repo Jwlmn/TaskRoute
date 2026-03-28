@@ -17,6 +17,13 @@ class UserFactory extends Factory
      */
     protected static ?string $password;
 
+    public function configure(): static
+    {
+        return $this->afterCreating(function (User $user): void {
+            $user->syncRoleAndPermissions();
+        });
+    }
+
     /**
      * Define the model's default state.
      *

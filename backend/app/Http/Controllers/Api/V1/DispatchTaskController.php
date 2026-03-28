@@ -16,7 +16,7 @@ class DispatchTaskController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (! $user || ! in_array($user->role, ['admin', 'dispatcher', 'driver'], true)) {
+        if (! $user || ! $user->hasAnyRole(['admin', 'dispatcher', 'driver'])) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -25,7 +25,7 @@ class DispatchTaskController extends Controller
             'driver:id,account,name',
             'orders:id,order_no,client_name,pickup_address,pickup_contact_name,pickup_contact_phone,dropoff_address,dropoff_contact_name,dropoff_contact_phone,cargo_category_id,status',
         ]);
-        if ($user && $user->role === 'driver') {
+        if ($user && $user->hasRole('driver')) {
             $query->where('driver_id', $user->id);
         }
 
@@ -36,7 +36,7 @@ class DispatchTaskController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        if (! in_array($request->user()?->role, ['admin', 'dispatcher'], true)) {
+        if (! $request->user()?->hasAnyRole(['admin', 'dispatcher'])) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -96,7 +96,7 @@ class DispatchTaskController extends Controller
 
     public function update(Request $request, DispatchTask $dispatchTask): JsonResponse
     {
-        if (! in_array($request->user()?->role, ['admin', 'dispatcher'], true)) {
+        if (! $request->user()?->hasAnyRole(['admin', 'dispatcher'])) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -134,7 +134,7 @@ class DispatchTaskController extends Controller
 
     public function updateByPayload(Request $request): JsonResponse
     {
-        if (! in_array($request->user()?->role, ['admin', 'dispatcher'], true)) {
+        if (! $request->user()?->hasAnyRole(['admin', 'dispatcher'])) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -173,7 +173,7 @@ class DispatchTaskController extends Controller
 
     public function exceptionList(Request $request): JsonResponse
     {
-        if (! in_array($request->user()?->role, ['admin', 'dispatcher'], true)) {
+        if (! $request->user()?->hasAnyRole(['admin', 'dispatcher'])) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -209,7 +209,7 @@ class DispatchTaskController extends Controller
 
     public function orderList(Request $request): JsonResponse
     {
-        if (! in_array($request->user()?->role, ['admin', 'dispatcher', 'driver'], true)) {
+        if (! $request->user()?->hasAnyRole(['admin', 'dispatcher', 'driver'])) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -263,7 +263,7 @@ class DispatchTaskController extends Controller
 
     public function handleException(Request $request): JsonResponse
     {
-        if (! in_array($request->user()?->role, ['admin', 'dispatcher'], true)) {
+        if (! $request->user()?->hasAnyRole(['admin', 'dispatcher'])) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -388,11 +388,11 @@ class DispatchTaskController extends Controller
             return false;
         }
 
-        if ($user->role === 'admin' || $user->role === 'dispatcher') {
+        if ($user->hasAnyRole(['admin', 'dispatcher'])) {
             return true;
         }
 
-        if ($user->role === 'driver') {
+        if ($user->hasRole('driver')) {
             return (int) $dispatchTask->driver_id === (int) $user->id;
         }
 

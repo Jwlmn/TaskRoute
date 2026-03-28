@@ -36,7 +36,7 @@ Route::prefix('v1')->group(function (): void {
             Route::post('/message/pin', [SystemMessageController::class, 'togglePin']);
         });
 
-        Route::middleware(['role:admin,dispatcher', 'permission:dispatch'])->group(function (): void {
+        Route::middleware(['role:admin|dispatcher', 'permission:dispatch'])->group(function (): void {
             Route::post('/pre-plan-order/list', [PrePlanOrderController::class, 'index']);
             Route::post('/pre-plan-order/create', [PrePlanOrderController::class, 'store']);
             Route::post('/pre-plan-order/batch-create', [PrePlanOrderController::class, 'batchStore']);
@@ -58,18 +58,18 @@ Route::prefix('v1')->group(function (): void {
             Route::post('/pre-plan-order/revision-compare', [PrePlanOrderController::class, 'revisionCompare']);
         });
 
-        Route::middleware(['role:admin,dispatcher', 'permission:audit_log'])->group(function (): void {
+        Route::middleware(['role:admin|dispatcher', 'permission:audit_log'])->group(function (): void {
             Route::post('/pre-plan-order/audit-log-list', [PrePlanOrderController::class, 'auditLogList']);
         });
 
-        Route::middleware(['role:admin,dispatcher', 'permission:freight_templates'])->group(function (): void {
+        Route::middleware(['role:admin|dispatcher', 'permission:freight_templates'])->group(function (): void {
             Route::post('/freight-template/list', [FreightRateTemplateController::class, 'list']);
             Route::post('/freight-template/create', [FreightRateTemplateController::class, 'create']);
             Route::post('/freight-template/detail', [FreightRateTemplateController::class, 'detail']);
             Route::post('/freight-template/update', [FreightRateTemplateController::class, 'update']);
         });
 
-        Route::middleware(['role:admin,dispatcher', 'permission:settlement'])->group(function (): void {
+        Route::middleware(['role:admin|dispatcher', 'permission:settlement'])->group(function (): void {
             Route::post('/settlement/list', [SettlementStatementController::class, 'list']);
             Route::post('/settlement/create', [SettlementStatementController::class, 'create']);
             Route::post('/settlement/detail', [SettlementStatementController::class, 'detail']);
@@ -85,7 +85,7 @@ Route::prefix('v1')->group(function (): void {
             Route::post('/pre-plan-order/revision-compare', [PrePlanOrderController::class, 'revisionCompare']);
         });
 
-        Route::middleware('permission:dispatch,mobile_tasks')->group(function (): void {
+        Route::middleware('permission:dispatch|mobile_tasks')->group(function (): void {
             Route::post('/dispatch-task/list', [DispatchTaskController::class, 'index']);
             Route::post('/dispatch-task/create', [DispatchTaskController::class, 'store']);
             Route::post('/dispatch-task/detail', [DispatchTaskController::class, 'showByPayload']);
@@ -93,7 +93,7 @@ Route::prefix('v1')->group(function (): void {
             Route::post('/dispatch-task/update', [DispatchTaskController::class, 'updateByPayload']);
         });
 
-        Route::middleware(['role:admin,dispatcher', 'permission:dispatch'])->group(function (): void {
+        Route::middleware(['role:admin|dispatcher', 'permission:dispatch'])->group(function (): void {
             Route::post('/dispatch/preview', [SmartDispatchController::class, 'preview']);
             Route::post('/dispatch/create-tasks', [SmartDispatchController::class, 'createTasks']);
             Route::post('/dispatch/manual-create-tasks', [SmartDispatchController::class, 'manualCreateTasks']);
@@ -101,12 +101,12 @@ Route::prefix('v1')->group(function (): void {
             Route::post('/dispatch-task/exception-handle', [DispatchTaskController::class, 'handleException']);
         });
 
-        Route::middleware(['role:admin,dispatcher', 'permission:mobile_tasks'])->group(function (): void {
+        Route::middleware(['role:admin|dispatcher', 'permission:mobile_tasks'])->group(function (): void {
             Route::post('/driver-location/latest', [DriverLocationController::class, 'latest']);
             Route::post('/driver-location/trajectory', [DriverLocationController::class, 'trajectory']);
         });
 
-        Route::middleware(['role:admin,dispatcher', 'permission:resources'])->group(function (): void {
+        Route::middleware(['role:admin|dispatcher', 'permission:resources'])->group(function (): void {
             Route::post('/resource/vehicle/list', [ResourceVehicleController::class, 'list']);
             Route::post('/resource/vehicle/create', [ResourceVehicleController::class, 'create']);
             Route::post('/resource/vehicle/detail', [ResourceVehicleController::class, 'detail']);

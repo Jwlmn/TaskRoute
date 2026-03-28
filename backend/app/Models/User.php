@@ -8,11 +8,14 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
+use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use HasApiTokens, HasFactory, Notifiable;
+    use HasApiTokens, HasFactory, Notifiable, HasRoles;
 
     /**
      * The attributes that are mass assignable.
@@ -25,7 +28,6 @@ class User extends Authenticatable
         'phone',
         'role',
         'status',
-        'permissions',
         'password',
     ];
 
@@ -48,8 +50,50 @@ class User extends Authenticatable
     {
         return [
             'password' => 'hashed',
-            'permissions' => 'array',
         ];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public static function defaultRolePermissions(?string $role = null): array
+    {
+        $mapping = [
+            'admin' => ['dashboard', 'dispatch', 'users', 'mobile_tasks', 'resources', 'freight_templates', 'settlement', 'notifications', 'audit_log'],
+            'dispatcher' => ['dashboard', 'dispatch', 'mobile_tasks', 'resources', 'freight_templates', 'settlement', 'notifications', 'audit_log'],
+            'driver' => ['dashboard', 'mobile_tasks', 'notifications'],
+            'customer' => ['dashboard', 'customer_orders', 'notifications'],
+        ];
+
+        return $role ? ($mapping[$role] ?? []) : array_values(array_unique(array_merge(...array_values($mapping))));
+    }
+
+    /**
+     * @param  array<int, string>  $extraPermissions
+     */
+    public function syncRoleAndPermissions(?string $role = null, array $extraPermissions = []): void
+    {
+        $targetRole = $role ?? $this->role;
+        if (! $targetRole) {
+            return;
+        }
+
+        if ($this->role !== $targetRole) {
+            $this->forceFill(['role' => $targetRole])->save();
+        }
+
+        $base = self::defaultRolePermissions($targetRole);
+        $normalizedExtra = array_values(array_unique($extraPermissions));
+        $allPermissions = array_values(array_unique(array_merge($base, $normalizedExtra)));
+
+        foreach ($allPermissions as $permissionName) {
+            Permission::findOrCreate($permissionName, 'web');
+        }
+
+        $roleModel = Role::findOrCreate($targetRole, 'web');
+        $roleModel->syncPermissions($base);
+        $this->syncRoles([$roleModel]);
+        $this->syncPermissions($normalizedExtra);
     }
 
     /**
@@ -57,15 +101,10 @@ class User extends Authenticatable
      */
     public function resolvePermissions(): array
     {
-        $rolePermissions = match ($this->role) {
-            'admin' => ['dashboard', 'dispatch', 'users', 'mobile_tasks', 'resources', 'freight_templates', 'settlement', 'notifications', 'audit_log'],
-            'dispatcher' => ['dashboard', 'dispatch', 'mobile_tasks', 'resources', 'freight_templates', 'settlement', 'notifications', 'audit_log'],
-            'driver' => ['dashboard', 'mobile_tasks', 'notifications'],
-            'customer' => ['dashboard', 'customer_orders', 'notifications'],
-            default => [],
-        };
-        $custom = is_array($this->permissions) ? $this->permissions : [];
-
-        return array_values(array_unique(array_merge($rolePermissions, $custom)));
+        return $this->getAllPermissions()
+            ->pluck('name')
+            ->sort()
+            ->values()
+            ->all();
     }
 }

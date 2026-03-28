@@ -11,6 +11,13 @@ use Illuminate\Validation\Rule;
 
 class UserManagementController extends Controller
 {
+    private function serializeUser(User $user): array
+    {
+        return array_merge($user->toArray(), [
+            'permissions' => $user->resolvePermissions(),
+        ]);
+    }
+
     public function index(Request $request): JsonResponse
     {
         $role = $request->query('role');
@@ -19,6 +26,7 @@ class UserManagementController extends Controller
             ->when($role, fn ($query) => $query->where('role', $role))
             ->orderBy('id')
             ->paginate(20);
+        $users->getCollection()->transform(fn (User $user) => $this->serializeUser($user));
 
         return response()->json($users);
     }
@@ -37,16 +45,19 @@ class UserManagementController extends Controller
         ]);
 
         $payload['status'] ??= 'active';
+        $extraPermissions = $payload['permissions'] ?? [];
+        unset($payload['permissions']);
         $payload['password'] = Hash::make($payload['password']);
 
         $user = User::query()->create($payload);
+        $user->syncRoleAndPermissions($user->role, $extraPermissions);
 
-        return response()->json($user, 201);
+        return response()->json($this->serializeUser($user->fresh()), 201);
     }
 
     public function show(User $user): JsonResponse
     {
-        return response()->json($user);
+        return response()->json($this->serializeUser($user));
     }
 
     public function showByPayload(Request $request): JsonResponse
@@ -57,7 +68,7 @@ class UserManagementController extends Controller
 
         $user = User::query()->findOrFail($payload['id']);
 
-        return response()->json($user);
+        return response()->json($this->serializeUser($user));
     }
 
     public function update(Request $request, User $user): JsonResponse
@@ -76,10 +87,15 @@ class UserManagementController extends Controller
         if (array_key_exists('password', $payload)) {
             $payload['password'] = Hash::make($payload['password']);
         }
+        $extraPermissions = $payload['permissions'] ?? null;
+        unset($payload['permissions']);
 
         $user->update($payload);
+        if (array_key_exists('role', $payload) || $extraPermissions !== null) {
+            $user->syncRoleAndPermissions($payload['role'] ?? $user->role, $extraPermissions ?? []);
+        }
 
-        return response()->json($user->fresh());
+        return response()->json($this->serializeUser($user->fresh()));
     }
 
     public function updateByPayload(Request $request): JsonResponse
@@ -106,10 +122,16 @@ class UserManagementController extends Controller
         if (array_key_exists('password', $payload)) {
             $payload['password'] = Hash::make($payload['password']);
         }
+        $extraPermissions = $payload['permissions'] ?? null;
+        $targetRole = $payload['role'] ?? $user->role;
 
         unset($payload['id']);
+        unset($payload['permissions']);
         $user->update($payload);
+        if (array_key_exists('role', $payload) || $extraPermissions !== null) {
+            $user->syncRoleAndPermissions($targetRole, $extraPermissions ?? []);
+        }
 
-        return response()->json($user->fresh());
+        return response()->json($this->serializeUser($user->fresh()));
     }
 }

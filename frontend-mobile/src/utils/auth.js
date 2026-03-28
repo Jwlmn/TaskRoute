@@ -1,10 +1,3 @@
-export const rolePermissions = {
-  admin: ['dashboard', 'dispatch', 'users', 'mobile_tasks'],
-  dispatcher: ['dashboard', 'dispatch', 'mobile_tasks'],
-  driver: ['dashboard', 'mobile_tasks'],
-  customer: ['dashboard'],
-}
-
 export const readCurrentUser = () => {
   const raw = localStorage.getItem('taskroute_user')
   if (!raw) {
@@ -21,6 +14,6 @@ export const hasPermission = (user, permission) => {
   if (!user) {
     return false
   }
-  const permissions = rolePermissions[user.role] || []
+  const permissions = Array.isArray(user.permissions) ? user.permissions : []
   return permissions.includes(permission)
 }
