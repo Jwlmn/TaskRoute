@@ -811,6 +811,33 @@ const getMergeDiffLabels = (base, row) =>
     .filter((item) => String(row?.[item.key] ?? '') !== String(base?.[item.key] ?? ''))
     .map((item) => item.label)
 
+const getTraceSummary = (row) => {
+  const meta = row?.meta || {}
+  if (meta.split_from_id) {
+    return `拆分自 #${meta.split_from_id}${meta.split_part_no ? `（第${meta.split_part_no}份）` : ''}`
+  }
+  if (Array.isArray(meta.merge_from_ids) && meta.merge_from_ids.length) {
+    return `并自 ${meta.merge_from_ids.length} 单`
+  }
+  return '-'
+}
+
+const openTraceDetail = async (row) => {
+  const meta = row?.meta || {}
+  const lines = [`当前单号：${row.order_no || '-'}`, `追溯信息：${getTraceSummary(row)}`]
+  if (meta.split_from_id) {
+    lines.push(`来源单ID：${meta.split_from_id}`)
+    if (meta.split_part_no) lines.push(`拆分分片：第 ${meta.split_part_no} 份`)
+  }
+  if (Array.isArray(meta.merge_from_ids) && meta.merge_from_ids.length) {
+    lines.push(`并单来源ID：${meta.merge_from_ids.join('、')}`)
+  }
+  await ElMessageBox.alert(lines.join('\n'), '拆并追溯详情', {
+    confirmButtonText: '我知道了',
+    type: 'info',
+  })
+}
+
 const recommendMergeOrders = async () => {
   if (selectedOrders.value.length !== 1) {
     ElMessage.warning('请先只勾选 1 条基准单，再执行推荐可并单')
@@ -1182,7 +1209,12 @@ onMounted(() => {
           {{ row.void_remark || '-' }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="280" fixed="right">
+      <el-table-column label="拆并追溯" min-width="160">
+        <template #default="{ row }">
+          {{ getTraceSummary(row) }}
+        </template>
+      </el-table-column>
+      <el-table-column label="操作" width="340" fixed="right">
         <template #default="{ row }">
           <el-button
             link
@@ -1227,6 +1259,13 @@ onMounted(() => {
             @click="openSplitDialog(row)"
           >
             拆单
+          </el-button>
+          <el-button
+            link
+            type="info"
+            @click="openTraceDetail(row)"
+          >
+            追溯
           </el-button>
           <el-button
             v-if="row.audit_status === 'pending_approval'"
