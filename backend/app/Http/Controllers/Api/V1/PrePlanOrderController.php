@@ -98,6 +98,8 @@ class PrePlanOrderController extends Controller
         $payload['audited_at'] = now();
 
         $order = PrePlanOrder::query()->create($payload);
+        $this->appendOrderHistory($order, 'dispatcher_create', $request);
+        $order->save();
 
         return response()->json($order, 201);
     }
@@ -135,7 +137,11 @@ class PrePlanOrderController extends Controller
                 $orderPayload['audited_by'] = (int) $request->user()->id;
                 $orderPayload['audited_at'] = now();
 
-                return PrePlanOrder::query()->create($orderPayload);
+                $order = PrePlanOrder::query()->create($orderPayload);
+                $this->appendOrderHistory($order, 'dispatcher_batch_create', $request);
+                $order->save();
+
+                return $order;
             });
         });
 
@@ -266,6 +272,8 @@ class PrePlanOrderController extends Controller
         $payload['status'] = 'pending';
 
         $order = PrePlanOrder::query()->create($payload);
+        $this->appendOrderHistory($order, 'customer_submit', $request);
+        $order->save();
 
         return response()->json($order, 201);
     }
@@ -336,7 +344,11 @@ class PrePlanOrderController extends Controller
         }
 
         unset($payload['id']);
-        $order->update($payload);
+        $order->fill($payload);
+        $this->appendOrderHistory($order, 'customer_update', $request, [
+            'updated_fields' => array_values(array_keys($payload)),
+        ]);
+        $order->save();
 
         return response()->json($order->fresh());
     }
@@ -363,6 +375,7 @@ class PrePlanOrderController extends Controller
             $order->audited_by = null;
             $order->audited_at = null;
             $order->audit_remark = null;
+            $this->appendOrderHistory($order, 'customer_resubmit', $request);
             $order->save();
 
             return response()->json($order);
@@ -402,6 +415,7 @@ class PrePlanOrderController extends Controller
         }
 
         $order->is_locked = true;
+        $this->appendOrderHistory($order, 'dispatcher_lock', $request);
         $order->save();
 
         return response()->json($order->fresh());
@@ -419,6 +433,7 @@ class PrePlanOrderController extends Controller
         }
 
         $order->is_locked = false;
+        $this->appendOrderHistory($order, 'dispatcher_unlock', $request);
         $order->save();
 
         return response()->json($order->fresh());
@@ -443,6 +458,9 @@ class PrePlanOrderController extends Controller
         $order->voided_by = (int) $request->user()->id;
         $order->voided_at = now();
         $order->void_remark = $payload['void_remark'];
+        $this->appendOrderHistory($order, 'dispatcher_void', $request, [
+            'void_remark' => $payload['void_remark'],
+        ]);
         $order->save();
 
         return response()->json($order->fresh());
@@ -502,13 +520,23 @@ class PrePlanOrderController extends Controller
                     ]
                 );
 
-                $created[] = PrePlanOrder::query()->create($newPayload);
+                $newOrder = PrePlanOrder::query()->create($newPayload);
+                $this->appendOrderHistory($newOrder, 'dispatcher_split_create', $request, [
+                    'split_from_id' => (int) $source->id,
+                    'split_part_no' => $index + 1,
+                ]);
+                $newOrder->save();
+
+                $created[] = $newOrder;
             }
 
             $source->status = 'cancelled';
             $source->voided_by = (int) $request->user()->id;
             $source->voided_at = now();
             $source->void_remark = '拆单后原单自动作废';
+            $this->appendOrderHistory($source, 'dispatcher_split_source_voided', $request, [
+                'split_created_count' => count($created),
+            ]);
             $source->save();
 
             return [
@@ -589,15 +617,22 @@ class PrePlanOrderController extends Controller
             );
 
             $merged = PrePlanOrder::query()->create($newPayload);
+            $this->appendOrderHistory($merged, 'dispatcher_merge_create', $request, [
+                'merge_from_ids' => $ids->all(),
+            ]);
+            $merged->save();
 
-            PrePlanOrder::query()
-                ->whereIn('id', $ids->all())
-                ->update([
-                    'status' => 'cancelled',
-                    'voided_by' => (int) $request->user()->id,
-                    'voided_at' => now(),
-                    'void_remark' => sprintf('并单生成新计划单 %s 后自动作废', $merged->order_no),
+            foreach ($orders as $order) {
+                $order->status = 'cancelled';
+                $order->voided_by = (int) $request->user()->id;
+                $order->voided_at = now();
+                $order->void_remark = sprintf('并单生成新计划单 %s 后自动作废', $merged->order_no);
+                $this->appendOrderHistory($order, 'dispatcher_merge_source_voided', $request, [
+                    'merged_order_id' => (int) $merged->id,
+                    'merged_order_no' => (string) $merged->order_no,
                 ]);
+                $order->save();
+            }
 
             return [
                 'merged' => $merged,
@@ -625,6 +660,9 @@ class PrePlanOrderController extends Controller
             $order->audited_by = (int) $request->user()->id;
             $order->audited_at = now();
             $order->audit_remark = $payload['audit_remark'] ?? null;
+            $this->appendOrderHistory($order, 'dispatcher_audit_approve', $request, [
+                'audit_remark' => $payload['audit_remark'] ?? null,
+            ]);
             $order->save();
 
             if ($order->submitter_id) {
@@ -668,6 +706,9 @@ class PrePlanOrderController extends Controller
             $order->audited_by = (int) $request->user()->id;
             $order->audited_at = now();
             $order->audit_remark = $payload['audit_remark'];
+            $this->appendOrderHistory($order, 'dispatcher_audit_reject', $request, [
+                'audit_remark' => $payload['audit_remark'],
+            ]);
             $order->save();
 
             if ($order->submitter_id) {
@@ -771,7 +812,11 @@ class PrePlanOrderController extends Controller
             return response()->json(['message' => '关联任务节点已到达/完成，预计划单不可修改'], 422);
         }
         unset($payload['id']);
-        $prePlanOrder->update($payload);
+        $prePlanOrder->fill($payload);
+        $this->appendOrderHistory($prePlanOrder, 'dispatcher_update', $request, [
+            'updated_fields' => array_values(array_keys($payload)),
+        ]);
+        $prePlanOrder->save();
 
         return response()->json($prePlanOrder->fresh());
     }
@@ -925,5 +970,26 @@ class PrePlanOrderController extends Controller
         }
 
         return $this->canModifyOrder($order);
+    }
+
+    /**
+     * @param  array<string, mixed>  $extra
+     */
+    private function appendOrderHistory(PrePlanOrder $order, string $action, Request $request, array $extra = []): void
+    {
+        $meta = is_array($order->meta) ? $order->meta : [];
+        $history = is_array($meta['history'] ?? null) ? $meta['history'] : [];
+
+        $history[] = [
+            'at' => now()->toDateTimeString(),
+            'action' => $action,
+            'operator_id' => $request->user() ? (int) $request->user()->id : null,
+            'operator_account' => $request->user()?->account,
+            'operator_name' => $request->user()?->name,
+            'extra' => $extra,
+        ];
+
+        $meta['history'] = array_values($history);
+        $order->meta = $meta;
     }
 }

@@ -370,4 +370,29 @@ class PrePlanOrderAuditApiTest extends TestCase
             '并单筛选结果应包含并单生成的新单'
         );
     }
+
+    public function test_order_operation_history_is_recorded_in_meta(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $order = PrePlanOrder::query()->where('status', 'pending')->firstOrFail();
+        Sanctum::actingAs($dispatcher);
+
+        $this->postJson('/api/v1/pre-plan-order/lock', ['id' => $order->id])->assertOk();
+        $this->postJson('/api/v1/pre-plan-order/unlock', ['id' => $order->id])->assertOk();
+        $this->postJson('/api/v1/pre-plan-order/void', [
+            'id' => $order->id,
+            'void_remark' => '测试作废',
+        ])->assertOk();
+
+        $fresh = PrePlanOrder::query()->findOrFail($order->id);
+        $history = data_get($fresh->meta, 'history');
+        $this->assertIsArray($history);
+
+        $actions = collect($history)->pluck('action')->filter()->values()->all();
+        $this->assertContains('dispatcher_lock', $actions);
+        $this->assertContains('dispatcher_unlock', $actions);
+        $this->assertContains('dispatcher_void', $actions);
+    }
 }

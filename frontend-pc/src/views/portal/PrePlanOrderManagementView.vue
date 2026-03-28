@@ -32,6 +32,7 @@ const importDialogVisible = ref(false)
 const splitDialogVisible = ref(false)
 const editDialogVisible = ref(false)
 const manualDispatchDialogVisible = ref(false)
+const detailDialogVisible = ref(false)
 
 const creating = ref(false)
 const editing = ref(false)
@@ -40,8 +41,10 @@ const auditing = ref(false)
 const managingOrder = ref(false)
 const importing = ref(false)
 const splitting = ref(false)
+const detailLoading = ref(false)
 
 const currentEditId = ref(null)
+const detailOrder = ref(null)
 
 const createFormRef = ref()
 const editFormRef = ref()
@@ -150,6 +153,24 @@ const freightSchemeLabelMap = {
   by_trip: '按趟',
 }
 
+const historyActionLabelMap = {
+  dispatcher_create: '调度创建',
+  dispatcher_batch_create: '批量创建',
+  dispatcher_update: '调度编辑',
+  dispatcher_lock: '锁单',
+  dispatcher_unlock: '解锁',
+  dispatcher_void: '作废',
+  dispatcher_split_create: '拆单生成子单',
+  dispatcher_split_source_voided: '拆单作废原单',
+  dispatcher_merge_create: '并单生成新单',
+  dispatcher_merge_source_voided: '并单作废来源单',
+  dispatcher_audit_approve: '审核通过',
+  dispatcher_audit_reject: '审核驳回',
+  customer_submit: '客户提报',
+  customer_update: '客户修改',
+  customer_resubmit: '客户重提',
+}
+
 const freightSchemeOptions = [
   { label: '按重量（元/吨）', value: 'by_weight' },
   { label: '按体积（元/m³）', value: 'by_volume' },
@@ -167,6 +188,10 @@ const cargoCategoryMap = computed(() => {
 const selectedOrderIds = computed(() => selectedOrders.value.map((item) => item.id))
 const splitWeightTotal = computed(() => splitParts.value.reduce((sum, part) => sum + Number(part.cargo_weight_kg || 0), 0))
 const splitVolumeTotal = computed(() => splitParts.value.reduce((sum, part) => sum + Number(part.cargo_volume_m3 || 0), 0))
+const detailHistory = computed(() => {
+  const list = detailOrder.value?.meta?.history
+  return Array.isArray(list) ? [...list].reverse() : []
+})
 
 const formatDateTime = (value) => {
   if (!value) return '-'
@@ -448,6 +473,21 @@ const openSplitDialog = (row) => {
   splitPartCount.value = 2
   fillSplitPartsByRatio()
   splitDialogVisible.value = true
+}
+
+const openDetailDialog = async (row) => {
+  detailLoading.value = true
+  detailDialogVisible.value = true
+  try {
+    const { data } = await api.post('/pre-plan-order/detail', { id: row.id })
+    detailOrder.value = data || null
+  } catch (error) {
+    detailOrder.value = null
+    ElMessage.error(error?.response?.data?.message || '获取计划单详情失败')
+    detailDialogVisible.value = false
+  } finally {
+    detailLoading.value = false
+  }
 }
 
 const closeSplitDialog = () => {
@@ -1229,6 +1269,13 @@ onMounted(() => {
           <el-button
             link
             type="primary"
+            @click="openDetailDialog(row)"
+          >
+            详情
+          </el-button>
+          <el-button
+            link
+            type="primary"
             :disabled="!editableStatusSet.has(row.status) || row.is_locked || row.status === 'cancelled'"
             @click="openEditDialog(row)"
           >
@@ -1335,6 +1382,47 @@ onMounted(() => {
     <template #footer>
       <el-button @click="closeSplitDialog">取消</el-button>
       <el-button type="primary" :loading="splitting" @click="submitSplitOrder">确认拆单</el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog v-model="detailDialogVisible" title="预计划单详情" width="860px" destroy-on-close>
+    <el-skeleton :loading="detailLoading" animated :rows="6">
+      <template #default>
+        <el-descriptions v-if="detailOrder" :column="2" border size="small">
+          <el-descriptions-item label="预计划单号">{{ detailOrder.order_no || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="客户">{{ detailOrder.client_name || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="装货地">{{ detailOrder.pickup_address || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="卸货地">{{ detailOrder.dropoff_address || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="状态">{{ getLabel(taskStatusLabelMap, detailOrder.status) }}</el-descriptions-item>
+          <el-descriptions-item label="审核">{{ getLabel(auditStatusLabelMap, detailOrder.audit_status) }}</el-descriptions-item>
+        </el-descriptions>
+        <el-divider content-position="left">操作日志</el-divider>
+        <el-table :data="detailHistory" size="small" stripe>
+          <el-table-column label="时间" min-width="160">
+            <template #default="{ row }">
+              {{ formatDateTime(row.at) }}
+            </template>
+          </el-table-column>
+          <el-table-column label="动作" min-width="140">
+            <template #default="{ row }">
+              {{ historyActionLabelMap[row.action] || row.action || '-' }}
+            </template>
+          </el-table-column>
+          <el-table-column label="操作人" min-width="140">
+            <template #default="{ row }">
+              {{ row.operator_name || row.operator_account || (row.operator_id ? `#${row.operator_id}` : '-') }}
+            </template>
+          </el-table-column>
+          <el-table-column label="附加信息" min-width="260">
+            <template #default="{ row }">
+              {{ row.extra && Object.keys(row.extra).length ? JSON.stringify(row.extra) : '-' }}
+            </template>
+          </el-table-column>
+        </el-table>
+      </template>
+    </el-skeleton>
+    <template #footer>
+      <el-button @click="detailDialogVisible = false">关闭</el-button>
     </template>
   </el-dialog>
 
