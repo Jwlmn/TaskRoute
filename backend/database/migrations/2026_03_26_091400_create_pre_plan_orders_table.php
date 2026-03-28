@@ -17,13 +17,12 @@ return new class extends Migration
             $table->string('dropoff_address');
             $table->decimal('cargo_weight_kg', 10, 2)->default(0);
             $table->decimal('cargo_volume_m3', 10, 2)->default(0);
-            $table->enum('freight_calc_scheme', ['by_weight', 'by_volume', 'by_trip', 'by_loss_ton'])->nullable();
+            $table->enum('freight_calc_scheme', ['by_weight', 'by_volume', 'by_trip'])->nullable();
             $table->decimal('freight_unit_price', 10, 2)->nullable();
             $table->unsignedInteger('freight_trip_count')->default(1);
             $table->decimal('actual_delivered_weight_kg', 10, 2)->nullable();
             $table->decimal('loss_allowance_kg', 10, 2)->default(0);
             $table->decimal('loss_deduct_unit_price', 10, 2)->nullable();
-            $table->decimal('freight_loss_ton_kg', 10, 2)->nullable();
             $table->decimal('freight_base_amount', 12, 2)->nullable();
             $table->decimal('freight_loss_deduct_amount', 12, 2)->nullable();
             $table->decimal('freight_amount', 12, 2)->nullable();

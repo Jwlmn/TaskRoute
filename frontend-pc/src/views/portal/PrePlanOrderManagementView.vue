@@ -42,7 +42,6 @@ const createForm = reactive({
   actual_delivered_weight_kg: null,
   loss_allowance_kg: 0,
   loss_deduct_unit_price: null,
-  freight_loss_ton_kg: null,
   expected_pickup_at: '',
   expected_delivery_at: '',
 })
@@ -60,7 +59,6 @@ const editForm = reactive({
   actual_delivered_weight_kg: null,
   loss_allowance_kg: 0,
   loss_deduct_unit_price: null,
-  freight_loss_ton_kg: null,
   expected_pickup_at: '',
   expected_delivery_at: '',
   status: '',
@@ -95,14 +93,12 @@ const freightSchemeLabelMap = {
   by_weight: '按重量',
   by_volume: '按体积',
   by_trip: '按趟',
-  by_loss_ton: '按亏吨',
 }
 
 const freightSchemeOptions = [
   { label: '按重量（元/吨）', value: 'by_weight' },
   { label: '按体积（元/m³）', value: 'by_volume' },
   { label: '按趟（元/趟）', value: 'by_trip' },
-  { label: '按亏吨（元/亏吨）', value: 'by_loss_ton' },
 ]
 
 const cargoCategoryMap = computed(() => {
@@ -140,7 +136,6 @@ const resetCreateForm = () => {
   createForm.actual_delivered_weight_kg = null
   createForm.loss_allowance_kg = 0
   createForm.loss_deduct_unit_price = null
-  createForm.freight_loss_ton_kg = null
   createForm.expected_pickup_at = ''
   createForm.expected_delivery_at = ''
   createFormRef.value?.clearValidate()
@@ -159,7 +154,6 @@ const resetEditForm = () => {
   editForm.actual_delivered_weight_kg = null
   editForm.loss_allowance_kg = 0
   editForm.loss_deduct_unit_price = null
-  editForm.freight_loss_ton_kg = null
   editForm.expected_pickup_at = ''
   editForm.expected_delivery_at = ''
   editForm.status = ''
@@ -187,7 +181,6 @@ const fillOrderForm = (target, row) => {
   target.actual_delivered_weight_kg = row.actual_delivered_weight_kg
   target.loss_allowance_kg = row.loss_allowance_kg ?? 0
   target.loss_deduct_unit_price = row.loss_deduct_unit_price
-  target.freight_loss_ton_kg = row.freight_loss_ton_kg
   target.expected_pickup_at = row.expected_pickup_at ? formatDateTime(row.expected_pickup_at).replace(' ', 'T') : ''
   target.expected_delivery_at = row.expected_delivery_at ? formatDateTime(row.expected_delivery_at).replace(' ', 'T') : ''
 }
@@ -210,10 +203,9 @@ const buildOrderPayload = (form) => ({
   freight_calc_scheme: form.freight_calc_scheme || null,
   freight_unit_price: form.freight_calc_scheme ? form.freight_unit_price : null,
   freight_trip_count: form.freight_calc_scheme === 'by_trip' ? form.freight_trip_count : null,
-  actual_delivered_weight_kg: form.freight_calc_scheme === 'by_weight' ? form.actual_delivered_weight_kg : null,
-  loss_allowance_kg: form.freight_calc_scheme === 'by_weight' ? form.loss_allowance_kg : null,
-  loss_deduct_unit_price: form.freight_calc_scheme === 'by_weight' ? form.loss_deduct_unit_price : null,
-  freight_loss_ton_kg: form.freight_calc_scheme === 'by_loss_ton' ? form.freight_loss_ton_kg : null,
+  actual_delivered_weight_kg: form.actual_delivered_weight_kg,
+  loss_allowance_kg: form.loss_allowance_kg ?? 0,
+  loss_deduct_unit_price: form.loss_deduct_unit_price,
   expected_pickup_at: normalizeDate(form.expected_pickup_at),
   expected_delivery_at: normalizeDate(form.expected_delivery_at),
 })
@@ -572,21 +564,11 @@ onMounted(() => {
             />
           </el-form-item>
         </el-col>
-        <el-col :span="12">
-          <el-form-item label="亏吨标准重量kg（按亏吨）" v-if="createForm.freight_calc_scheme === 'by_loss_ton'">
-            <el-input-number
-              v-model="createForm.freight_loss_ton_kg"
-              :min="0"
-              :precision="2"
-              :controls="false"
-              style="width: 100%"
-            />
-          </el-form-item>
-        </el-col>
       </el-row>
-      <el-row :gutter="12" v-if="createForm.freight_calc_scheme === 'by_weight'">
+      <el-divider content-position="left">亏吨扣减配置（独立于运价方式）</el-divider>
+      <el-row :gutter="12">
         <el-col :span="8">
-          <el-form-item label="实送重量kg">
+          <el-form-item label="实送重量kg（完单前可空）">
             <el-input-number
               v-model="createForm.actual_delivered_weight_kg"
               :min="0"
@@ -749,21 +731,11 @@ onMounted(() => {
             />
           </el-form-item>
         </el-col>
-        <el-col :span="12">
-          <el-form-item label="亏吨标准重量kg（按亏吨）" v-if="editForm.freight_calc_scheme === 'by_loss_ton'">
-            <el-input-number
-              v-model="editForm.freight_loss_ton_kg"
-              :min="0"
-              :precision="2"
-              :controls="false"
-              style="width: 100%"
-            />
-          </el-form-item>
-        </el-col>
       </el-row>
-      <el-row :gutter="12" v-if="editForm.freight_calc_scheme === 'by_weight'">
+      <el-divider content-position="left">亏吨扣减配置（独立于运价方式）</el-divider>
+      <el-row :gutter="12">
         <el-col :span="8">
-          <el-form-item label="实送重量kg">
+          <el-form-item label="实送重量kg（完单前可空）">
             <el-input-number
               v-model="editForm.actual_delivered_weight_kg"
               :min="0"

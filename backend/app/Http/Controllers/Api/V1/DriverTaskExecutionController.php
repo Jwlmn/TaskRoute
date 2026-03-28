@@ -396,9 +396,6 @@ class DriverTaskExecutionController extends Controller
             $baseValue = max(0, (float) $order->cargo_volume_m3);
         } elseif ($scheme === 'by_trip') {
             $baseValue = max(1, (int) ($order->freight_trip_count ?? 1));
-        } elseif ($scheme === 'by_loss_ton') {
-            $lossKg = max(0, (float) ($order->freight_loss_ton_kg ?? 0) - (float) $order->cargo_weight_kg);
-            $baseValue = $lossKg / 1000;
         }
 
         if ($baseValue === null) {
@@ -418,15 +415,13 @@ class DriverTaskExecutionController extends Controller
         $lossDeductAmount = 0.0;
         $lossKg = null;
         $lossAllowanceKg = max(0, (float) ($order->loss_allowance_kg ?? 0));
-        if ($scheme === 'by_weight') {
-            $expectedWeightKg = max(0, (float) $order->cargo_weight_kg);
-            $actualWeightKg = (float) ($order->actual_delivered_weight_kg ?? $expectedWeightKg);
-            $effectiveLossKg = max(0, $expectedWeightKg - $actualWeightKg - $lossAllowanceKg);
-            $lossKg = round($effectiveLossKg, 2);
-            $lossDeductUnitPrice = (float) ($order->loss_deduct_unit_price ?? $unitPrice);
-            if ($lossDeductUnitPrice > 0 && $effectiveLossKg > 0) {
-                $lossDeductAmount = round(($effectiveLossKg / 1000) * $lossDeductUnitPrice, 2);
-            }
+        $expectedWeightKg = max(0, (float) $order->cargo_weight_kg);
+        $actualWeightKg = (float) ($order->actual_delivered_weight_kg ?? $expectedWeightKg);
+        $effectiveLossKg = max(0, $expectedWeightKg - $actualWeightKg - $lossAllowanceKg);
+        $lossKg = round($effectiveLossKg, 2);
+        $lossDeductUnitPrice = (float) ($order->loss_deduct_unit_price ?? 0);
+        if ($lossDeductUnitPrice > 0 && $effectiveLossKg > 0) {
+            $lossDeductAmount = round(($effectiveLossKg / 1000) * $lossDeductUnitPrice, 2);
         }
 
         $finalAmount = max(0, round($baseAmount - $lossDeductAmount, 2));

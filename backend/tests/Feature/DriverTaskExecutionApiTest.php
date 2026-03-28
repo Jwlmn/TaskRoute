@@ -401,7 +401,7 @@ class DriverTaskExecutionApiTest extends TestCase
         ]);
     }
 
-    public function test_order_completed_will_auto_calculate_freight_by_loss_ton(): void
+    public function test_order_completed_will_auto_calculate_freight_by_volume_and_apply_loss_deduction(): void
     {
         $this->seed(DatabaseSeeder::class);
 
@@ -411,17 +411,19 @@ class DriverTaskExecutionApiTest extends TestCase
         $gasoline = CargoCategory::query()->where('code', 'gasoline')->firstOrFail();
 
         $order = PrePlanOrder::query()->create([
-            'order_no' => 'PO-FREIGHT-LOSS',
+            'order_no' => 'PO-FREIGHT-VOLUME-LOSS',
             'cargo_category_id' => $gasoline->id,
-            'client_name' => '运费亏吨方案客户',
+            'client_name' => '按体积+亏吨扣减客户',
             'pickup_address' => '上海装货点C',
             'dropoff_address' => '上海卸货点D',
             'cargo_weight_kg' => 3500,
+            'actual_delivered_weight_kg' => 3000,
+            'loss_allowance_kg' => 200,
+            'loss_deduct_unit_price' => 300,
             'cargo_volume_m3' => 6,
             'status' => 'pending',
-            'freight_calc_scheme' => 'by_loss_ton',
+            'freight_calc_scheme' => 'by_volume',
             'freight_unit_price' => 300,
-            'freight_loss_ton_kg' => 5000,
         ]);
 
         Sanctum::actingAs($dispatcher);
@@ -447,7 +449,9 @@ class DriverTaskExecutionApiTest extends TestCase
         $this->assertDatabaseHas('pre_plan_orders', [
             'id' => $order->id,
             'status' => 'completed',
-            'freight_amount' => 450.00,
+            'freight_base_amount' => 1800.00,
+            'freight_loss_deduct_amount' => 90.00,
+            'freight_amount' => 1710.00,
         ]);
     }
 

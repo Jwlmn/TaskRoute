@@ -25,7 +25,6 @@ class PrePlanOrder extends Model
         'actual_delivered_weight_kg',
         'loss_allowance_kg',
         'loss_deduct_unit_price',
-        'freight_loss_ton_kg',
         'freight_base_amount',
         'freight_loss_deduct_amount',
         'freight_amount',
