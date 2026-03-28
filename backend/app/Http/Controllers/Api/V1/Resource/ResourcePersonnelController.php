@@ -15,7 +15,7 @@ class ResourcePersonnelController extends Controller
     {
         $payload = $request->validate([
             'keyword' => ['nullable', 'string'],
-            'role' => ['nullable', Rule::in(['admin', 'dispatcher', 'driver'])],
+            'role' => ['nullable', Rule::in(['admin', 'dispatcher', 'driver', 'customer'])],
             'status' => ['nullable', Rule::in(['active', 'inactive'])],
         ]);
 
@@ -45,7 +45,7 @@ class ResourcePersonnelController extends Controller
             'account' => ['required', 'string', 'max:64', 'unique:users,account'],
             'name' => ['required', 'string', 'max:255'],
             'phone' => ['nullable', 'string', 'max:32'],
-            'role' => ['required', Rule::in(['admin', 'dispatcher', 'driver'])],
+            'role' => ['required', Rule::in(['admin', 'dispatcher', 'driver', 'customer'])],
             'status' => ['nullable', Rule::in(['active', 'inactive'])],
             'password' => ['required', 'string', 'min:6'],
         ]);
@@ -76,7 +76,7 @@ class ResourcePersonnelController extends Controller
             'account' => ['sometimes', 'string', 'max:64'],
             'name' => ['sometimes', 'string', 'max:255'],
             'phone' => ['sometimes', 'nullable', 'string', 'max:32'],
-            'role' => ['sometimes', Rule::in(['admin', 'dispatcher', 'driver'])],
+            'role' => ['sometimes', Rule::in(['admin', 'dispatcher', 'driver', 'customer'])],
             'status' => ['sometimes', Rule::in(['active', 'inactive'])],
             'password' => ['sometimes', 'string', 'min:6'],
         ]);
@@ -98,4 +98,3 @@ class ResourcePersonnelController extends Controller
         return response()->json($user->fresh());
     }
 }
-

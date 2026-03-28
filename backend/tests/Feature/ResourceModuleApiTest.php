@@ -56,6 +56,25 @@ class ResourceModuleApiTest extends TestCase
         $response->assertForbidden();
     }
 
+    public function test_admin_can_create_customer_personnel_resource(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+        $admin = User::query()->where('account', 'admin')->firstOrFail();
+        Sanctum::actingAs($admin);
+
+        $response = $this->postJson('/api/v1/resource/personnel/create', [
+            'account' => 'customer_new',
+            'name' => '客户新账号',
+            'role' => 'customer',
+            'status' => 'active',
+            'password' => '123456',
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('account', 'customer_new')
+            ->assertJsonPath('role', 'customer');
+    }
+
     public function test_cannot_bind_one_driver_to_multiple_vehicles_on_create(): void
     {
         $this->seed(DatabaseSeeder::class);
