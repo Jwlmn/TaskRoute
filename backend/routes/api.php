@@ -30,6 +30,7 @@ Route::prefix('v1')->group(function (): void {
             Route::post('/pre-plan-order/list', [PrePlanOrderController::class, 'index']);
             Route::post('/pre-plan-order/create', [PrePlanOrderController::class, 'store']);
             Route::post('/pre-plan-order/batch-create', [PrePlanOrderController::class, 'batchStore']);
+            Route::post('/pre-plan-order/import', [PrePlanOrderController::class, 'import']);
             Route::post('/pre-plan-order/detail', [PrePlanOrderController::class, 'showByPayload']);
             Route::post('/pre-plan-order/update', [PrePlanOrderController::class, 'updateByPayload']);
             Route::post('/pre-plan-order/lock', [PrePlanOrderController::class, 'lock']);

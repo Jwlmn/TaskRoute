@@ -1,6 +1,8 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { UploadFilled } from '@element-plus/icons-vue'
+import * as XLSX from 'xlsx'
 import api from '../../services/api'
 import { getLabel, taskStatusLabelMap } from '../../utils/labels'
 
@@ -25,6 +27,7 @@ const loadingVehicles = ref(false)
 
 const createDialogVisible = ref(false)
 const batchCreateDialogVisible = ref(false)
+const importDialogVisible = ref(false)
 const editDialogVisible = ref(false)
 const manualDispatchDialogVisible = ref(false)
 
@@ -33,6 +36,7 @@ const editing = ref(false)
 const dispatching = ref(false)
 const auditing = ref(false)
 const managingOrder = ref(false)
+const importing = ref(false)
 
 const currentEditId = ref(null)
 
@@ -40,6 +44,8 @@ const createFormRef = ref()
 const editFormRef = ref()
 
 const batchCreatePayloadText = ref('')
+const importFile = ref(null)
+const importResult = ref(null)
 
 const createForm = reactive({
   cargo_category_id: null,
@@ -331,6 +337,12 @@ const openBatchCreateDialog = () => {
   batchCreateDialogVisible.value = true
 }
 
+const openImportDialog = () => {
+  importFile.value = null
+  importResult.value = null
+  importDialogVisible.value = true
+}
+
 const openEditDialog = (row) => {
   resetEditForm()
   currentEditId.value = row.id
@@ -417,6 +429,193 @@ const batchCreatePrePlanOrders = async () => {
     ElMessage.error(error?.response?.data?.message || '批量创建失败')
   } finally {
     creating.value = false
+  }
+}
+
+const handleImportFileChange = (file) => {
+  importFile.value = file?.raw || null
+}
+
+const normalizeImportHeader = (header) => {
+  const value = String(header || '').trim().toLowerCase()
+  const map = {
+    cargo_category_id: 'cargo_category_id',
+    '货品分类id': 'cargo_category_id',
+    '货品id': 'cargo_category_id',
+    cargo_category_code: 'cargo_category_code',
+    cargo_code: 'cargo_category_code',
+    '货品分类编码': 'cargo_category_code',
+    '分类编码': 'cargo_category_code',
+    cargo_category_name: 'cargo_category_name',
+    '货品分类名称': 'cargo_category_name',
+    '货品分类': 'cargo_category_name',
+    '分类名称': 'cargo_category_name',
+    client_name: 'client_name',
+    '客户名称': 'client_name',
+    客户: 'client_name',
+    pickup_address: 'pickup_address',
+    '装货地': 'pickup_address',
+    '装货地址': 'pickup_address',
+    pickup_contact_name: 'pickup_contact_name',
+    '装货联系人': 'pickup_contact_name',
+    pickup_contact_phone: 'pickup_contact_phone',
+    '装货联系电话': 'pickup_contact_phone',
+    dropoff_address: 'dropoff_address',
+    '卸货地': 'dropoff_address',
+    '卸货地址': 'dropoff_address',
+    '收货地址': 'dropoff_address',
+    dropoff_contact_name: 'dropoff_contact_name',
+    '收货联系人': 'dropoff_contact_name',
+    '卸货联系人': 'dropoff_contact_name',
+    dropoff_contact_phone: 'dropoff_contact_phone',
+    '收货联系电话': 'dropoff_contact_phone',
+    '卸货联系电话': 'dropoff_contact_phone',
+    cargo_weight_kg: 'cargo_weight_kg',
+    '重量kg': 'cargo_weight_kg',
+    重量: 'cargo_weight_kg',
+    cargo_volume_m3: 'cargo_volume_m3',
+    '体积m3': 'cargo_volume_m3',
+    体积: 'cargo_volume_m3',
+    freight_calc_scheme: 'freight_calc_scheme',
+    '运费计算方式': 'freight_calc_scheme',
+    '运价方式': 'freight_calc_scheme',
+    freight_unit_price: 'freight_unit_price',
+    '运费单价': 'freight_unit_price',
+    '运价单价': 'freight_unit_price',
+    freight_trip_count: 'freight_trip_count',
+    趟数: 'freight_trip_count',
+    actual_delivered_weight_kg: 'actual_delivered_weight_kg',
+    '实送重量kg': 'actual_delivered_weight_kg',
+    '实送重量': 'actual_delivered_weight_kg',
+    loss_allowance_kg: 'loss_allowance_kg',
+    '允许亏吨kg': 'loss_allowance_kg',
+    '允许亏吨': 'loss_allowance_kg',
+    loss_deduct_unit_price: 'loss_deduct_unit_price',
+    '亏吨扣减单价': 'loss_deduct_unit_price',
+    '亏吨单价': 'loss_deduct_unit_price',
+    expected_pickup_at: 'expected_pickup_at',
+    '预计提货时间': 'expected_pickup_at',
+    expected_delivery_at: 'expected_delivery_at',
+    '预计送达时间': 'expected_delivery_at',
+  }
+  return map[value] || ''
+}
+
+const resolveCargoCategoryId = (row) => {
+  if (row.cargo_category_id !== undefined && row.cargo_category_id !== '') {
+    const id = Number(row.cargo_category_id)
+    if (!Number.isNaN(id) && cargoCategories.value.some((item) => Number(item.id) === id)) {
+      return id
+    }
+  }
+  if (row.cargo_category_code) {
+    const matched = cargoCategories.value.find((item) => String(item.code) === String(row.cargo_category_code))
+    if (matched) return Number(matched.id)
+  }
+  if (row.cargo_category_name) {
+    const matched = cargoCategories.value.find((item) => String(item.name) === String(row.cargo_category_name))
+    if (matched) return Number(matched.id)
+  }
+  return null
+}
+
+const parseImportFile = async (file) => {
+  const buffer = await file.arrayBuffer()
+  const workbook = XLSX.read(buffer, { type: 'array' })
+  const firstSheetName = workbook.SheetNames?.[0]
+  if (!firstSheetName) return []
+  const sheet = workbook.Sheets[firstSheetName]
+  const rawRows = XLSX.utils.sheet_to_json(sheet, { defval: '' })
+
+  return rawRows.map((item, index) => {
+    const normalized = {}
+    for (const [key, value] of Object.entries(item || {})) {
+      const mappedKey = normalizeImportHeader(key)
+      if (!mappedKey) continue
+      normalized[mappedKey] = String(value ?? '').trim()
+    }
+    return {
+      line: index + 2,
+      row: normalized,
+    }
+  }).filter((item) => Object.keys(item.row).length > 0)
+}
+
+const submitImportCsv = async () => {
+  if (!importFile.value) {
+    ElMessage.warning('请先选择导入文件')
+    return
+  }
+
+  importing.value = true
+  try {
+    const parsedRows = await parseImportFile(importFile.value)
+    const validOrders = []
+    const errors = []
+
+    for (const item of parsedRows) {
+      const row = item.row
+      const cargoCategoryId = resolveCargoCategoryId(row)
+      const clientName = String(row.client_name || '').trim()
+      const pickupAddress = String(row.pickup_address || '').trim()
+      const dropoffAddress = String(row.dropoff_address || '').trim()
+
+      if (!cargoCategoryId) {
+        errors.push({ line: item.line, message: '无法匹配货品分类（请填写分类ID/编码/名称）' })
+        continue
+      }
+      if (!clientName || !pickupAddress || !dropoffAddress) {
+        errors.push({ line: item.line, message: 'client_name、pickup_address、dropoff_address 为必填' })
+        continue
+      }
+
+      validOrders.push({
+        cargo_category_id: cargoCategoryId,
+        client_name: clientName,
+        pickup_address: pickupAddress,
+        pickup_contact_name: row.pickup_contact_name || null,
+        pickup_contact_phone: row.pickup_contact_phone || null,
+        dropoff_address: dropoffAddress,
+        dropoff_contact_name: row.dropoff_contact_name || null,
+        dropoff_contact_phone: row.dropoff_contact_phone || null,
+        cargo_weight_kg: row.cargo_weight_kg !== '' ? Number(row.cargo_weight_kg) : null,
+        cargo_volume_m3: row.cargo_volume_m3 !== '' ? Number(row.cargo_volume_m3) : null,
+        freight_calc_scheme: row.freight_calc_scheme || null,
+        freight_unit_price: row.freight_unit_price !== '' ? Number(row.freight_unit_price) : null,
+        freight_trip_count: row.freight_trip_count !== '' ? Number(row.freight_trip_count) : null,
+        actual_delivered_weight_kg: row.actual_delivered_weight_kg !== '' ? Number(row.actual_delivered_weight_kg) : null,
+        loss_allowance_kg: row.loss_allowance_kg !== '' ? Number(row.loss_allowance_kg) : null,
+        loss_deduct_unit_price: row.loss_deduct_unit_price !== '' ? Number(row.loss_deduct_unit_price) : null,
+        expected_pickup_at: row.expected_pickup_at || null,
+        expected_delivery_at: row.expected_delivery_at || null,
+      })
+    }
+
+    if (validOrders.length > 200) {
+      ElMessage.warning('单次最多导入 200 条，请分批上传')
+      importing.value = false
+      return
+    }
+
+    let createdCount = 0
+    if (validOrders.length > 0) {
+      const { data } = await api.post('/pre-plan-order/batch-create', {
+        orders: validOrders,
+      })
+      createdCount = Number(data?.count || 0)
+    }
+
+    importResult.value = {
+      created_count: createdCount,
+      failed_count: errors.length,
+      errors,
+    }
+    ElMessage.success(`导入完成：成功 ${createdCount} 条，失败 ${errors.length} 条`)
+    await loadPrePlanOrders()
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '导入失败')
+  } finally {
+    importing.value = false
   }
 }
 
@@ -592,6 +791,7 @@ onMounted(() => {
         <div class="card-title">预计划单管理</div>
         <div>
           <el-button class="mr-8" plain type="primary" @click="openManualDispatchDialog">手动派单</el-button>
+          <el-button class="mr-8" plain @click="openImportDialog">导入文件</el-button>
           <el-button class="mr-8" plain @click="openBatchCreateDialog">批量创建</el-button>
           <el-button type="primary" @click="openCreateDialog">新建预计划单</el-button>
         </div>
@@ -763,6 +963,46 @@ onMounted(() => {
       </el-table-column>
     </el-table>
   </el-card>
+
+  <el-dialog v-model="importDialogVisible" title="导入预计划单（XLSX/CSV）" width="760px" destroy-on-close>
+    <el-alert
+      class="mb-12"
+      type="info"
+      :closable="false"
+      show-icon
+      title="表头支持中英文（推荐 XLSX）：货品分类、客户名称、装货地、卸货地（其余字段选填）"
+    />
+    <el-upload
+      drag
+      :auto-upload="false"
+      :limit="1"
+      accept=".xlsx,.xls,.csv,.txt"
+      :on-change="handleImportFileChange"
+      :show-file-list="true"
+    >
+      <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+      <div class="el-upload__text">拖拽文件到此处或 <em>点击上传</em></div>
+    </el-upload>
+
+    <el-card v-if="importResult" class="mt-12" shadow="never">
+      <div>成功：{{ importResult.created_count || 0 }} 条</div>
+      <div>失败：{{ importResult.failed_count || 0 }} 条</div>
+      <el-table
+        v-if="Array.isArray(importResult.errors) && importResult.errors.length"
+        :data="importResult.errors"
+        size="small"
+        class="mt-12"
+      >
+        <el-table-column prop="line" label="行号" width="90" />
+        <el-table-column prop="message" label="错误信息" min-width="240" />
+      </el-table>
+    </el-card>
+
+    <template #footer>
+      <el-button @click="importDialogVisible = false">关闭</el-button>
+      <el-button type="primary" :loading="importing" @click="submitImportCsv">开始导入</el-button>
+    </template>
+  </el-dialog>
 
   <el-dialog v-model="batchCreateDialogVisible" title="批量创建预计划单" width="760px" destroy-on-close>
     <el-alert

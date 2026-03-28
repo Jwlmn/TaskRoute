@@ -4,11 +4,14 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\PrePlanOrder;
+use App\Models\CargoCategory;
 use App\Models\SystemMessage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Throwable;
 
 class PrePlanOrderController extends Controller
 {
@@ -127,6 +130,94 @@ class PrePlanOrderController extends Controller
             'count' => $createdOrders->count(),
             'data' => $createdOrders->values(),
         ], 201);
+    }
+
+    public function import(Request $request): JsonResponse
+    {
+        $payload = $request->validate([
+            'file' => ['required', 'file', 'mimes:csv,txt'],
+        ]);
+
+        /** @var UploadedFile $file */
+        $file = $payload['file'];
+        $rows = $this->readCsvRows($file);
+
+        if ($rows === []) {
+            return response()->json([
+                'message' => '导入文件为空或无有效数据',
+                'created_count' => 0,
+                'failed_count' => 0,
+                'errors' => [],
+            ]);
+        }
+
+        $created = [];
+        $errors = [];
+        $operatorId = (int) $request->user()->id;
+
+        foreach ($rows as $line => $row) {
+            try {
+                $cargoCategoryId = $this->resolveCargoCategoryId($row);
+                if (! $cargoCategoryId) {
+                    $errors[] = ['line' => $line, 'message' => '无法匹配货品分类，请提供有效分类ID/编码/名称'];
+                    continue;
+                }
+
+                $clientName = trim((string) ($row['client_name'] ?? ''));
+                $pickupAddress = trim((string) ($row['pickup_address'] ?? ''));
+                $dropoffAddress = trim((string) ($row['dropoff_address'] ?? ''));
+                if ($clientName === '' || $pickupAddress === '' || $dropoffAddress === '') {
+                    $errors[] = ['line' => $line, 'message' => 'client_name、pickup_address、dropoff_address 为必填'];
+                    continue;
+                }
+
+                $orderPayload = [
+                    'order_no' => 'PO-'.now()->format('Ymd').'-'.Str::upper(Str::random(6)),
+                    'cargo_category_id' => $cargoCategoryId,
+                    'submitter_id' => $operatorId,
+                    'client_name' => $clientName,
+                    'pickup_address' => $pickupAddress,
+                    'pickup_contact_name' => $this->nullableString($row['pickup_contact_name'] ?? null),
+                    'pickup_contact_phone' => $this->nullableString($row['pickup_contact_phone'] ?? null),
+                    'dropoff_address' => $dropoffAddress,
+                    'dropoff_contact_name' => $this->nullableString($row['dropoff_contact_name'] ?? null),
+                    'dropoff_contact_phone' => $this->nullableString($row['dropoff_contact_phone'] ?? null),
+                    'cargo_weight_kg' => $this->nullableNumber($row['cargo_weight_kg'] ?? null),
+                    'cargo_volume_m3' => $this->nullableNumber($row['cargo_volume_m3'] ?? null),
+                    'freight_calc_scheme' => $this->nullableString($row['freight_calc_scheme'] ?? null),
+                    'freight_unit_price' => $this->nullableNumber($row['freight_unit_price'] ?? null),
+                    'freight_trip_count' => $this->nullableInt($row['freight_trip_count'] ?? null),
+                    'actual_delivered_weight_kg' => $this->nullableNumber($row['actual_delivered_weight_kg'] ?? null),
+                    'loss_allowance_kg' => $this->nullableNumber($row['loss_allowance_kg'] ?? null) ?? 0,
+                    'loss_deduct_unit_price' => $this->nullableNumber($row['loss_deduct_unit_price'] ?? null),
+                    'expected_pickup_at' => $this->nullableString($row['expected_pickup_at'] ?? null),
+                    'expected_delivery_at' => $this->nullableString($row['expected_delivery_at'] ?? null),
+                    'audit_status' => 'approved',
+                    'audited_by' => $operatorId,
+                    'audited_at' => now(),
+                ];
+
+                if (! in_array($orderPayload['freight_calc_scheme'], ['by_weight', 'by_volume', 'by_trip'], true)) {
+                    $orderPayload['freight_calc_scheme'] = null;
+                    $orderPayload['freight_unit_price'] = null;
+                    $orderPayload['freight_trip_count'] = null;
+                }
+                if ($orderPayload['freight_calc_scheme'] !== 'by_trip') {
+                    $orderPayload['freight_trip_count'] = null;
+                }
+
+                $created[] = PrePlanOrder::query()->create($orderPayload);
+            } catch (Throwable $e) {
+                $errors[] = ['line' => $line, 'message' => $e->getMessage()];
+            }
+        }
+
+        return response()->json([
+            'created_count' => count($created),
+            'failed_count' => count($errors),
+            'errors' => $errors,
+            'data' => collect($created)->values(),
+        ]);
     }
 
     public function customerSubmit(Request $request): JsonResponse
@@ -521,5 +612,133 @@ class PrePlanOrderController extends Controller
         return ! $prePlanOrder->dispatchTasks()
             ->whereHas('waypoints', fn ($query) => $query->whereIn('status', ['arrived', 'completed']))
             ->exists();
+    }
+
+    /**
+     * @return array<int, array<string, string|null>>
+     */
+    private function readCsvRows(UploadedFile $file): array
+    {
+        $realPath = $file->getRealPath();
+        if (! $realPath) {
+            return [];
+        }
+
+        $handle = fopen($realPath, 'rb');
+        if (! $handle) {
+            return [];
+        }
+
+        $header = fgetcsv($handle);
+        if (! is_array($header)) {
+            fclose($handle);
+            return [];
+        }
+
+        $keys = array_map(fn ($item) => $this->normalizeHeader((string) $item), $header);
+        $rows = [];
+        $line = 1;
+        while (($data = fgetcsv($handle)) !== false) {
+            $line++;
+            $row = [];
+            foreach ($keys as $index => $key) {
+                if ($key === '') {
+                    continue;
+                }
+                $row[$key] = array_key_exists($index, $data) ? trim((string) $data[$index]) : null;
+            }
+            $hasValue = collect($row)->filter(fn ($v) => $v !== null && $v !== '')->isNotEmpty();
+            if ($hasValue) {
+                $rows[$line] = $row;
+            }
+        }
+        fclose($handle);
+
+        return $rows;
+    }
+
+    private function normalizeHeader(string $header): string
+    {
+        $value = trim(mb_strtolower($header));
+
+        return match ($value) {
+            'cargo_category_id', '货品分类id', '货品id' => 'cargo_category_id',
+            'cargo_category_code', '货品分类编码', '分类编码', 'cargo_code' => 'cargo_category_code',
+            'cargo_category_name', '货品分类名称', '货品分类', '分类名称' => 'cargo_category_name',
+            'client_name', '客户名称', '客户' => 'client_name',
+            'pickup_address', '装货地', '装货地址' => 'pickup_address',
+            'pickup_contact_name', '装货联系人' => 'pickup_contact_name',
+            'pickup_contact_phone', '装货联系电话' => 'pickup_contact_phone',
+            'dropoff_address', '卸货地', '收货地址', '卸货地址' => 'dropoff_address',
+            'dropoff_contact_name', '收货联系人', '卸货联系人' => 'dropoff_contact_name',
+            'dropoff_contact_phone', '收货联系电话', '卸货联系电话' => 'dropoff_contact_phone',
+            'cargo_weight_kg', '重量kg', '重量', '货重' => 'cargo_weight_kg',
+            'cargo_volume_m3', '体积m3', '体积' => 'cargo_volume_m3',
+            'freight_calc_scheme', '运费计算方式', '运价方式' => 'freight_calc_scheme',
+            'freight_unit_price', '运费单价', '运价单价' => 'freight_unit_price',
+            'freight_trip_count', '趟数' => 'freight_trip_count',
+            'actual_delivered_weight_kg', '实送重量kg', '实送重量' => 'actual_delivered_weight_kg',
+            'loss_allowance_kg', '允许亏吨kg', '允许亏吨' => 'loss_allowance_kg',
+            'loss_deduct_unit_price', '亏吨扣减单价', '亏吨单价' => 'loss_deduct_unit_price',
+            'expected_pickup_at', '预计提货时间' => 'expected_pickup_at',
+            'expected_delivery_at', '预计送达时间' => 'expected_delivery_at',
+            default => '',
+        };
+    }
+
+    /**
+     * @param  array<string, string|null>  $row
+     */
+    private function resolveCargoCategoryId(array $row): ?int
+    {
+        $idRaw = $row['cargo_category_id'] ?? null;
+        if ($idRaw !== null && $idRaw !== '' && ctype_digit((string) $idRaw)) {
+            $id = (int) $idRaw;
+            if (CargoCategory::query()->where('id', $id)->exists()) {
+                return $id;
+            }
+        }
+
+        $code = trim((string) ($row['cargo_category_code'] ?? ''));
+        if ($code !== '') {
+            $id = CargoCategory::query()->where('code', $code)->value('id');
+            if ($id) {
+                return (int) $id;
+            }
+        }
+
+        $name = trim((string) ($row['cargo_category_name'] ?? ''));
+        if ($name !== '') {
+            $id = CargoCategory::query()->where('name', $name)->value('id');
+            if ($id) {
+                return (int) $id;
+            }
+        }
+
+        return null;
+    }
+
+    private function nullableString(mixed $value): ?string
+    {
+        $text = trim((string) ($value ?? ''));
+        return $text === '' ? null : $text;
+    }
+
+    private function nullableNumber(mixed $value): ?float
+    {
+        $text = trim((string) ($value ?? ''));
+        if ($text === '' || ! is_numeric($text)) {
+            return null;
+        }
+        return (float) $text;
+    }
+
+    private function nullableInt(mixed $value): ?int
+    {
+        $text = trim((string) ($value ?? ''));
+        if ($text === '' || ! ctype_digit($text)) {
+            return null;
+        }
+        return (int) $text;
     }
 }
