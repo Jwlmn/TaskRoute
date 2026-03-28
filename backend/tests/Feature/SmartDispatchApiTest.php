@@ -402,4 +402,98 @@ class SmartDispatchApiTest extends TestCase
             ->assertStatus(422)
             ->assertJsonPath('message', '未启用分仓的车辆不可拼单，请改为单车单订单');
     }
+
+    public function test_dispatch_preview_rejects_out_of_scope_order_or_vehicle(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $siteA = \App\Models\LogisticsSite::query()->orderBy('id')->firstOrFail();
+        $siteB = \App\Models\LogisticsSite::query()->where('id', '!=', $siteA->id)->orderBy('id')->firstOrFail();
+        $dispatcher->forceFill([
+            'data_scope_type' => 'site',
+            'data_scope' => ['site_ids' => [(int) $siteA->id]],
+        ])->save();
+
+        Sanctum::actingAs($dispatcher);
+
+        $vehicle = Vehicle::query()->create([
+            'plate_number' => '沪Z-SCOPE-001',
+            'name' => '越权范围车辆',
+            'vehicle_type' => 'truck',
+            'site_id' => (int) $siteB->id,
+            'driver_id' => $this->resolveUnboundDriverId(),
+            'max_weight_kg' => 8000,
+            'max_volume_m3' => 18,
+            'status' => 'idle',
+        ]);
+
+        $categoryId = (int) CargoCategory::query()->value('id');
+        $order = PrePlanOrder::query()->create([
+            'order_no' => 'PO-SCOPE-OUT-001',
+            'cargo_category_id' => $categoryId,
+            'client_name' => '范围外客户',
+            'pickup_site_id' => (int) $siteB->id,
+            'pickup_address' => '范围外装货地',
+            'dropoff_site_id' => (int) $siteB->id,
+            'dropoff_address' => '范围外卸货地',
+            'status' => 'pending',
+            'audit_status' => 'approved',
+        ]);
+
+        $this->postJson('/api/v1/dispatch/preview', [
+            'order_ids' => [$order->id],
+            'vehicle_ids' => [$vehicle->id],
+        ])->assertStatus(403)
+            ->assertJsonPath('message', '包含超出当前账号数据范围的预计划单');
+    }
+
+    public function test_dispatch_manual_create_rejects_out_of_scope_ids(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $siteA = \App\Models\LogisticsSite::query()->orderBy('id')->firstOrFail();
+        $siteB = \App\Models\LogisticsSite::query()->where('id', '!=', $siteA->id)->orderBy('id')->firstOrFail();
+        $dispatcher->forceFill([
+            'data_scope_type' => 'site',
+            'data_scope' => ['site_ids' => [(int) $siteA->id]],
+        ])->save();
+
+        Sanctum::actingAs($dispatcher);
+
+        $vehicle = Vehicle::query()->create([
+            'plate_number' => '沪Z-SCOPE-002',
+            'name' => '越权范围车辆2',
+            'vehicle_type' => 'truck',
+            'site_id' => (int) $siteB->id,
+            'driver_id' => $this->resolveUnboundDriverId(),
+            'max_weight_kg' => 8000,
+            'max_volume_m3' => 18,
+            'status' => 'idle',
+        ]);
+
+        $categoryId = (int) CargoCategory::query()->value('id');
+        $order = PrePlanOrder::query()->create([
+            'order_no' => 'PO-SCOPE-OUT-002',
+            'cargo_category_id' => $categoryId,
+            'client_name' => '范围外客户2',
+            'pickup_site_id' => (int) $siteB->id,
+            'pickup_address' => '范围外装货地2',
+            'dropoff_site_id' => (int) $siteB->id,
+            'dropoff_address' => '范围外卸货地2',
+            'status' => 'pending',
+            'audit_status' => 'approved',
+        ]);
+
+        $this->postJson('/api/v1/dispatch/manual-create-tasks', [
+            'assignments' => [
+                [
+                    'vehicle_id' => (int) $vehicle->id,
+                    'order_ids' => [(int) $order->id],
+                ],
+            ],
+        ])->assertStatus(403)
+            ->assertJsonPath('message', '包含超出当前账号数据范围的车辆');
+    }
 }

@@ -82,11 +82,37 @@ npm run dev
 - 管理员：`admin` / `password`
 - 调度员：`dispatcher` / `password`
 - 司机：`driver` / `password`
+- 司机B：`driver2` / `password`
+- 司机C：`driver3` / `password`
 - 客户：`customer` / `password`
 
 登录流程：
 1. 先调用 `GET /api/v1/auth/captcha` 获取验证码 `key` 与图片。
 2. 调用 `POST /api/v1/auth/login` 时携带 `account`、`password`、`captcha_key`、`captcha_code`。
+
+## 数据范围联调验证路径
+
+1. 查看当前账号数据范围（PC/移动端统一）
+
+- `GET /api/v1/auth/me`
+- 关注返回字段：`data_scope_type`、`data_scope.region_codes`、`data_scope.site_ids`
+
+2. 智能派单预览与创建（已下沉数据范围）
+
+- `POST /api/v1/dispatch/preview`
+- `POST /api/v1/dispatch/create-tasks`
+- `POST /api/v1/dispatch/manual-create-tasks`
+- 当 `order_ids` / `vehicle_ids` 中包含超出当前账号范围的数据时，返回 `403`，错误信息为“包含超出当前账号数据范围的预计划单/车辆”。
+
+3. 移动端任务范围（司机/调度）
+
+- `POST /api/v1/dispatch-task/list`
+- 司机仅返回本人任务；调度员仅返回其数据范围内任务。
+
+4. 消息范围（司机/调度）
+
+- `POST /api/v1/message/list`
+- 当消息 `meta` 中携带 `order_id` / `order_ids` / `task_id` / `task_ids` / `site_id` / `site_ids` 时，仅返回当前账号可访问范围内的消息。
 
 ## Seeder 结构
 

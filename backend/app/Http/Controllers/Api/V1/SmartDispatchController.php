@@ -5,7 +5,9 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\DispatchTask;
 use App\Models\PrePlanOrder;
+use App\Models\User;
 use App\Models\Vehicle;
+use App\Services\Auth\DataScopeService;
 use App\Services\Dispatch\SmartDispatchService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -14,7 +16,10 @@ use Illuminate\Support\Str;
 
 class SmartDispatchController extends Controller
 {
-    public function __construct(private readonly SmartDispatchService $service)
+    public function __construct(
+        private readonly SmartDispatchService $service,
+        private readonly DataScopeService $dataScopeService
+    )
     {
     }
 
@@ -27,8 +32,12 @@ class SmartDispatchController extends Controller
             'vehicle_ids.*' => ['integer', 'exists:vehicles,id'],
         ]);
 
-        $orders = $this->resolveOrders($payload['order_ids'] ?? null);
-        $vehicles = $this->resolveVehicles($payload['vehicle_ids'] ?? null);
+        $user = $request->user();
+        $this->assertRequestedOrdersWithinScope($user, $payload['order_ids'] ?? null);
+        $this->assertRequestedVehiclesWithinScope($user, $payload['vehicle_ids'] ?? null);
+
+        $orders = $this->resolveOrders($user, $payload['order_ids'] ?? null);
+        $vehicles = $this->resolveVehicles($user, $payload['vehicle_ids'] ?? null);
 
         if ($orders->isEmpty()) {
             return response()->json(['message' => '没有可调度的预计划单'], 422);
@@ -52,8 +61,12 @@ class SmartDispatchController extends Controller
             'vehicle_ids.*' => ['integer', 'exists:vehicles,id'],
         ]);
 
-        $orders = $this->resolveOrders($payload['order_ids'] ?? null);
-        $vehicles = $this->resolveVehicles($payload['vehicle_ids'] ?? null);
+        $user = $request->user();
+        $this->assertRequestedOrdersWithinScope($user, $payload['order_ids'] ?? null);
+        $this->assertRequestedVehiclesWithinScope($user, $payload['vehicle_ids'] ?? null);
+
+        $orders = $this->resolveOrders($user, $payload['order_ids'] ?? null);
+        $vehicles = $this->resolveVehicles($user, $payload['vehicle_ids'] ?? null);
         $preview = $this->service->preview($orders, $vehicles);
 
         $createdTaskIds = $this->createTasksFromAssignments($preview['assignments'], (int) $request->user()->id, false);
@@ -78,7 +91,7 @@ class SmartDispatchController extends Controller
             'assignments.*.compartment_plan' => ['nullable', 'array'],
         ]);
 
-        $this->validateManualAssignments($payload['assignments']);
+        $this->validateManualAssignments($request->user(), $payload['assignments']);
 
         $createdTaskIds = $this->createTasksFromAssignments(
             $payload['assignments'],
@@ -92,9 +105,9 @@ class SmartDispatchController extends Controller
         ], 201);
     }
 
-    private function resolveOrders(?array $orderIds)
+    private function resolveOrders(?User $user, ?array $orderIds)
     {
-        return PrePlanOrder::query()
+        return $this->dataScopeService->applyPrePlanOrderScope(PrePlanOrder::query(), $user)
             ->whereIn('status', ['pending', 'scheduled'])
             ->where('audit_status', 'approved')
             ->whereDoesntHave('dispatchTasks', function ($query): void {
@@ -105,9 +118,9 @@ class SmartDispatchController extends Controller
             ->get();
     }
 
-    private function resolveVehicles(?array $vehicleIds)
+    private function resolveVehicles(?User $user, ?array $vehicleIds)
     {
-        return Vehicle::query()
+        return $this->dataScopeService->applyVehicleScope(Vehicle::query(), $user)
             ->where('status', 'idle')
             ->whereNotNull('driver_id')
             ->whereHas('driver', fn ($query) => $query->where('role', 'driver')->where('status', 'active'))
@@ -116,9 +129,10 @@ class SmartDispatchController extends Controller
             ->get();
     }
 
-    private function validateManualAssignments(array $assignments): void
+    private function validateManualAssignments(?User $user, array $assignments): void
     {
         $vehicleIds = collect($assignments)->pluck('vehicle_id')->values();
+        $this->assertRequestedVehiclesWithinScope($user, $vehicleIds->all());
         if ($vehicleIds->duplicates()->isNotEmpty()) {
             abort(422, '同一车辆不能在一次下发中创建多条任务');
         }
@@ -128,6 +142,7 @@ class SmartDispatchController extends Controller
             ->flatten(1)
             ->map(fn ($id) => (int) $id)
             ->values();
+        $this->assertRequestedOrdersWithinScope($user, $allOrderIds->all());
         if ($allOrderIds->duplicates()->isNotEmpty()) {
             abort(422, '同一预计划单不能重复分配');
         }
@@ -163,6 +178,36 @@ class SmartDispatchController extends Controller
             if (! $compartmentEnabled && $orderCount > 1) {
                 abort(422, '未启用分仓的车辆不可拼单，请改为单车单订单');
             }
+        }
+    }
+
+    private function assertRequestedOrdersWithinScope(?User $user, ?array $orderIds): void
+    {
+        $targetIds = collect($orderIds ?? [])->map(fn ($id) => (int) $id)->filter(fn ($id) => $id > 0)->unique()->values();
+        if ($targetIds->isEmpty()) {
+            return;
+        }
+
+        $accessibleCount = $this->dataScopeService->applyPrePlanOrderScope(PrePlanOrder::query(), $user)
+            ->whereIn('id', $targetIds->all())
+            ->count();
+        if ($accessibleCount !== $targetIds->count()) {
+            abort(403, '包含超出当前账号数据范围的预计划单');
+        }
+    }
+
+    private function assertRequestedVehiclesWithinScope(?User $user, ?array $vehicleIds): void
+    {
+        $targetIds = collect($vehicleIds ?? [])->map(fn ($id) => (int) $id)->filter(fn ($id) => $id > 0)->unique()->values();
+        if ($targetIds->isEmpty()) {
+            return;
+        }
+
+        $accessibleCount = $this->dataScopeService->applyVehicleScope(Vehicle::query(), $user)
+            ->whereIn('id', $targetIds->all())
+            ->count();
+        if ($accessibleCount !== $targetIds->count()) {
+            abort(403, '包含超出当前账号数据范围的车辆');
         }
     }
 

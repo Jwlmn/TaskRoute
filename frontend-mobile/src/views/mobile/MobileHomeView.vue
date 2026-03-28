@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../../services/api'
 import { readCurrentUser } from '../../utils/auth'
+import { filterTasksByDataScope } from '../../utils/dataScope'
 
 const user = computed(() => readCurrentUser())
 const loading = ref(false)
@@ -42,7 +43,10 @@ const fetchHomeStats = async () => {
   try {
     if (user.value?.role === 'driver') {
       const { data } = await api.post('/dispatch-task/list', {})
-      const tasks = Array.isArray(data?.data) ? data.data : []
+      const tasks = filterTasksByDataScope(
+        user.value,
+        Array.isArray(data?.data) ? data.data : [],
+      )
       stats.value = buildDriverStats(tasks)
       generatedAt.value = new Date().toLocaleString('zh-CN', { hour12: false })
       return

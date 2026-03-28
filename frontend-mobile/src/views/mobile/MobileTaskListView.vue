@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '../../services/api'
 import { readCurrentUser } from '../../utils/auth'
+import { filterTasksByDataScope } from '../../utils/dataScope'
 
 const router = useRouter()
 const loading = ref(false)
@@ -81,7 +82,7 @@ const fetchTasks = async () => {
   loading.value = true
   try {
     const { data } = await api.post('/dispatch-task/list', {})
-    tasks.value = data.data || []
+    tasks.value = filterTasksByDataScope(user.value, data.data || [])
   } finally {
     loading.value = false
   }
