@@ -5,10 +5,14 @@ import api from '../../services/api'
 import { getLabel } from '../../utils/labels'
 
 const loading = ref(false)
+const loadingMessages = ref(false)
 const creating = ref(false)
+const markingMessageId = ref(null)
 const dialogVisible = ref(false)
 const dialogMode = ref('create')
 const orders = ref([])
+const messages = ref([])
+const unreadOnly = ref(true)
 const cargoCategories = ref([])
 
 const freightSchemeLabelMap = {
@@ -143,6 +147,20 @@ const loadOrders = async () => {
   }
 }
 
+const loadMessages = async () => {
+  loadingMessages.value = true
+  try {
+    const { data } = await api.post('/message/list', {
+      unread_only: unreadOnly.value,
+    })
+    messages.value = Array.isArray(data?.data) ? data.data : []
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '加载审核通知失败')
+  } finally {
+    loadingMessages.value = false
+  }
+}
+
 const submit = async () => {
   creating.value = true
   try {
@@ -174,8 +192,22 @@ const resubmitOrder = async (row) => {
   }
 }
 
+const markMessageRead = async (row) => {
+  if (!row?.id || row?.read_at) return
+  markingMessageId.value = row.id
+  try {
+    await api.post('/message/read', { id: row.id })
+    ElMessage.success('已标记为已读')
+    await loadMessages()
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '标记已读失败')
+  } finally {
+    markingMessageId.value = null
+  }
+}
+
 onMounted(async () => {
-  await Promise.all([loadMeta(), loadOrders()])
+  await Promise.all([loadMeta(), loadOrders(), loadMessages()])
 })
 </script>
 
@@ -236,6 +268,58 @@ onMounted(async () => {
             @click="resubmitOrder(row)"
           >
             重新提报
+          </el-button>
+        </template>
+      </el-table-column>
+    </el-table>
+  </el-card>
+
+  <el-card shadow="never" class="mt-12">
+    <template #header>
+      <div class="table-header">
+        <div class="card-title">审核通知</div>
+        <div>
+          <el-switch
+            v-model="unreadOnly"
+            active-text="仅看未读"
+            class="mr-8"
+            @change="loadMessages"
+          />
+          <el-button plain @click="loadMessages">刷新通知</el-button>
+        </div>
+      </div>
+    </template>
+
+    <el-table :data="messages" stripe v-loading="loadingMessages">
+      <el-table-column prop="title" label="标题" min-width="140" />
+      <el-table-column prop="content" label="内容" min-width="260" show-overflow-tooltip />
+      <el-table-column label="关联订单" min-width="160">
+        <template #default="{ row }">
+          {{ row?.meta?.order_no || '-' }}
+        </template>
+      </el-table-column>
+      <el-table-column label="状态" min-width="90">
+        <template #default="{ row }">
+          <el-tag :type="row.read_at ? 'info' : 'danger'">
+            {{ row.read_at ? '已读' : '未读' }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="通知时间" min-width="160">
+        <template #default="{ row }">
+          {{ row.created_at || '-' }}
+        </template>
+      </el-table-column>
+      <el-table-column label="操作" min-width="120" fixed="right">
+        <template #default="{ row }">
+          <el-button
+            link
+            type="primary"
+            :disabled="Boolean(row.read_at)"
+            :loading="markingMessageId === row.id"
+            @click="markMessageRead(row)"
+          >
+            标记已读
           </el-button>
         </template>
       </el-table-column>
