@@ -23,6 +23,7 @@ class PrePlanOrderController extends Controller
             'audit_status' => ['nullable', 'in:pending_approval,approved,rejected'],
             'is_locked' => ['nullable', 'boolean'],
             'cargo_category_id' => ['nullable', 'integer', 'exists:cargo_categories,id'],
+            'trace_type' => ['nullable', 'in:origin,split,merge'],
             'expected_pickup_from' => ['nullable', 'date'],
             'expected_pickup_to' => ['nullable', 'date'],
         ]);
@@ -47,6 +48,18 @@ class PrePlanOrderController extends Controller
                 ->when($payload['audit_status'] ?? null, fn ($query, $auditStatus) => $query->where('audit_status', $auditStatus))
                 ->when(array_key_exists('is_locked', $payload), fn ($query) => $query->where('is_locked', (bool) $payload['is_locked']))
                 ->when($payload['cargo_category_id'] ?? null, fn ($query, $cargoCategoryId) => $query->where('cargo_category_id', (int) $cargoCategoryId))
+                ->when($payload['trace_type'] ?? null, function ($query, $traceType): void {
+                    if ($traceType === 'split') {
+                        $query->whereNotNull('meta->split_from_id');
+                        return;
+                    }
+                    if ($traceType === 'merge') {
+                        $query->whereNotNull('meta->merge_from_ids');
+                        return;
+                    }
+                    $query->whereNull('meta->split_from_id')
+                        ->whereNull('meta->merge_from_ids');
+                })
                 ->when($payload['expected_pickup_from'] ?? null, fn ($query, $from) => $query->where('expected_pickup_at', '>=', $from))
                 ->when($payload['expected_pickup_to'] ?? null, fn ($query, $to) => $query->where('expected_pickup_at', '<=', $to))
                 ->latest()

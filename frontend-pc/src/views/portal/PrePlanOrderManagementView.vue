@@ -18,6 +18,7 @@ const filterForm = reactive({
   audit_status: '',
   is_locked: '',
   cargo_category_id: '',
+  trace_type: '',
 })
 
 const loadingOrders = ref(false)
@@ -327,6 +328,7 @@ const loadPrePlanOrders = async () => {
     if (filterForm.audit_status) payload.audit_status = filterForm.audit_status
     if (filterForm.is_locked !== '') payload.is_locked = filterForm.is_locked
     if (filterForm.cargo_category_id) payload.cargo_category_id = Number(filterForm.cargo_category_id)
+    if (filterForm.trace_type) payload.trace_type = filterForm.trace_type
 
     const { data } = await api.post('/pre-plan-order/list', payload)
     prePlanOrders.value = Array.isArray(data?.data) ? data.data : []
@@ -343,6 +345,7 @@ const resetFilters = async () => {
   filterForm.audit_status = ''
   filterForm.is_locked = ''
   filterForm.cargo_category_id = ''
+  filterForm.trace_type = ''
   await loadPrePlanOrders()
 }
 
@@ -1136,6 +1139,13 @@ onMounted(() => {
             :label="`${item.name}（${item.code}）`"
             :value="item.id"
           />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="追溯类型">
+        <el-select v-model="filterForm.trace_type" clearable placeholder="全部类型" style="width: 140px">
+          <el-option label="普通单" value="origin" />
+          <el-option label="拆分单" value="split" />
+          <el-option label="并单" value="merge" />
         </el-select>
       </el-form-item>
       <el-form-item>

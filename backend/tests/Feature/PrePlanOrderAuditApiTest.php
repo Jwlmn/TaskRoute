@@ -311,4 +311,63 @@ class PrePlanOrderAuditApiTest extends TestCase
             'status' => 'cancelled',
         ]);
     }
+
+    public function test_dispatcher_can_filter_pre_plan_orders_by_trace_type(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $base = PrePlanOrder::query()
+            ->where('status', 'pending')
+            ->where('is_locked', false)
+            ->firstOrFail();
+        Sanctum::actingAs($dispatcher);
+
+        $weight = (float) $base->cargo_weight_kg;
+        $volume = (float) $base->cargo_volume_m3;
+        $this->postJson('/api/v1/pre-plan-order/split', [
+            'id' => $base->id,
+            'parts' => [
+                ['cargo_weight_kg' => round($weight / 2, 2), 'cargo_volume_m3' => round($volume / 2, 2)],
+                ['cargo_weight_kg' => round($weight - round($weight / 2, 2), 2), 'cargo_volume_m3' => round($volume - round($volume / 2, 2), 2)],
+            ],
+        ])->assertCreated();
+
+        $splitResponse = $this->postJson('/api/v1/pre-plan-order/list', [
+            'trace_type' => 'split',
+        ])->assertOk();
+        $this->assertTrue(
+            collect($splitResponse->json('data'))->contains(function (array $item) use ($base): bool {
+                return (int) data_get($item, 'meta.split_from_id') === (int) $base->id;
+            }),
+            '拆分筛选结果应包含拆分来源单据'
+        );
+
+        $splitOrders = PrePlanOrder::query()
+            ->where('status', 'pending')
+            ->where('audit_status', $base->audit_status)
+            ->where('client_name', $base->client_name)
+            ->where('pickup_address', $base->pickup_address)
+            ->where('dropoff_address', $base->dropoff_address)
+            ->where('cargo_category_id', $base->cargo_category_id)
+            ->whereNotNull('meta->split_from_id')
+            ->limit(2)
+            ->pluck('id');
+        $this->assertGreaterThanOrEqual(2, $splitOrders->count(), '拆分后应至少存在两条可并单数据');
+
+        $this->postJson('/api/v1/pre-plan-order/merge', [
+            'ids' => $splitOrders->values()->all(),
+        ])->assertCreated();
+
+        $mergeResponse = $this->postJson('/api/v1/pre-plan-order/list', [
+            'trace_type' => 'merge',
+        ])->assertOk();
+        $this->assertTrue(
+            collect($mergeResponse->json('data'))->contains(function (array $item): bool {
+                $mergeFrom = data_get($item, 'meta.merge_from_ids');
+                return is_array($mergeFrom) && count($mergeFrom) >= 2;
+            }),
+            '并单筛选结果应包含并单生成的新单'
+        );
+    }
 }
