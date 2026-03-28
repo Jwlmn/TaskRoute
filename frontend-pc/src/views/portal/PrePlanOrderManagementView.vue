@@ -792,9 +792,44 @@ const mergeSelectedOrders = async () => {
     return
   }
 
-  const invalid = selectedOrders.value.find((row) => row.status !== 'pending' || row.is_locked || row.status === 'cancelled')
-  if (invalid) {
-    ElMessage.warning(`存在不可并单订单：${invalid.order_no}`)
+  const [base, ...rest] = selectedOrders.value
+  const issues = []
+
+  for (const row of selectedOrders.value) {
+    const reasons = []
+    if (row.status !== 'pending') reasons.push('状态非待调度')
+    if (row.is_locked) reasons.push('已锁单')
+    if (row.status === 'cancelled') reasons.push('已作废')
+    if (reasons.length) {
+      issues.push(`${row.order_no}: ${reasons.join('、')}`)
+    }
+  }
+
+  const compareKeys = [
+    { key: 'cargo_category_id', label: '货品分类' },
+    { key: 'client_name', label: '客户' },
+    { key: 'pickup_address', label: '装货地' },
+    { key: 'dropoff_address', label: '卸货地' },
+    { key: 'pickup_contact_name', label: '装货联系人' },
+    { key: 'pickup_contact_phone', label: '装货联系电话' },
+    { key: 'dropoff_contact_name', label: '收货联系人' },
+    { key: 'dropoff_contact_phone', label: '收货联系电话' },
+    { key: 'audit_status', label: '审核状态' },
+  ]
+  for (const row of rest) {
+    const diff = compareKeys
+      .filter((item) => String(row?.[item.key] ?? '') !== String(base?.[item.key] ?? ''))
+      .map((item) => item.label)
+    if (diff.length) {
+      issues.push(`${row.order_no}: 与基准单 ${base.order_no} 的${diff.join('、')}不一致`)
+    }
+  }
+
+  if (issues.length) {
+    await ElMessageBox.alert(issues.join('\n'), '并单预检查未通过', {
+      confirmButtonText: '我知道了',
+      type: 'warning',
+    })
     return
   }
 
