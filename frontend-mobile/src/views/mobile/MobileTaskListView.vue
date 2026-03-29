@@ -13,6 +13,12 @@ const reportingLocation = ref(false)
 const tasks = ref([])
 const taskStatusFilter = ref('all')
 const taskKeyword = ref('')
+const pagination = ref({
+  page: 1,
+  per_page: 20,
+  total: 0,
+  last_page: 1,
+})
 let locationTimer = null
 
 const user = computed(() => readCurrentUser())
@@ -78,14 +84,24 @@ const filteredTasks = computed(() => {
   })
 })
 
-const fetchTasks = async () => {
+const fetchTasks = async (page = pagination.value.page) => {
   loading.value = true
   try {
-    const { data } = await api.post('/dispatch-task/list', {})
+    const { data } = await api.post(`/dispatch-task/list?page=${page}`, {})
     tasks.value = filterTasksByDataScope(user.value, data.data || [])
+    pagination.value = {
+      page: Number(data?.current_page || page || 1),
+      per_page: Number(data?.per_page || 20),
+      total: Number(data?.total || 0),
+      last_page: Number(data?.last_page || 1),
+    }
   } finally {
     loading.value = false
   }
+}
+
+const changePage = async (nextPage) => {
+  await fetchTasks(nextPage)
 }
 
 const resolveCurrentTaskId = () => {
@@ -201,6 +217,17 @@ onUnmounted(() => {
                 接单
               </el-button>
             </div>
+          </div>
+          <div class="mobile-task-pagination">
+            <el-pagination
+              small
+              background
+              layout="prev, pager, next, total"
+              :current-page="pagination.page"
+              :page-size="pagination.per_page"
+              :total="pagination.total"
+              @current-change="changePage"
+            />
           </div>
         </div>
       </template>

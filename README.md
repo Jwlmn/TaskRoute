@@ -114,6 +114,11 @@ npm run dev
 - `POST /api/v1/message/list`
 - 当消息 `meta` 中携带 `order_id` / `order_ids` / `task_id` / `task_ids` / `site_id` / `site_ids` 时，仅返回当前账号可访问范围内的消息。
 
+5. 移动端页面权限联调（基于 `/auth/me.permissions`）
+
+- 路由：`/`（首页，需要 `dashboard`）、`/tasks`（任务，需要 `mobile_tasks`）、`/messages`（消息，需要 `notifications`）、`/account`（账号，需要 `dashboard`）。
+- 未具备路由所需权限时，前端会自动跳转到首页。
+
 ## Seeder 结构
 
 已按模块拆分 Seeder，不再堆在 `DatabaseSeeder`：

@@ -185,6 +185,12 @@ body {
   gap: 8px;
 }
 
+.mobile-task-pagination {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-end;
+}
+
 .mobile-order-list {
   display: flex;
   flex-direction: column;
