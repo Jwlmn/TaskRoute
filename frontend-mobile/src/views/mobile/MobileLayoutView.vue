@@ -13,6 +13,7 @@ const tabs = computed(() => {
   const list = [
     { label: '首页', name: 'mobile-home', permission: 'dashboard' },
     { label: '任务', name: 'mobile-tasks', permission: 'mobile_tasks' },
+    { label: '消息', name: 'mobile-messages', permission: 'notifications' },
     { label: '账号', name: 'mobile-account', permission: 'dashboard' },
   ]
   return list.filter((item) => hasPermission(user.value, item.permission))

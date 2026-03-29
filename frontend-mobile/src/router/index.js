@@ -5,8 +5,9 @@ import MobileHomeView from '../views/mobile/MobileHomeView.vue'
 import MobileTaskListView from '../views/mobile/MobileTaskListView.vue'
 import MobileTaskDetailView from '../views/mobile/MobileTaskDetailView.vue'
 import MobileAccountView from '../views/mobile/MobileAccountView.vue'
+import MobileMessageCenterView from '../views/mobile/MobileMessageCenterView.vue'
 import api from '../services/api'
-import { ensureAuthSession, readCurrentUser, readAuthToken } from '../utils/auth'
+import { ensureAuthSession, hasPermission, readCurrentUser, readAuthToken } from '../utils/auth'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -22,10 +23,11 @@ const router = createRouter({
       component: MobileLayoutView,
       meta: { requiresAuth: true },
       children: [
-        { path: '', name: 'mobile-home', component: MobileHomeView },
-        { path: 'tasks', name: 'mobile-tasks', component: MobileTaskListView },
-        { path: 'tasks/:id', name: 'mobile-task-detail', component: MobileTaskDetailView },
-        { path: 'account', name: 'mobile-account', component: MobileAccountView },
+        { path: '', name: 'mobile-home', component: MobileHomeView, meta: { permission: 'dashboard' } },
+        { path: 'tasks', name: 'mobile-tasks', component: MobileTaskListView, meta: { permission: 'mobile_tasks' } },
+        { path: 'tasks/:id', name: 'mobile-task-detail', component: MobileTaskDetailView, meta: { permission: 'mobile_tasks' } },
+        { path: 'messages', name: 'mobile-messages', component: MobileMessageCenterView, meta: { permission: 'notifications' } },
+        { path: 'account', name: 'mobile-account', component: MobileAccountView, meta: { permission: 'dashboard' } },
       ],
     },
   ],
@@ -44,6 +46,10 @@ router.beforeEach(async (to) => {
   }
 
   if (to.meta.guestOnly && user) {
+    return { name: 'mobile-home' }
+  }
+
+  if (to.meta.permission && !hasPermission(user, to.meta.permission)) {
     return { name: 'mobile-home' }
   }
 
