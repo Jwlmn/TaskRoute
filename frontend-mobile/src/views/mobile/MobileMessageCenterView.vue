@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../../services/api'
 
@@ -20,8 +20,12 @@ const filterForm = reactive({
   message_type: '',
   pinned_only: false,
 })
+let filterDebounceTimer = null
+let loadAbortController = null
 
 const loadMessages = async (page = pagination.page) => {
+  loadAbortController?.abort()
+  loadAbortController = new AbortController()
   loading.value = true
   try {
     const { data } = await api.post('/message/list', {
@@ -30,13 +34,16 @@ const loadMessages = async (page = pagination.page) => {
       read_status: filterForm.read_status || 'all',
       message_type: filterForm.message_type || undefined,
       pinned_only: filterForm.pinned_only || false,
-    })
+    }, { signal: loadAbortController.signal })
     messages.value = Array.isArray(data?.data) ? data.data : []
     pagination.page = Number(data?.current_page || page || 1)
     pagination.per_page = Number(data?.per_page || 20)
     pagination.total = Number(data?.total || 0)
     pagination.last_page = Number(data?.last_page || 1)
   } catch (error) {
+    if (error?.code === 'ERR_CANCELED') {
+      return
+    }
     ElMessage.error(error?.response?.data?.message || '加载消息失败')
   } finally {
     loading.value = false
@@ -95,6 +102,27 @@ const togglePin = async (row) => {
 }
 
 onMounted(loadMessages)
+
+onUnmounted(() => {
+  loadAbortController?.abort()
+  loadAbortController = null
+  if (filterDebounceTimer) {
+    clearTimeout(filterDebounceTimer)
+    filterDebounceTimer = null
+  }
+})
+
+watch(
+  () => [filterForm.keyword, filterForm.read_status, filterForm.message_type, filterForm.pinned_only],
+  () => {
+    if (filterDebounceTimer) {
+      clearTimeout(filterDebounceTimer)
+    }
+    filterDebounceTimer = setTimeout(() => {
+      searchMessages()
+    }, 300)
+  }
+)
 </script>
 
 <template>

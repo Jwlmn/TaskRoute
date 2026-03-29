@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '../../services/api'
@@ -13,6 +13,7 @@ const reportingLocation = ref(false)
 const tasks = ref([])
 const taskStatusFilter = ref('all')
 const taskKeyword = ref('')
+const debouncedKeyword = ref('')
 const pagination = ref({
   page: 1,
   per_page: 20,
@@ -20,6 +21,8 @@ const pagination = ref({
   last_page: 1,
 })
 let locationTimer = null
+let keywordDebounceTimer = null
+let fetchAbortController = null
 
 const user = computed(() => readCurrentUser())
 const isDriver = computed(() => user.value?.role === 'driver')
@@ -65,7 +68,7 @@ const taskStats = computed(() => {
 })
 
 const filteredTasks = computed(() => {
-  const keyword = String(taskKeyword.value || '').trim().toLowerCase()
+  const keyword = String(debouncedKeyword.value || '').trim().toLowerCase()
   return tasks.value.filter((task) => {
     const matchStatus = taskStatusFilter.value === 'all'
       ? true
@@ -85,9 +88,11 @@ const filteredTasks = computed(() => {
 })
 
 const fetchTasks = async (page = pagination.value.page) => {
+  fetchAbortController?.abort()
+  fetchAbortController = new AbortController()
   loading.value = true
   try {
-    const { data } = await api.post(`/dispatch-task/list?page=${page}`, {})
+    const { data } = await api.post(`/dispatch-task/list?page=${page}`, {}, { signal: fetchAbortController.signal })
     tasks.value = filterTasksByDataScope(user.value, data.data || [])
     pagination.value = {
       page: Number(data?.current_page || page || 1),
@@ -95,6 +100,11 @@ const fetchTasks = async (page = pagination.value.page) => {
       total: Number(data?.total || 0),
       last_page: Number(data?.last_page || 1),
     }
+  } catch (error) {
+    if (error?.code === 'ERR_CANCELED') {
+      return
+    }
+    ElMessage.error(error?.response?.data?.message || '任务加载失败')
   } finally {
     loading.value = false
   }
@@ -165,10 +175,25 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  fetchAbortController?.abort()
+  fetchAbortController = null
+  if (keywordDebounceTimer) {
+    clearTimeout(keywordDebounceTimer)
+    keywordDebounceTimer = null
+  }
   if (locationTimer) {
     window.clearInterval(locationTimer)
     locationTimer = null
   }
+})
+
+watch(taskKeyword, (value) => {
+  if (keywordDebounceTimer) {
+    clearTimeout(keywordDebounceTimer)
+  }
+  keywordDebounceTimer = setTimeout(() => {
+    debouncedKeyword.value = value
+  }, 250)
 })
 </script>
 

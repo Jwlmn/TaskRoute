@@ -3,8 +3,10 @@
 namespace Tests\Feature;
 
 use App\Models\DispatchTask;
+use App\Models\LogisticsSite;
 use App\Models\PrePlanOrder;
 use App\Models\User;
+use App\Models\Vehicle;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
@@ -88,5 +90,60 @@ class DispatchTaskPermissionTest extends TestCase
         ])->assertOk()
             ->assertJsonPath('total', 1)
             ->assertJsonPath('data.0.order_no', 'PO-DT-LIST-COMPLETED');
+    }
+
+    public function test_dispatch_task_list_pagination_respects_data_scope(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $siteIn = LogisticsSite::query()->orderBy('id')->firstOrFail();
+        $siteOut = LogisticsSite::query()
+            ->where('id', '!=', $siteIn->id)
+            ->orderBy('id')
+            ->firstOrFail();
+        $dispatcher->forceFill([
+            'data_scope_type' => 'site',
+            'data_scope' => ['site_ids' => [(int) $siteIn->id]],
+        ])->save();
+
+        $vehicleIn = Vehicle::query()->create([
+            'plate_number' => '沪P-SCOPE-IN-01',
+            'name' => '范围内车辆',
+            'vehicle_type' => 'truck',
+            'site_id' => (int) $siteIn->id,
+            'status' => 'idle',
+        ]);
+        $vehicleOut = Vehicle::query()->create([
+            'plate_number' => '沪P-SCOPE-OUT-01',
+            'name' => '范围外车辆',
+            'vehicle_type' => 'truck',
+            'site_id' => (int) $siteOut->id,
+            'status' => 'idle',
+        ]);
+
+        foreach (range(1, 25) as $index) {
+            DispatchTask::query()->create([
+                'task_no' => sprintf('DT-SCOPE-IN-%03d', $index),
+                'vehicle_id' => $vehicleIn->id,
+                'status' => 'assigned',
+                'dispatch_mode' => 'single_vehicle_single_order',
+            ]);
+        }
+        foreach (range(1, 10) as $index) {
+            DispatchTask::query()->create([
+                'task_no' => sprintf('DT-SCOPE-OUT-%03d', $index),
+                'vehicle_id' => $vehicleOut->id,
+                'status' => 'assigned',
+                'dispatch_mode' => 'single_vehicle_single_order',
+            ]);
+        }
+
+        Sanctum::actingAs($dispatcher);
+        $response = $this->postJson('/api/v1/dispatch-task/list?page=2', [])->assertOk();
+
+        $taskNos = collect($response->json('data'))->pluck('task_no')->values()->all();
+        $this->assertCount(5, $taskNos);
+        $this->assertTrue(collect($taskNos)->every(fn ($taskNo) => str_starts_with((string) $taskNo, 'DT-SCOPE-IN-')));
     }
 }
