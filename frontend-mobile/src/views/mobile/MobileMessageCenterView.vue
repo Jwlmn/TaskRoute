@@ -40,6 +40,9 @@ const loadMessages = async (page = pagination.page) => {
     pagination.per_page = Number(data?.per_page || 20)
     pagination.total = Number(data?.total || 0)
     pagination.last_page = Number(data?.last_page || 1)
+    if (messages.value.length === 0 && pagination.page > 1 && pagination.total > 0) {
+      await loadMessages(pagination.page - 1)
+    }
   } catch (error) {
     if (error?.code === 'ERR_CANCELED') {
       return

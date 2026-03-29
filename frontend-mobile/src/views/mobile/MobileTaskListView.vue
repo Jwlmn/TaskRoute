@@ -93,12 +93,16 @@ const fetchTasks = async (page = pagination.value.page) => {
   loading.value = true
   try {
     const { data } = await api.post(`/dispatch-task/list?page=${page}`, {}, { signal: fetchAbortController.signal })
+    const rawTasks = Array.isArray(data?.data) ? data.data : []
     tasks.value = filterTasksByDataScope(user.value, data.data || [])
     pagination.value = {
       page: Number(data?.current_page || page || 1),
       per_page: Number(data?.per_page || 20),
       total: Number(data?.total || 0),
       last_page: Number(data?.last_page || 1),
+    }
+    if (rawTasks.length === 0 && pagination.value.page > 1 && pagination.value.total > 0) {
+      await fetchTasks(pagination.value.page - 1)
     }
   } catch (error) {
     if (error?.code === 'ERR_CANCELED') {

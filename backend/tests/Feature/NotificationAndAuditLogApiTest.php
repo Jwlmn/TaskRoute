@@ -190,4 +190,75 @@ class NotificationAndAuditLogApiTest extends TestCase
         $this->assertNotContains('任务范围外消息', $titles);
         $this->assertNotContains('站点范围外消息', $titles);
     }
+
+    public function test_message_list_pagination_totals_are_consistent_after_scope_filter(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $siteA = \App\Models\LogisticsSite::query()->orderBy('id')->firstOrFail();
+        $siteB = \App\Models\LogisticsSite::query()->where('id', '!=', $siteA->id)->orderBy('id')->firstOrFail();
+        $dispatcher->forceFill([
+            'data_scope_type' => 'site',
+            'data_scope' => ['site_ids' => [(int) $siteA->id]],
+        ])->save();
+        Sanctum::actingAs($dispatcher);
+
+        $categoryId = (int) CargoCategory::query()->value('id');
+        foreach (range(1, 21) as $index) {
+            $order = PrePlanOrder::query()->create([
+                'order_no' => sprintf('PO-MSG-PAGE-IN-%03d', $index),
+                'cargo_category_id' => $categoryId,
+                'client_name' => '范围内分页客户',
+                'pickup_site_id' => (int) $siteA->id,
+                'pickup_address' => '范围内装货地',
+                'dropoff_site_id' => (int) $siteA->id,
+                'dropoff_address' => '范围内卸货地',
+                'status' => 'pending',
+                'audit_status' => 'approved',
+            ]);
+            SystemMessage::query()->create([
+                'user_id' => (int) $dispatcher->id,
+                'message_type' => 'audit_notice',
+                'title' => sprintf('分页范围内消息%03d', $index),
+                'content' => '应可见',
+                'meta' => ['order_id' => (int) $order->id],
+            ]);
+        }
+        foreach (range(1, 8) as $index) {
+            $order = PrePlanOrder::query()->create([
+                'order_no' => sprintf('PO-MSG-PAGE-OUT-%03d', $index),
+                'cargo_category_id' => $categoryId,
+                'client_name' => '范围外分页客户',
+                'pickup_site_id' => (int) $siteB->id,
+                'pickup_address' => '范围外装货地',
+                'dropoff_site_id' => (int) $siteB->id,
+                'dropoff_address' => '范围外卸货地',
+                'status' => 'pending',
+                'audit_status' => 'approved',
+            ]);
+            SystemMessage::query()->create([
+                'user_id' => (int) $dispatcher->id,
+                'message_type' => 'audit_notice',
+                'title' => sprintf('分页范围外消息%03d', $index),
+                'content' => '不应可见',
+                'meta' => ['order_id' => (int) $order->id],
+            ]);
+        }
+
+        $page1 = $this->postJson('/api/v1/message/list', ['page' => 1])->assertOk();
+        $page2 = $this->postJson('/api/v1/message/list', ['page' => 2])->assertOk();
+
+        $this->assertSame(21, (int) $page1->json('total'));
+        $this->assertSame(1, (int) $page1->json('current_page'));
+        $this->assertCount(20, $page1->json('data'));
+        $this->assertSame(21, (int) $page2->json('total'));
+        $this->assertSame(2, (int) $page2->json('current_page'));
+        $this->assertCount(1, $page2->json('data'));
+
+        $allTitles = collect(array_merge($page1->json('data') ?? [], $page2->json('data') ?? []))
+            ->pluck('title')
+            ->values()
+            ->all();
+        $this->assertTrue(collect($allTitles)->every(fn ($title) => str_contains((string) $title, '分页范围内消息')));
+    }
 }
