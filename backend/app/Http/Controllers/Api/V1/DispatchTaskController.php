@@ -25,11 +25,41 @@ class DispatchTaskController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
+        $payload = $request->validate([
+            'keyword' => ['nullable', 'string', 'max:100'],
+            'status' => ['nullable', 'in:assigned,accepted,in_progress,completed,cancelled'],
+            'status_group' => ['nullable', 'in:assigned,in_progress,completed'],
+        ]);
+        $keyword = trim((string) ($payload['keyword'] ?? ''));
+
         $query = $this->dataScopeService->applyDispatchTaskScope(DispatchTask::query(), $user)->with([
             'vehicle:id,plate_number,name,site_id',
             'driver:id,account,name',
             'orders:id,order_no,client_name,pickup_site_id,pickup_address,pickup_contact_name,pickup_contact_phone,dropoff_site_id,dropoff_address,dropoff_contact_name,dropoff_contact_phone,cargo_category_id,status',
         ]);
+        if ($payload['status'] ?? null) {
+            $query->where('dispatch_tasks.status', (string) $payload['status']);
+        } elseif (($payload['status_group'] ?? null) === 'assigned') {
+            $query->where('dispatch_tasks.status', 'assigned');
+        } elseif (($payload['status_group'] ?? null) === 'in_progress') {
+            $query->whereIn('dispatch_tasks.status', ['accepted', 'in_progress']);
+        } elseif (($payload['status_group'] ?? null) === 'completed') {
+            $query->whereIn('dispatch_tasks.status', ['completed', 'cancelled']);
+        }
+        if ($keyword !== '') {
+            $query->where(function ($sub) use ($keyword): void {
+                $sub->where('dispatch_tasks.task_no', 'like', "%{$keyword}%")
+                    ->orWhere('dispatch_tasks.dispatch_mode', 'like', "%{$keyword}%")
+                    ->orWhereHas('vehicle', function ($vehicleQuery) use ($keyword): void {
+                        $vehicleQuery->where('vehicles.plate_number', 'like', "%{$keyword}%")
+                            ->orWhere('vehicles.name', 'like', "%{$keyword}%");
+                    })
+                    ->orWhereHas('driver', function ($driverQuery) use ($keyword): void {
+                        $driverQuery->where('users.account', 'like', "%{$keyword}%")
+                            ->orWhere('users.name', 'like', "%{$keyword}%");
+                    });
+            });
+        }
 
         return response()->json(
             $query->latest()->paginate(20)

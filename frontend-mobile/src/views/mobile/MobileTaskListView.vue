@@ -51,48 +51,15 @@ const normalizeTaskStatusGroup = (status) => {
   return 'assigned'
 }
 
-const taskStats = computed(() => {
-  const stats = {
-    all: tasks.value.length,
-    assigned: 0,
-    in_progress: 0,
-    completed: 0,
-  }
-  for (const task of tasks.value) {
-    const group = normalizeTaskStatusGroup(task?.status)
-    if (stats[group] !== undefined) {
-      stats[group] += 1
-    }
-  }
-  return stats
-})
-
-const filteredTasks = computed(() => {
-  const keyword = String(debouncedKeyword.value || '').trim().toLowerCase()
-  return tasks.value.filter((task) => {
-    const matchStatus = taskStatusFilter.value === 'all'
-      ? true
-      : normalizeTaskStatusGroup(task?.status) === taskStatusFilter.value
-    if (!matchStatus) return false
-    if (!keyword) return true
-    const source = [
-      task?.task_no,
-      task?.dispatch_mode,
-      task?.vehicle?.plate_number,
-      task?.driver?.name,
-    ]
-      .map((item) => String(item || '').toLowerCase())
-      .join(' ')
-    return source.includes(keyword)
-  })
-})
-
 const fetchTasks = async (page = pagination.value.page) => {
   fetchAbortController?.abort()
   fetchAbortController = new AbortController()
   loading.value = true
   try {
-    const { data } = await api.post(`/dispatch-task/list?page=${page}`, {}, { signal: fetchAbortController.signal })
+    const { data } = await api.post(`/dispatch-task/list?page=${page}`, {
+      keyword: debouncedKeyword.value || undefined,
+      status_group: taskStatusFilter.value === 'all' ? undefined : taskStatusFilter.value,
+    }, { signal: fetchAbortController.signal })
     const rawTasks = Array.isArray(data?.data) ? data.data : []
     tasks.value = filterTasksByDataScope(user.value, data.data || [])
     pagination.value = {
@@ -116,6 +83,11 @@ const fetchTasks = async (page = pagination.value.page) => {
 
 const changePage = async (nextPage) => {
   await fetchTasks(nextPage)
+}
+
+const searchTasks = async () => {
+  pagination.value.page = 1
+  await fetchTasks(1)
 }
 
 const resolveCurrentTaskId = () => {
@@ -199,6 +171,14 @@ watch(taskKeyword, (value) => {
     debouncedKeyword.value = value
   }, 250)
 })
+
+watch(debouncedKeyword, () => {
+  searchTasks()
+})
+
+watch(taskStatusFilter, () => {
+  searchTasks()
+})
 </script>
 
 <template>
@@ -215,10 +195,10 @@ watch(taskKeyword, (value) => {
         <div v-else class="mobile-task-list">
           <div class="mobile-task-filter">
             <el-tabs v-model="taskStatusFilter" class="mobile-task-tabs">
-              <el-tab-pane :label="`全部（${taskStats.all}）`" name="all" />
-              <el-tab-pane :label="`待接单（${taskStats.assigned}）`" name="assigned" />
-              <el-tab-pane :label="`配送中（${taskStats.in_progress}）`" name="in_progress" />
-              <el-tab-pane :label="`已完成（${taskStats.completed}）`" name="completed" />
+              <el-tab-pane label="全部" name="all" />
+              <el-tab-pane label="待接单" name="assigned" />
+              <el-tab-pane label="配送中" name="in_progress" />
+              <el-tab-pane label="已完成" name="completed" />
             </el-tabs>
             <el-input
               v-model.trim="taskKeyword"
@@ -227,8 +207,8 @@ watch(taskKeyword, (value) => {
               placeholder="搜索任务号/车牌/司机"
             />
           </div>
-          <el-empty v-if="filteredTasks.length === 0" description="当前筛选条件下无任务" />
-          <div v-for="task in filteredTasks" :key="task.id" class="mobile-task-item">
+          <el-empty v-if="tasks.length === 0" description="当前筛选条件下无任务" />
+          <div v-for="task in tasks" :key="task.id" class="mobile-task-item">
             <div class="mobile-task-no">{{ task.task_no }}</div>
             <div class="mobile-task-meta">
               <span>{{ getLabel(dispatchModeLabelMap, task.dispatch_mode) }}</span>

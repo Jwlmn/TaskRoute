@@ -146,4 +146,111 @@ class DispatchTaskPermissionTest extends TestCase
         $this->assertCount(5, $taskNos);
         $this->assertTrue(collect($taskNos)->every(fn ($taskNo) => str_starts_with((string) $taskNo, 'DT-SCOPE-IN-')));
     }
+
+    public function test_dispatch_task_list_can_filter_by_status_group(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        Sanctum::actingAs($dispatcher);
+
+        DispatchTask::query()->create([
+            'task_no' => 'DT-FILTER-ASSIGNED',
+            'status' => 'assigned',
+            'dispatch_mode' => 'single_vehicle_single_order',
+        ]);
+        DispatchTask::query()->create([
+            'task_no' => 'DT-FILTER-ACCEPTED',
+            'status' => 'accepted',
+            'dispatch_mode' => 'single_vehicle_single_order',
+        ]);
+        DispatchTask::query()->create([
+            'task_no' => 'DT-FILTER-INPROGRESS',
+            'status' => 'in_progress',
+            'dispatch_mode' => 'single_vehicle_single_order',
+        ]);
+        DispatchTask::query()->create([
+            'task_no' => 'DT-FILTER-COMPLETED',
+            'status' => 'completed',
+            'dispatch_mode' => 'single_vehicle_single_order',
+        ]);
+        DispatchTask::query()->create([
+            'task_no' => 'DT-FILTER-CANCELLED',
+            'status' => 'cancelled',
+            'dispatch_mode' => 'single_vehicle_single_order',
+        ]);
+
+        $response = $this->postJson('/api/v1/dispatch-task/list', [
+            'status_group' => 'in_progress',
+        ])->assertOk();
+
+        $taskNos = collect($response->json('data'))->pluck('task_no')->all();
+        $this->assertContains('DT-FILTER-ACCEPTED', $taskNos);
+        $this->assertContains('DT-FILTER-INPROGRESS', $taskNos);
+        $this->assertNotContains('DT-FILTER-ASSIGNED', $taskNos);
+        $this->assertNotContains('DT-FILTER-COMPLETED', $taskNos);
+        $this->assertNotContains('DT-FILTER-CANCELLED', $taskNos);
+    }
+
+    public function test_dispatch_task_list_can_filter_by_keyword_for_task_vehicle_and_driver(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $driver = User::factory()->create([
+            'account' => 'keyword-driver',
+            'name' => '关键司机',
+            'role' => 'driver',
+        ]);
+        $site = LogisticsSite::query()->orderBy('id')->firstOrFail();
+        Sanctum::actingAs($dispatcher);
+
+        $matchVehicle = Vehicle::query()->create([
+            'plate_number' => '沪A-KEY-001',
+            'name' => '关键字车辆',
+            'vehicle_type' => 'truck',
+            'site_id' => (int) $site->id,
+            'driver_id' => $driver->id,
+            'status' => 'idle',
+        ]);
+        $otherVehicle = Vehicle::query()->create([
+            'plate_number' => '沪A-OTHER-001',
+            'name' => '普通车辆',
+            'vehicle_type' => 'truck',
+            'site_id' => (int) $site->id,
+            'status' => 'idle',
+        ]);
+
+        DispatchTask::query()->create([
+            'task_no' => 'DT-KEYWORD-HIT',
+            'vehicle_id' => $matchVehicle->id,
+            'driver_id' => $driver->id,
+            'status' => 'assigned',
+            'dispatch_mode' => 'single_vehicle_single_order',
+        ]);
+        DispatchTask::query()->create([
+            'task_no' => 'DT-KEYWORD-MISS',
+            'vehicle_id' => $otherVehicle->id,
+            'status' => 'assigned',
+            'dispatch_mode' => 'single_vehicle_single_order',
+        ]);
+
+        $this->postJson('/api/v1/dispatch-task/list', [
+            'keyword' => 'KEYWORD-HIT',
+        ])->assertOk()
+            ->assertJsonPath('data.0.task_no', 'DT-KEYWORD-HIT');
+
+        $vehicleResponse = $this->postJson('/api/v1/dispatch-task/list', [
+            'keyword' => '关键字车辆',
+        ])->assertOk();
+        $vehicleTaskNos = collect($vehicleResponse->json('data'))->pluck('task_no')->all();
+        $this->assertContains('DT-KEYWORD-HIT', $vehicleTaskNos);
+        $this->assertNotContains('DT-KEYWORD-MISS', $vehicleTaskNos);
+
+        $driverResponse = $this->postJson('/api/v1/dispatch-task/list', [
+            'keyword' => $driver->name,
+        ])->assertOk();
+        $driverTaskNos = collect($driverResponse->json('data'))->pluck('task_no')->all();
+        $this->assertContains('DT-KEYWORD-HIT', $driverTaskNos);
+    }
 }
