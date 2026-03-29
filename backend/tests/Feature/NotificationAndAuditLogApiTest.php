@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\PrePlanOrder;
+use App\Models\DispatchTask;
 use App\Models\SystemMessage;
 use App\Models\User;
 use App\Models\CargoCategory;
@@ -109,5 +110,84 @@ class NotificationAndAuditLogApiTest extends TestCase
 
         $this->assertContains('范围内消息', $titles);
         $this->assertNotContains('范围外消息', $titles);
+    }
+
+    public function test_message_list_applies_data_scope_on_task_and_site_meta(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $siteA = \App\Models\LogisticsSite::query()->orderBy('id')->firstOrFail();
+        $siteB = \App\Models\LogisticsSite::query()->where('id', '!=', $siteA->id)->orderBy('id')->firstOrFail();
+        $dispatcher->forceFill([
+            'data_scope_type' => 'site',
+            'data_scope' => ['site_ids' => [(int) $siteA->id]],
+        ])->save();
+        Sanctum::actingAs($dispatcher);
+
+        $categoryId = (int) CargoCategory::query()->value('id');
+        $inScopeOrder = PrePlanOrder::query()->create([
+            'order_no' => 'PO-MSG-TASK-IN-001',
+            'cargo_category_id' => $categoryId,
+            'client_name' => '范围内任务订单',
+            'pickup_site_id' => (int) $siteA->id,
+            'pickup_address' => '范围内装货地',
+            'dropoff_site_id' => (int) $siteA->id,
+            'dropoff_address' => '范围内卸货地',
+            'status' => 'pending',
+            'audit_status' => 'approved',
+        ]);
+        $outScopeOrder = PrePlanOrder::query()->create([
+            'order_no' => 'PO-MSG-TASK-OUT-001',
+            'cargo_category_id' => $categoryId,
+            'client_name' => '范围外任务订单',
+            'pickup_site_id' => (int) $siteB->id,
+            'pickup_address' => '范围外装货地',
+            'dropoff_site_id' => (int) $siteB->id,
+            'dropoff_address' => '范围外卸货地',
+            'status' => 'pending',
+            'audit_status' => 'approved',
+        ]);
+
+        $inScopeTask = DispatchTask::query()->create([
+            'task_no' => 'DT-MSG-TASK-IN-001',
+            'status' => 'assigned',
+            'dispatch_mode' => 'single_vehicle_single_order',
+        ]);
+        $outScopeTask = DispatchTask::query()->create([
+            'task_no' => 'DT-MSG-TASK-OUT-001',
+            'status' => 'assigned',
+            'dispatch_mode' => 'single_vehicle_single_order',
+        ]);
+        $inScopeTask->orders()->sync([$inScopeOrder->id => ['sequence' => 1]]);
+        $outScopeTask->orders()->sync([$outScopeOrder->id => ['sequence' => 1]]);
+
+        SystemMessage::query()->create([
+            'user_id' => (int) $dispatcher->id,
+            'message_type' => 'audit_notice',
+            'title' => '任务范围内消息',
+            'content' => '应可见',
+            'meta' => ['task_id' => (int) $inScopeTask->id],
+        ]);
+        SystemMessage::query()->create([
+            'user_id' => (int) $dispatcher->id,
+            'message_type' => 'audit_notice',
+            'title' => '任务范围外消息',
+            'content' => '不应可见',
+            'meta' => ['task_id' => (int) $outScopeTask->id],
+        ]);
+        SystemMessage::query()->create([
+            'user_id' => (int) $dispatcher->id,
+            'message_type' => 'audit_notice',
+            'title' => '站点范围外消息',
+            'content' => '不应可见',
+            'meta' => ['site_ids' => [(int) $siteB->id]],
+        ]);
+
+        $response = $this->postJson('/api/v1/message/list', [])->assertOk();
+        $titles = collect($response->json('data'))->pluck('title')->values()->all();
+
+        $this->assertContains('任务范围内消息', $titles);
+        $this->assertNotContains('任务范围外消息', $titles);
+        $this->assertNotContains('站点范围外消息', $titles);
     }
 }

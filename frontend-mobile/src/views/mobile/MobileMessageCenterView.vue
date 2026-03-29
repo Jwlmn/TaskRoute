@@ -7,6 +7,12 @@ const loading = ref(false)
 const messages = ref([])
 const selectedIds = ref([])
 const pinningId = ref(null)
+const pagination = reactive({
+  page: 1,
+  per_page: 20,
+  total: 0,
+  last_page: 1,
+})
 
 const filterForm = reactive({
   keyword: '',
@@ -15,21 +21,35 @@ const filterForm = reactive({
   pinned_only: false,
 })
 
-const loadMessages = async () => {
+const loadMessages = async (page = pagination.page) => {
   loading.value = true
   try {
     const { data } = await api.post('/message/list', {
+      page,
       keyword: filterForm.keyword || undefined,
       read_status: filterForm.read_status || 'all',
       message_type: filterForm.message_type || undefined,
       pinned_only: filterForm.pinned_only || false,
     })
     messages.value = Array.isArray(data?.data) ? data.data : []
+    pagination.page = Number(data?.current_page || page || 1)
+    pagination.per_page = Number(data?.per_page || 20)
+    pagination.total = Number(data?.total || 0)
+    pagination.last_page = Number(data?.last_page || 1)
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '加载消息失败')
   } finally {
     loading.value = false
   }
+}
+
+const searchMessages = async () => {
+  pagination.page = 1
+  await loadMessages(1)
+}
+
+const changePage = async (nextPage) => {
+  await loadMessages(nextPage)
 }
 
 const onSelectionChange = (rows) => {
@@ -39,7 +59,7 @@ const onSelectionChange = (rows) => {
 const markRead = async (id) => {
   try {
     await api.post('/message/read', { id })
-    await loadMessages()
+    await loadMessages(pagination.page)
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '标记已读失败')
   }
@@ -53,7 +73,7 @@ const markReadBatch = async () => {
   try {
     await api.post('/message/read-batch', { ids: selectedIds.value })
     ElMessage.success('批量已读成功')
-    await loadMessages()
+    await loadMessages(pagination.page)
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '批量已读失败')
   }
@@ -66,7 +86,7 @@ const togglePin = async (row) => {
       id: row.id,
       is_pinned: !row.is_pinned,
     })
-    await loadMessages()
+    await loadMessages(pagination.page)
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '置顶操作失败')
   } finally {
@@ -97,7 +117,8 @@ onMounted(loadMessages)
       </el-select>
       <div class="mobile-message-actions">
         <el-checkbox v-model="filterForm.pinned_only">仅看置顶</el-checkbox>
-        <el-button size="small" type="primary" @click="loadMessages">查询</el-button>
+        <el-button size="small" type="primary" @click="searchMessages">查询</el-button>
+        <el-button size="small" plain @click="searchMessages">刷新</el-button>
         <el-button size="small" plain @click="markReadBatch">批量已读</el-button>
       </div>
     </div>
@@ -131,5 +152,17 @@ onMounted(loadMessages)
         </template>
       </el-table-column>
     </el-table>
+
+    <div class="mobile-message-pagination">
+      <el-pagination
+        small
+        background
+        layout="prev, pager, next, total"
+        :current-page="pagination.page"
+        :page-size="pagination.per_page"
+        :total="pagination.total"
+        @current-change="changePage"
+      />
+    </div>
   </el-card>
 </template>

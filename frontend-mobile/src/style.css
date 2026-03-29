@@ -398,6 +398,12 @@ body {
   gap: 4px;
 }
 
+.mobile-message-pagination {
+  margin-top: 10px;
+  display: flex;
+  justify-content: flex-end;
+}
+
 .mb-12 {
   margin-bottom: 12px;
 }
