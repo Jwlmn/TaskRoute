@@ -50,6 +50,13 @@ npm install
 npm run dev
 ```
 
+5. 运行移动端单元测试（路由权限守卫）
+
+```bash
+cd frontend-mobile
+npm test
+```
+
 ## 当前已落地能力
 
 - 多角色基础：`admin`、`dispatcher`、`driver`

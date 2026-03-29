@@ -8,6 +8,7 @@ import MobileAccountView from '../views/mobile/MobileAccountView.vue'
 import MobileMessageCenterView from '../views/mobile/MobileMessageCenterView.vue'
 import api from '../services/api'
 import { ensureAuthSession, hasPermission, readCurrentUser, readAuthToken } from '../utils/auth'
+import { createAuthGuard } from './guard'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -33,27 +34,14 @@ const router = createRouter({
   ],
 })
 
-router.beforeEach(async (to) => {
-  const token = readAuthToken()
-  let user = readCurrentUser()
-
-  if (token) {
-    user = (await ensureAuthSession(api)) || readCurrentUser()
-  }
-
-  if (to.meta.requiresAuth && !user) {
-    return { name: 'login' }
-  }
-
-  if (to.meta.guestOnly && user) {
-    return { name: 'mobile-home' }
-  }
-
-  if (to.meta.permission && !hasPermission(user, to.meta.permission)) {
-    return { name: 'mobile-home' }
-  }
-
-  return true
-})
+router.beforeEach(
+  createAuthGuard({
+    apiClient: api,
+    ensureAuthSessionFn: ensureAuthSession,
+    hasPermissionFn: hasPermission,
+    readAuthTokenFn: readAuthToken,
+    readCurrentUserFn: readCurrentUser,
+  })
+)
 
 export default router
