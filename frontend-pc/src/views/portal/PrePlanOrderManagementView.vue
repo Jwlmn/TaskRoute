@@ -45,6 +45,7 @@ const detailLoading = ref(false)
 
 const currentEditId = ref(null)
 const detailOrder = ref(null)
+const currentEditTemplateMeta = ref(null)
 
 const createFormRef = ref()
 const editFormRef = ref()
@@ -209,6 +210,23 @@ const formatDateTime = (value) => {
   return `${yyyy}-${mm}-${dd} ${hh}:${mi}`
 }
 
+const getFreightTemplateMeta = (row) => {
+  const meta = row?.meta
+  if (!meta || typeof meta !== 'object') return null
+  const templateId = meta.freight_template_id
+  const templateName = meta.freight_template_name
+  if (!templateId && !templateName) return null
+  return {
+    id: templateId || null,
+    name: templateName || '-',
+  }
+}
+
+const formatFreightTemplateLabel = (row) => {
+  const template = getFreightTemplateMeta(row)
+  return template?.name || '未命中模板'
+}
+
 const resetCreateForm = () => {
   createForm.cargo_category_id = null
   createForm.client_name = ''
@@ -256,6 +274,7 @@ const resetEditForm = () => {
   editForm.expected_delivery_at = ''
   editForm.status = ''
   currentEditId.value = null
+  currentEditTemplateMeta.value = null
   editFormRef.value?.clearValidate()
 }
 
@@ -487,6 +506,7 @@ const downloadImportTemplate = async () => {
 const openEditDialog = (row) => {
   resetEditForm()
   currentEditId.value = row.id
+  currentEditTemplateMeta.value = getFreightTemplateMeta(row)
   fillOrderForm(editForm, row)
   editForm.status = row.status
   editDialogVisible.value = true
@@ -1244,6 +1264,14 @@ onMounted(() => {
           {{ getLabel(freightSchemeLabelMap, row.freight_calc_scheme) }}
         </template>
       </el-table-column>
+      <el-table-column label="命中模板" min-width="180">
+        <template #default="{ row }">
+          <el-tag v-if="getFreightTemplateMeta(row)" type="success" effect="light">
+            {{ formatFreightTemplateLabel(row) }}
+          </el-tag>
+          <span v-else class="text-secondary">未命中模板</span>
+        </template>
+      </el-table-column>
       <el-table-column label="已算运费(元)" min-width="120">
         <template #default="{ row }">
           <div>{{ row.freight_amount ?? '-' }}</div>
@@ -1418,6 +1446,12 @@ onMounted(() => {
           <el-descriptions-item label="卸货地">{{ detailOrder.dropoff_address || '-' }}</el-descriptions-item>
           <el-descriptions-item label="状态">{{ getLabel(taskStatusLabelMap, detailOrder.status) }}</el-descriptions-item>
           <el-descriptions-item label="审核">{{ getLabel(auditStatusLabelMap, detailOrder.audit_status) }}</el-descriptions-item>
+          <el-descriptions-item label="命中模板">
+            {{ formatFreightTemplateLabel(detailOrder) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="模板ID">
+            {{ getFreightTemplateMeta(detailOrder)?.id || '-' }}
+          </el-descriptions-item>
         </el-descriptions>
         <el-divider content-position="left">操作日志</el-divider>
         <el-table :data="detailHistory" size="small" stripe>
@@ -1511,6 +1545,13 @@ onMounted(() => {
 
   <el-dialog v-model="createDialogVisible" title="新建预计划单" width="680px" destroy-on-close>
     <el-form ref="createFormRef" :model="createForm" :rules="formRules" label-width="120px">
+      <el-alert
+        class="mb-12"
+        type="info"
+        :closable="false"
+        show-icon
+        title="保存后系统会按客户、站点、地址和货品分类自动匹配运价模板。"
+      />
       <el-row :gutter="12">
         <el-col :span="12">
           <el-form-item label="货品分类" prop="cargo_category_id">
@@ -1728,6 +1769,13 @@ onMounted(() => {
 
   <el-dialog v-model="editDialogVisible" title="编辑预计划单" width="680px" destroy-on-close>
     <el-form ref="editFormRef" :model="editForm" :rules="formRules" label-width="120px">
+      <el-alert
+        class="mb-12"
+        type="info"
+        :closable="false"
+        show-icon
+        :title="currentEditTemplateMeta ? `当前命中模板：${currentEditTemplateMeta.name}` : '当前未命中模板，保存后系统会重新按规则匹配。'"
+      />
       <el-row :gutter="12">
         <el-col :span="12">
           <el-form-item label="货品分类" prop="cargo_category_id">
