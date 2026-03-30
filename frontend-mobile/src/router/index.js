@@ -1,14 +1,15 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import LoginView from '../views/LoginView.vue'
-import MobileLayoutView from '../views/mobile/MobileLayoutView.vue'
-import MobileHomeView from '../views/mobile/MobileHomeView.vue'
-import MobileTaskListView from '../views/mobile/MobileTaskListView.vue'
-import MobileTaskDetailView from '../views/mobile/MobileTaskDetailView.vue'
-import MobileAccountView from '../views/mobile/MobileAccountView.vue'
-import MobileMessageCenterView from '../views/mobile/MobileMessageCenterView.vue'
 import api from '../services/api'
 import { ensureAuthSession, hasPermission, readCurrentUser, readAuthToken } from '../utils/auth'
 import { createAuthGuard } from './guard'
+
+const LoginView = () => import('../views/LoginView.vue')
+const MobileLayoutView = () => import('../views/mobile/MobileLayoutView.vue')
+const MobileHomeView = () => import('../views/mobile/MobileHomeView.vue')
+const MobileTaskListView = () => import('../views/mobile/MobileTaskListView.vue')
+const MobileTaskDetailView = () => import('../views/mobile/MobileTaskDetailView.vue')
+const MobileAccountView = () => import('../views/mobile/MobileAccountView.vue')
+const MobileMessageCenterView = () => import('../views/mobile/MobileMessageCenterView.vue')
 
 const router = createRouter({
   history: createWebHistory(),

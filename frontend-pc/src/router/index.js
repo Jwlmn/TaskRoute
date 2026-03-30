@@ -1,21 +1,22 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import LoginView from '../views/LoginView.vue'
-import PortalLayoutView from '../views/portal/PortalLayoutView.vue'
-import DashboardHomeView from '../views/portal/DashboardHomeView.vue'
-import DispatchWorkbenchView from '../views/portal/DispatchWorkbenchView.vue'
-import ExceptionTaskManagementView from '../views/portal/ExceptionTaskManagementView.vue'
-import PrePlanOrderManagementView from '../views/portal/PrePlanOrderManagementView.vue'
-import CustomerPrePlanOrderView from '../views/portal/CustomerPrePlanOrderView.vue'
-import MobileTaskCenterView from '../views/portal/MobileTaskCenterView.vue'
-import VehicleManagementView from '../views/portal/VehicleManagementView.vue'
-import PersonnelManagementView from '../views/portal/PersonnelManagementView.vue'
-import SiteManagementView from '../views/portal/SiteManagementView.vue'
-import FreightTemplateManagementView from '../views/portal/FreightTemplateManagementView.vue'
-import SettlementManagementView from '../views/portal/SettlementManagementView.vue'
-import NotificationCenterView from '../views/portal/NotificationCenterView.vue'
-import OrderAuditLogView from '../views/portal/OrderAuditLogView.vue'
 import api from '../services/api'
 import { ensureAuthSession, hasPermission, readAuthToken, readCurrentUser } from '../utils/auth'
+
+const LoginView = () => import('../views/LoginView.vue')
+const PortalLayoutView = () => import('../views/portal/PortalLayoutView.vue')
+const DashboardHomeView = () => import('../views/portal/DashboardHomeView.vue')
+const DispatchWorkbenchView = () => import('../views/portal/DispatchWorkbenchView.vue')
+const ExceptionTaskManagementView = () => import('../views/portal/ExceptionTaskManagementView.vue')
+const PrePlanOrderManagementView = () => import('../views/portal/PrePlanOrderManagementView.vue')
+const CustomerPrePlanOrderView = () => import('../views/portal/CustomerPrePlanOrderView.vue')
+const MobileTaskCenterView = () => import('../views/portal/MobileTaskCenterView.vue')
+const VehicleManagementView = () => import('../views/portal/VehicleManagementView.vue')
+const PersonnelManagementView = () => import('../views/portal/PersonnelManagementView.vue')
+const SiteManagementView = () => import('../views/portal/SiteManagementView.vue')
+const FreightTemplateManagementView = () => import('../views/portal/FreightTemplateManagementView.vue')
+const SettlementManagementView = () => import('../views/portal/SettlementManagementView.vue')
+const NotificationCenterView = () => import('../views/portal/NotificationCenterView.vue')
+const OrderAuditLogView = () => import('../views/portal/OrderAuditLogView.vue')
 
 const router = createRouter({
   history: createWebHistory(),
