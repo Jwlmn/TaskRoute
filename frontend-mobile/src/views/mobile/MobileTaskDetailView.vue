@@ -1,8 +1,15 @@
 <script setup>
-import { onMounted, onUnmounted, reactive, ref } from 'vue'
+import { onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '../../services/api'
+import {
+  buildUploadWarningMessage,
+  canOperateTaskDetail,
+  hasPendingTaskException,
+  resolveTaskIdParam,
+  shouldShowAcceptTaskTip,
+} from '../../utils/mobileTaskDetail'
 
 const route = useRoute()
 const router = useRouter()
@@ -113,10 +120,9 @@ const getWaypointDocumentGroups = (waypoint) => {
 const getGroupImageIndex = (group, doc) =>
   (group?.imageUrls || []).findIndex((url) => url === doc?.meta?.url)
 
-const hasPendingException = () => detail.value?.route_meta?.exception?.status === 'pending'
-const canOperateTask = () =>
-  ['accepted', 'in_progress'].includes(detail.value?.status) && !hasPendingException()
-const shouldShowAcceptTip = () => detail.value?.status === 'assigned'
+const hasPendingException = () => hasPendingTaskException(detail.value)
+const canOperateTask = () => canOperateTaskDetail(detail.value)
+const shouldShowAcceptTip = () => shouldShowAcceptTaskTip(detail.value)
 const handledException = () => {
   if (detail.value?.route_meta?.exception?.status !== 'handled') return null
   return detail.value.route_meta.exception
@@ -239,7 +245,7 @@ const reportCurrentLocation = async (taskId) => {
   }
 }
 
-const taskId = () => Number(route.params.id)
+const taskId = () => resolveTaskIdParam(route.params.id)
 
 const resetExceptionPolling = () => {
   if (exceptionPollingTimer) {
@@ -258,11 +264,19 @@ const setupExceptionPolling = () => {
 }
 
 const loadDetail = async ({ silent = false } = {}) => {
+  const currentTaskId = taskId()
+  if (!currentTaskId) {
+    if (!silent) {
+      ElMessage.error('任务参数无效')
+      await router.replace({ name: 'mobile-tasks' })
+    }
+    return
+  }
   if (!silent) {
     detailLoading.value = true
   }
   try {
-    const { data } = await api.post('/driver-task/detail', { task_id: taskId() })
+    const { data } = await api.post('/driver-task/detail', { task_id: currentTaskId })
     detail.value = data
     syncUploadForms()
     setupExceptionPolling()
@@ -279,7 +293,7 @@ const loadDetail = async ({ silent = false } = {}) => {
 }
 
 const arriveWaypoint = async (waypointId) => {
-  if (!detail.value?.id) return
+  if (!detail.value?.id || actionLoading.value) return
   actionLoading.value = true
   try {
     await api.post('/driver-task/waypoint-arrive', {
@@ -297,7 +311,7 @@ const arriveWaypoint = async (waypointId) => {
 }
 
 const completeWaypoint = async (waypointId) => {
-  if (!detail.value?.id) return
+  if (!detail.value?.id || actionLoading.value) return
   actionLoading.value = true
   try {
     await api.post('/driver-task/waypoint-complete', {
@@ -315,9 +329,9 @@ const completeWaypoint = async (waypointId) => {
 }
 
 const uploadDocument = async (waypointId) => {
-  if (!detail.value?.id) return
+  if (!detail.value?.id || actionLoading.value) return
   if (!canOperateTask()) {
-    ElMessage.warning(hasPendingException() ? '异常处理中，暂不可上传单据' : '请先接单后再上传单据')
+    ElMessage.warning(buildUploadWarningMessage(detail.value))
     return
   }
   const form = ensureUploadForm(waypointId)
@@ -355,6 +369,7 @@ const uploadDocument = async (waypointId) => {
 }
 
 const openExceptionDialog = () => {
+  if (actionLoading.value) return
   if (hasPendingException()) {
     ElMessage.warning('当前异常待处理，请勿重复上报')
     return
@@ -367,7 +382,7 @@ const openExceptionDialog = () => {
 }
 
 const submitException = async () => {
-  if (!detail.value?.id) return
+  if (!detail.value?.id || actionLoading.value) return
   if (!String(exceptionForm.description || '').trim()) {
     ElMessage.warning('请填写异常说明')
     return
@@ -394,6 +409,15 @@ const submitException = async () => {
 onMounted(() => {
   loadDetail()
 })
+
+watch(
+  () => route.params.id,
+  (nextId, previousId) => {
+    if (nextId === previousId) return
+    detail.value = null
+    loadDetail()
+  },
+)
 
 onUnmounted(() => {
   resetExceptionPolling()
@@ -427,6 +451,8 @@ onUnmounted(() => {
       <el-skeleton-item variant="text" style="height: 72px; margin-bottom: 10px" />
     </template>
     <template #default>
+      <el-empty v-if="!detail" description="暂无任务详情" />
+      <template v-else>
       <el-descriptions :column="1" border size="small" class="mb-12">
         <el-descriptions-item label="任务号">{{ detail?.task_no || '-' }}</el-descriptions-item>
         <el-descriptions-item label="状态">{{ getLabel(taskStatusLabelMap, detail?.status) }}</el-descriptions-item>
@@ -629,6 +655,7 @@ onUnmounted(() => {
           </div>
         </div>
       </el-card>
+      </template>
     </template>
   </el-skeleton>
 
