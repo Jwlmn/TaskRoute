@@ -1,12 +1,13 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '../../services/api'
 import { readCurrentUser } from '../../utils/auth'
 import { getLabel, taskStatusLabelMap } from '../../utils/labels'
 
 const router = useRouter()
+const route = useRoute()
 const loadingExceptions = ref(false)
 const handlingException = ref(false)
 const exceptionTasks = ref([])
@@ -325,6 +326,7 @@ const jumpToDispatchTask = async () => {
       task_no: selectedExceptionTask.value.task_no || '',
       focus_task_id: String(selectedExceptionTask.value.id),
       open_orders: '1',
+      open_exception_return: '1',
     },
   })
 }
@@ -345,8 +347,19 @@ const jumpToPrePlanOrder = async () => {
   })
 }
 
+const openExceptionDetailFromRoute = () => {
+  if (route.query.open_detail !== '1') return
+  const focusTaskId = Number(route.query.focus_task_id || 0)
+  if (!focusTaskId) return
+  const matchedTask = exceptionTasks.value.find((item) => item.id === focusTaskId)
+  if (!matchedTask) return
+  selectedExceptionTask.value = matchedTask
+  exceptionDetailDialogVisible.value = true
+}
+
 onMounted(async () => {
   await loadExceptionTasks()
+  openExceptionDetailFromRoute()
 })
 </script>
 

@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '../../services/api'
 import {
@@ -11,6 +11,7 @@ import {
 import { exportRowsToXlsx } from '../../utils/spreadsheet'
 
 const route = useRoute()
+const router = useRouter()
 
 const prePlanOrders = ref([])
 const dispatchTasks = ref([])
@@ -173,6 +174,16 @@ const getTaskExceptionSummary = (task) => {
   return ''
 }
 const getTaskRowClassName = ({ row }) => (isFocusedTask(row) ? 'dispatch-task-focused-row' : '')
+const jumpBackToExceptionDetail = async () => {
+  if (!focusedTaskId.value) return
+  await router.push({
+    name: 'exception-task-management',
+    query: {
+      focus_task_id: String(focusedTaskId.value),
+      open_detail: '1',
+    },
+  })
+}
 
 const exportTaskOrders = async () => {
   if (!taskOrders.value.length) {
@@ -299,7 +310,20 @@ onMounted(async () => {
       show-icon
       :title="`已按联动任务定位：#${focusedTaskId}`"
       description="列表中的高亮行是当前通知或异常跳转过来的目标任务。"
-    />
+    >
+      <template #default>
+        <div>列表中的高亮行是当前通知或异常跳转过来的目标任务。</div>
+        <el-button
+          v-if="route.query.open_exception_return === '1'"
+          link
+          type="primary"
+          class="mt-8"
+          @click="jumpBackToExceptionDetail"
+        >
+          返回异常详情
+        </el-button>
+      </template>
+    </el-alert>
     <el-table :data="dispatchTasks" stripe v-loading="loadingTasks" :row-class-name="getTaskRowClassName">
       <el-table-column prop="task_no" label="任务编号" min-width="180" />
       <el-table-column label="派单模式" min-width="180">
