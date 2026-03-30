@@ -1,7 +1,8 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../../services/api'
+import { readCurrentUser } from '../../utils/auth'
 import { getLabel, taskStatusLabelMap } from '../../utils/labels'
 
 const loadingExceptions = ref(false)
@@ -22,7 +23,10 @@ const filterForm = ref({
   task_no: '',
   exception_type: '',
   handle_action: '',
+  handled_by_keyword: '',
+  handled_by_me: false,
 })
+const currentUser = readCurrentUser()
 
 const exceptionTypeLabelMap = {
   vehicle_breakdown: '车辆故障',
@@ -78,6 +82,14 @@ const currentExceptionHistory = computed(() => {
 })
 const selectedTaskOrders = computed(() => Array.isArray(selectedExceptionTask.value?.orders) ? selectedExceptionTask.value.orders : [])
 
+watch(() => filterForm.value.status, (status) => {
+  if (status !== 'handled') {
+    filterForm.value.handle_action = ''
+    filterForm.value.handled_by_keyword = ''
+    filterForm.value.handled_by_me = false
+  }
+})
+
 const loadExceptionTasks = async () => {
   loadingExceptions.value = true
   try {
@@ -87,6 +99,12 @@ const loadExceptionTasks = async () => {
     if (filterForm.value.task_no.trim()) payload.task_no = filterForm.value.task_no.trim()
     if (filterForm.value.exception_type) payload.exception_type = filterForm.value.exception_type
     if (filterForm.value.handle_action && payload.status === 'handled') payload.handle_action = filterForm.value.handle_action
+    if (payload.status === 'handled' && filterForm.value.handled_by_keyword.trim()) {
+      payload.handled_by_keyword = filterForm.value.handled_by_keyword.trim()
+    }
+    if (payload.status === 'handled' && filterForm.value.handled_by_me) {
+      payload.handled_by_me = true
+    }
 
     const { data } = await api.post('/dispatch-task/exception-list', payload)
     exceptionTasks.value = Array.isArray(data?.data) ? data.data : []
@@ -192,6 +210,22 @@ onMounted(async () => {
           />
         </el-select>
       </el-form-item>
+      <el-form-item v-if="filterForm.status === 'handled'" label="处理人">
+        <el-input
+          v-model="filterForm.handled_by_keyword"
+          clearable
+          placeholder="账号或姓名"
+          style="width: 180px"
+        />
+      </el-form-item>
+      <el-form-item v-if="filterForm.status === 'handled'">
+        <el-checkbox v-model="filterForm.handled_by_me">
+          仅看我处理
+          <span v-if="currentUser?.name || currentUser?.account">
+            （{{ currentUser?.name || currentUser?.account }}）
+          </span>
+        </el-checkbox>
+      </el-form-item>
       <el-form-item>
         <el-button type="primary" @click="loadExceptionTasks">查询</el-button>
       </el-form-item>
@@ -244,6 +278,17 @@ onMounted(async () => {
             {{ getLabel(exceptionActionLabelMap, row.route_meta?.exception?.handle_action) }}
           </el-tag>
           <span v-else>-</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="处理人" min-width="160">
+        <template #default="{ row }">
+          {{
+            formatOperator(
+              row.route_meta?.exception?.handled_by_name,
+              row.route_meta?.exception?.handled_by_account,
+              row.route_meta?.exception?.handled_by,
+            )
+          }}
         </template>
       </el-table-column>
       <el-table-column label="操作" width="160" fixed="right">

@@ -234,12 +234,17 @@ class DispatchTaskController extends Controller
             'task_no' => ['nullable', 'string', 'max:100'],
             'exception_type' => ['nullable', 'in:vehicle_breakdown,traffic_jam,customer_reject,address_change,goods_damage,other'],
             'handle_action' => ['nullable', 'in:continue,cancel,reassign'],
+            'handled_by_keyword' => ['nullable', 'string', 'max:100'],
+            'handled_by_me' => ['nullable', 'boolean'],
         ]);
 
         $targetStatus = $payload['status'] ?? 'pending';
         $keyword = trim((string) ($payload['task_no'] ?? ''));
         $exceptionType = $payload['exception_type'] ?? null;
         $handleAction = $payload['handle_action'] ?? null;
+        $handledByKeyword = trim((string) ($payload['handled_by_keyword'] ?? ''));
+        $handledByMe = (bool) ($payload['handled_by_me'] ?? false);
+        $currentUserId = (int) ($request->user()?->id ?? 0);
 
         $tasks = $this->dataScopeService->applyDispatchTaskScope(DispatchTask::query(), $request->user())
             ->with([
@@ -249,7 +254,7 @@ class DispatchTaskController extends Controller
             ])
             ->latest()
             ->get()
-            ->filter(function (DispatchTask $task) use ($targetStatus, $keyword, $exceptionType, $handleAction): bool {
+            ->filter(function (DispatchTask $task) use ($targetStatus, $keyword, $exceptionType, $handleAction, $handledByKeyword, $handledByMe, $currentUserId): bool {
                 if ($keyword !== '' && ! str_contains((string) $task->task_no, $keyword)) {
                     return false;
                 }
@@ -265,6 +270,16 @@ class DispatchTaskController extends Controller
                 }
                 if ($handleAction && ($exception['handle_action'] ?? null) !== $handleAction) {
                     return false;
+                }
+                if ($handledByMe && ($exception['handled_by'] ?? null) !== $currentUserId) {
+                    return false;
+                }
+                if ($handledByKeyword !== '') {
+                    $handledByName = (string) ($exception['handled_by_name'] ?? '');
+                    $handledByAccount = (string) ($exception['handled_by_account'] ?? '');
+                    if (! str_contains($handledByName, $handledByKeyword) && ! str_contains($handledByAccount, $handledByKeyword)) {
+                        return false;
+                    }
                 }
 
                 return true;
