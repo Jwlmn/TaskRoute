@@ -565,6 +565,7 @@ const openDetailDialog = async (row) => {
 
 const applyRouteFilters = () => {
   filterForm.keyword = typeof route.query.keyword === 'string' ? route.query.keyword : ''
+  filterForm.audit_status = typeof route.query.audit_status === 'string' ? route.query.audit_status : ''
 }
 
 const openDetailFromRoute = async () => {

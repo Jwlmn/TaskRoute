@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '../../services/api'
 import { hasPermission, readCurrentUser } from '../../utils/auth'
@@ -18,6 +19,7 @@ import {
   sortNotificationMessages,
 } from '../../utils/prePlanOrder'
 
+const router = useRouter()
 const loading = ref(false)
 const pinningId = ref(null)
 const messages = ref([])
@@ -134,6 +136,15 @@ const openOrderDetail = async (row) => {
   }
 }
 
+const goToAuditPendingOrders = async () => {
+  await router.push({
+    name: 'pre-plan-order-management',
+    query: {
+      audit_status: 'pending_approval',
+    },
+  })
+}
+
 onMounted(loadMessages)
 </script>
 
@@ -218,6 +229,15 @@ onMounted(loadMessages)
       <el-table-column label="操作" min-width="220" fixed="right">
         <template #default="{ row }">
           <el-button
+            v-if="row.message_type === 'audit_reminder'"
+            link
+            type="primary"
+            @click="goToAuditPendingOrders"
+          >
+            前往待审核清单
+          </el-button>
+          <el-button
+            v-else
             link
             type="info"
             :disabled="!row?.meta?.order_id || !resolveOrderDetailEndpoint()"
