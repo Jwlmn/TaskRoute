@@ -149,6 +149,11 @@ class SettlementAndTemplateApiTest extends TestCase
             'freight_calc_scheme' => 'by_weight',
             'freight_unit_price' => 20,
         ])->assertStatus(403);
+
+        $this->postJson('/api/v1/freight-template/update', [
+            'id' => $outScopeTemplate->id,
+            'is_active' => false,
+        ])->assertNotFound();
     }
 
     public function test_pre_plan_order_prefers_site_specific_freight_template(): void

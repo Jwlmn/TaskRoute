@@ -79,8 +79,11 @@ class FreightRateTemplateController extends Controller
 
     public function update(Request $request): JsonResponse
     {
-        $payload = $this->validatePayload($request, true);
-        $template = $this->scopedTemplateQuery($request)->findOrFail((int) $payload['id']);
+        $idPayload = $request->validate([
+            'id' => ['required', 'integer', 'exists:freight_rate_templates,id'],
+        ]);
+        $template = $this->scopedTemplateQuery($request)->findOrFail((int) $idPayload['id']);
+        $payload = $this->validatePayload($request, true, $template);
         $targetPickupSiteId = array_key_exists('pickup_site_id', $payload) ? $payload['pickup_site_id'] : $template->pickup_site_id;
         $targetDropoffSiteId = array_key_exists('dropoff_site_id', $payload) ? $payload['dropoff_site_id'] : $template->dropoff_site_id;
         if (! $this->dataScopeService->canAccessSites($request->user(), [$targetPickupSiteId, $targetDropoffSiteId])) {
@@ -117,7 +120,7 @@ class FreightRateTemplateController extends Controller
         ]);
     }
 
-    private function validatePayload(Request $request, bool $forUpdate = false): array
+    private function validatePayload(Request $request, bool $forUpdate = false, ?FreightRateTemplate $existing = null): array
     {
         $rules = [
             'name' => $forUpdate ? ['sometimes', 'required', 'string', 'max:100'] : ['required', 'string', 'max:100'],
@@ -141,10 +144,6 @@ class FreightRateTemplateController extends Controller
         }
 
         $payload = $request->validate($rules);
-        $existing = null;
-        if ($forUpdate) {
-            $existing = FreightRateTemplate::query()->findOrFail((int) $payload['id']);
-        }
 
         $scheme = (string) ($payload['freight_calc_scheme'] ?? $existing?->freight_calc_scheme ?? '');
         $unitPrice = array_key_exists('freight_unit_price', $payload) ? $payload['freight_unit_price'] : $existing?->freight_unit_price;
