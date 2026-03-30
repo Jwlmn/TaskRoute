@@ -80,3 +80,10 @@ export const sortNotificationMessages = (rawMessages, options = {}) => {
     return String(b?.created_at || '').localeCompare(String(a?.created_at || ''))
   })
 }
+
+export const loadRevisionCompareDiffs = async (httpClient, orderId) => {
+  if (!httpClient || !orderId) return []
+
+  const response = await httpClient.post('/pre-plan-order/revision-compare', { id: orderId })
+  return Array.isArray(response?.data?.diffs) ? response.data.diffs : []
+}

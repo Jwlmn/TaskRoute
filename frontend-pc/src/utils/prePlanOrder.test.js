@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   formatFreightTemplateLabel,
   getFreightTemplateMeta,
+  loadRevisionCompareDiffs,
   sortNotificationMessages,
 } from './prePlanOrder'
 
@@ -60,5 +61,21 @@ describe('prePlanOrder utils', () => {
     })
 
     expect(sorted.map((item) => item.id)).toEqual([3, 2, 1])
+  })
+
+  it('loadRevisionCompareDiffs returns normalized compare rows', async () => {
+    const httpClient = {
+      post: async (url, payload) => ({
+        data: {
+          url,
+          payload,
+          diffs: [{ field: 'pickup_address', before: '旧地址', after: '新地址' }],
+        },
+      }),
+    }
+
+    await expect(loadRevisionCompareDiffs(httpClient, 101)).resolves.toEqual([
+      { field: 'pickup_address', before: '旧地址', after: '新地址' },
+    ])
   })
 })

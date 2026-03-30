@@ -9,6 +9,7 @@ import {
   auditStatusLabelMap,
   auditStatusTypeMap,
   formatDateTime,
+  loadRevisionCompareDiffs,
   sortNotificationMessages,
 } from '../../utils/prePlanOrder'
 
@@ -121,8 +122,7 @@ const openOrderDetail = async (row) => {
     if (data?.audit_status === 'rejected') {
       detailCompareLoading.value = true
       try {
-        const compareResponse = await api.post('/pre-plan-order/revision-compare', { id: orderId })
-        detailCompareRows.value = Array.isArray(compareResponse?.data?.diffs) ? compareResponse.data.diffs : []
+        detailCompareRows.value = await loadRevisionCompareDiffs(api, orderId)
       } finally {
         detailCompareLoading.value = false
       }
