@@ -23,6 +23,10 @@ class SettlementStatement extends Model
         'created_by',
         'confirmed_by',
         'confirmed_at',
+        'invoiced_by',
+        'invoiced_at',
+        'paid_by',
+        'paid_at',
         'remark',
         'meta',
     ];
@@ -33,6 +37,8 @@ class SettlementStatement extends Model
             'period_start' => 'date',
             'period_end' => 'date',
             'confirmed_at' => 'datetime',
+            'invoiced_at' => 'datetime',
+            'paid_at' => 'datetime',
             'meta' => 'array',
         ];
     }
@@ -45,5 +51,15 @@ class SettlementStatement extends Model
     public function confirmer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'confirmed_by');
+    }
+
+    public function invoicer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'invoiced_by');
+    }
+
+    public function payer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'paid_by');
     }
 }

@@ -286,13 +286,18 @@ class SettlementAndTemplateApiTest extends TestCase
             'id' => $statement->id,
             'status' => 'invoiced',
         ])->assertOk()
-            ->assertJsonPath('status', 'invoiced');
+            ->assertJsonPath('status', 'invoiced')
+            ->assertJsonPath('invoiced_by', $dispatcher->id);
 
-        $this->postJson('/api/v1/settlement/update', [
+        $paidResponse = $this->postJson('/api/v1/settlement/update', [
             'id' => $statement->id,
             'status' => 'paid',
         ])->assertOk()
-            ->assertJsonPath('status', 'paid');
+            ->assertJsonPath('status', 'paid')
+            ->assertJsonPath('paid_by', $dispatcher->id);
+
+        $this->assertNotNull($paidResponse->json('invoiced_at'));
+        $this->assertNotNull($paidResponse->json('paid_at'));
 
         $this->postJson('/api/v1/settlement/update', [
             'id' => $statement->id,
@@ -337,6 +342,55 @@ class SettlementAndTemplateApiTest extends TestCase
         $this->assertSame(
             Carbon::parse($originalConfirmedAt)->toIso8601String(),
             Carbon::parse((string) $response->json('confirmed_at'))->toIso8601String()
+        );
+    }
+
+    public function test_settlement_repeat_invoiced_and_paid_keep_original_audit_info(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        Sanctum::actingAs($dispatcher);
+
+        $statement = SettlementStatement::query()->create([
+            'statement_no' => 'ST-FLOW-003',
+            'client_name' => '开票回款幂等客户',
+            'period_start' => now()->subDays(2)->toDateString(),
+            'period_end' => now()->toDateString(),
+            'order_count' => 1,
+            'total_base_amount' => 1000,
+            'total_loss_deduct_amount' => 0,
+            'total_freight_amount' => 1000,
+            'status' => 'paid',
+            'created_by' => $dispatcher->id,
+            'confirmed_by' => $dispatcher->id,
+            'confirmed_at' => now()->subHours(3),
+            'invoiced_by' => $dispatcher->id,
+            'invoiced_at' => now()->subHours(2),
+            'paid_by' => $dispatcher->id,
+            'paid_at' => now()->subHour(),
+            'meta' => ['order_ids' => []],
+        ]);
+
+        $originalInvoicedAt = $statement->invoiced_at?->toDateTimeString();
+        $originalPaidAt = $statement->paid_at?->toDateTimeString();
+
+        $paidResponse = $this->postJson('/api/v1/settlement/update', [
+            'id' => $statement->id,
+            'status' => 'paid',
+            'remark' => '再次保存',
+        ])->assertOk()
+            ->assertJsonPath('status', 'paid')
+            ->assertJsonPath('remark', '再次保存')
+            ->assertJsonPath('invoiced_by', $dispatcher->id)
+            ->assertJsonPath('paid_by', $dispatcher->id);
+
+        $this->assertSame(
+            Carbon::parse($originalInvoicedAt)->toIso8601String(),
+            Carbon::parse((string) $paidResponse->json('invoiced_at'))->toIso8601String()
+        );
+        $this->assertSame(
+            Carbon::parse($originalPaidAt)->toIso8601String(),
+            Carbon::parse((string) $paidResponse->json('paid_at'))->toIso8601String()
         );
     }
 }

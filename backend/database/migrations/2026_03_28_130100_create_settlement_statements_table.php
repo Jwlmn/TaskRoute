@@ -22,6 +22,10 @@ return new class extends Migration
             $table->foreignId('created_by')->constrained('users')->cascadeOnDelete();
             $table->foreignId('confirmed_by')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamp('confirmed_at')->nullable();
+            $table->foreignId('invoiced_by')->nullable()->constrained('users')->nullOnDelete();
+            $table->timestamp('invoiced_at')->nullable();
+            $table->foreignId('paid_by')->nullable()->constrained('users')->nullOnDelete();
+            $table->timestamp('paid_at')->nullable();
             $table->string('remark', 255)->nullable();
             $table->json('meta')->nullable();
             $table->timestamps();

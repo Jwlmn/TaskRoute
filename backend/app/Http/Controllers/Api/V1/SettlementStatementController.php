@@ -136,6 +136,14 @@ class SettlementStatementController extends Controller
                 $statement->confirmed_at = now();
                 $statement->confirmed_by = (int) $request->user()->id;
             }
+            if ($nextStatus === 'invoiced' && ! $statement->invoiced_at) {
+                $statement->invoiced_at = now();
+                $statement->invoiced_by = (int) $request->user()->id;
+            }
+            if ($nextStatus === 'paid' && ! $statement->paid_at) {
+                $statement->paid_at = now();
+                $statement->paid_by = (int) $request->user()->id;
+            }
         }
         if (array_key_exists('remark', $payload)) {
             $statement->remark = $payload['remark'];
