@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../../services/api'
 import { getLabel } from '../../utils/labels'
@@ -17,6 +17,10 @@ const orders = ref([])
 const messages = ref([])
 const unreadOnly = ref(true)
 const cargoCategories = ref([])
+const templatePreview = ref(null)
+const previewingTemplate = ref(false)
+
+let templatePreviewTimer = null
 
 const freightSchemeLabelMap = {
   by_weight: '按重量',
@@ -78,6 +82,55 @@ const resetForm = () => {
   form.actual_delivered_weight_kg = null
   form.loss_allowance_kg = 0
   form.loss_deduct_unit_price = null
+  templatePreview.value = null
+}
+
+const buildTemplatePreviewPayload = () => ({
+  client_name: form.client_name?.trim() || null,
+  cargo_category_id: form.cargo_category_id || null,
+  pickup_address: form.pickup_address?.trim() || null,
+  dropoff_address: form.dropoff_address?.trim() || null,
+})
+
+const canPreviewTemplate = (payload) => (
+  !!payload.client_name
+  && !!payload.cargo_category_id
+  && !!payload.pickup_address
+  && !!payload.dropoff_address
+)
+
+const formatTemplatePreviewText = (template) => {
+  if (!template) return '未命中模板'
+  const siteTags = [
+    template.pickup_site?.name ? `装货站点:${template.pickup_site.name}` : null,
+    template.dropoff_site?.name ? `卸货站点:${template.dropoff_site.name}` : null,
+  ].filter(Boolean)
+  return siteTags.length ? `${template.name}（${siteTags.join(' / ')}）` : template.name
+}
+
+const requestTemplatePreview = async () => {
+  const payload = buildTemplatePreviewPayload()
+  if (!canPreviewTemplate(payload)) {
+    templatePreview.value = null
+    return
+  }
+
+  previewingTemplate.value = true
+  try {
+    const { data } = await api.post('/freight-template/match-preview', payload)
+    templatePreview.value = data?.matched ? data.template : null
+  } catch {
+    templatePreview.value = null
+  } finally {
+    previewingTemplate.value = false
+  }
+}
+
+const scheduleTemplatePreview = () => {
+  if (templatePreviewTimer) clearTimeout(templatePreviewTimer)
+  templatePreviewTimer = setTimeout(() => {
+    requestTemplatePreview()
+  }, 250)
 }
 
 const buildPayload = () => ({
@@ -111,6 +164,12 @@ const openCreate = () => {
 const openEdit = (row) => {
   if (row.audit_status !== 'rejected') return
   dialogMode.value = 'edit'
+  templatePreview.value = row?.meta?.freight_template_id || row?.meta?.freight_template_name
+    ? {
+        id: row.meta.freight_template_id || null,
+        name: row.meta.freight_template_name || '未命名模板',
+      }
+    : null
   form.id = row.id
   form.cargo_category_id = row.cargo_category_id
   form.client_name = row.client_name || ''
@@ -226,6 +285,24 @@ const openRevisionCompare = async (row) => {
 
 onMounted(async () => {
   await Promise.all([loadMeta(), loadOrders(), loadMessages()])
+})
+
+watch(
+  () => [
+    dialogVisible.value,
+    form.client_name,
+    form.cargo_category_id,
+    form.pickup_address,
+    form.dropoff_address,
+  ],
+  ([visible]) => {
+    if (!visible) return
+    scheduleTemplatePreview()
+  }
+)
+
+onUnmounted(() => {
+  if (templatePreviewTimer) clearTimeout(templatePreviewTimer)
 })
 </script>
 
@@ -359,6 +436,14 @@ onMounted(async () => {
     destroy-on-close
   >
     <el-form label-width="120px">
+      <el-alert
+        class="mb-12"
+        type="info"
+        :closable="false"
+        show-icon
+        :title="previewingTemplate ? '正在预览命中模板...' : `预计命中模板：${formatTemplatePreviewText(templatePreview)}`"
+        :description="dialogMode === 'edit' ? '重新提报前，系统会按客户、地址和货品分类重新匹配运价模板。' : '填写完整的客户、装卸地址和货品分类后，系统会自动预览可能命中的运价模板。'"
+      />
       <el-row :gutter="12">
         <el-col :span="12">
           <el-form-item label="货品分类">
