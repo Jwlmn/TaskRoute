@@ -90,6 +90,11 @@ class SettlementStatementController extends Controller
                 $payload['period_start'],
                 $payload['period_end']
             );
+            if ($orders->isEmpty()) {
+                throw ValidationException::withMessages([
+                    'client_name' => ['当前筛选条件下没有可生成结算单的已完成订单'],
+                ]);
+            }
             $summary = $this->buildSummary($orders);
 
             return SettlementStatement::query()->create([

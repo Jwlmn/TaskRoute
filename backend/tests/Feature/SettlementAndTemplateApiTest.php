@@ -131,6 +131,20 @@ class SettlementAndTemplateApiTest extends TestCase
             ->assertJsonPath('orders.0.order_no', 'PO-SETTLE-TEST-001');
     }
 
+    public function test_dispatcher_cannot_create_empty_settlement_statement(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        Sanctum::actingAs($dispatcher);
+
+        $this->postJson('/api/v1/settlement/create', [
+            'client_name' => '不存在的结算客户',
+            'period_start' => now()->subDays(2)->toDateString(),
+            'period_end' => now()->toDateString(),
+        ])->assertStatus(422)
+            ->assertJsonValidationErrors(['client_name']);
+    }
+
     public function test_site_scoped_dispatcher_can_only_settle_and_access_in_scope_orders(): void
     {
         $this->seed(DatabaseSeeder::class);
