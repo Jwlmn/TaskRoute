@@ -206,6 +206,63 @@ describe('NotificationCenterView', () => {
     expect(wrapper.vm.messages[0].read_at).toBe('2026-03-30 08:30:00')
   })
 
+  it('置顶后会刷新列表并按统一规则重排', async () => {
+    postMock
+      .mockResolvedValueOnce(buildListResponse([
+        {
+          id: 31,
+          title: '原未置顶消息',
+          is_pinned: false,
+          read_at: null,
+          created_at: '2026-03-30 08:00:00',
+          meta: {},
+        },
+        {
+          id: 32,
+          title: '另一条消息',
+          is_pinned: false,
+          read_at: null,
+          created_at: '2026-03-30 09:00:00',
+          meta: {},
+        },
+      ]))
+      .mockResolvedValueOnce({ data: { id: 31, is_pinned: true } })
+      .mockResolvedValueOnce(buildListResponse([
+        {
+          id: 31,
+          title: '原未置顶消息',
+          is_pinned: true,
+          read_at: null,
+          created_at: '2026-03-30 08:00:00',
+          meta: {},
+        },
+        {
+          id: 32,
+          title: '另一条消息',
+          is_pinned: false,
+          read_at: null,
+          created_at: '2026-03-30 09:00:00',
+          meta: {},
+        },
+      ]))
+
+    const wrapper = await mountView()
+    await wrapper.vm.togglePin(wrapper.vm.messages.find((item) => item.id === 31))
+    await flushPromises()
+
+    expect(postMock).toHaveBeenNthCalledWith(2, '/message/pin', {
+      id: 31,
+      is_pinned: true,
+    })
+    expect(postMock).toHaveBeenNthCalledWith(3, '/message/list', {
+      keyword: undefined,
+      read_status: 'all',
+      message_type: undefined,
+      pinned_only: false,
+    })
+    expect(wrapper.vm.messages.map((item) => item.id)).toEqual([31, 32])
+  })
+
   it('批量已读在未选中消息时给出提示', async () => {
     postMock.mockResolvedValueOnce(buildListResponse([]))
 
