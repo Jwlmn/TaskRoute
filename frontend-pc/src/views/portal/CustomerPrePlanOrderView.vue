@@ -16,6 +16,8 @@ const compareRows = ref([])
 const detailDialogVisible = ref(false)
 const detailLoading = ref(false)
 const detailOrder = ref(null)
+const detailCompareLoading = ref(false)
+const detailCompareRows = ref([])
 const orders = ref([])
 const messages = ref([])
 const unreadOnly = ref(true)
@@ -327,9 +329,20 @@ const openDetail = async (row) => {
   detailDialogVisible.value = true
   detailLoading.value = true
   detailOrder.value = null
+  detailCompareRows.value = []
+  detailCompareLoading.value = false
   try {
     const { data } = await api.post('/pre-plan-order/customer-detail', { id: row.id })
     detailOrder.value = data || null
+    if (data?.audit_status === 'rejected') {
+      detailCompareLoading.value = true
+      try {
+        const compareResponse = await api.post('/pre-plan-order/revision-compare', { id: row.id })
+        detailCompareRows.value = Array.isArray(compareResponse?.data?.diffs) ? compareResponse.data.diffs : []
+      } finally {
+        detailCompareLoading.value = false
+      }
+    }
   } catch (error) {
     detailDialogVisible.value = false
     ElMessage.error(error?.response?.data?.message || '加载计划单详情失败')
@@ -662,7 +675,25 @@ onUnmounted(() => {
             {{ getFreightTemplateMeta(detailOrder)?.name || '未命中模板' }}
           </el-descriptions-item>
           <el-descriptions-item label="审核备注">{{ detailOrder.audit_remark || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="审核人">
+            {{ detailOrder.audited_by ? `#${detailOrder.audited_by}` : '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="审核时间">
+            {{ formatDateTime(detailOrder.audited_at) }}
+          </el-descriptions-item>
         </el-descriptions>
+        <template v-if="detailOrder?.audit_status === 'rejected'">
+          <el-divider content-position="left">驳回后版本对比</el-divider>
+          <el-table :data="detailCompareRows" size="small" stripe v-loading="detailCompareLoading">
+            <el-table-column prop="field" label="字段" min-width="180" />
+            <el-table-column prop="before" label="驳回时值" min-width="220" />
+            <el-table-column prop="after" label="当前值" min-width="220" />
+          </el-table>
+          <el-empty
+            v-if="!detailCompareLoading && detailCompareRows.length === 0"
+            description="暂无差异（可能尚未修改关键字段）"
+          />
+        </template>
         <el-divider content-position="left">操作轨迹</el-divider>
         <el-table :data="detailHistory()" size="small" stripe>
           <el-table-column label="时间" min-width="160">
