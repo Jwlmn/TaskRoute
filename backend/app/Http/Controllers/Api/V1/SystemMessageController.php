@@ -75,6 +75,9 @@ class SystemMessageController extends Controller
         if ((int) $message->user_id !== (int) $request->user()->id) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
+        if (! $this->canAccessMessage($message, $request->user())) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
 
         if (! $message->read_at) {
             $message->read_at = now();
@@ -95,7 +98,16 @@ class SystemMessageController extends Controller
             ->where('user_id', (int) $request->user()->id)
             ->whereIn('id', $payload['ids'])
             ->whereNull('read_at')
-            ->update(['read_at' => now()]);
+            ->get()
+            ->filter(fn (SystemMessage $message) => $this->canAccessMessage($message, $request->user()))
+            ->tap(function (Collection $messages): void {
+                if ($messages->isNotEmpty()) {
+                    SystemMessage::query()
+                        ->whereIn('id', $messages->pluck('id')->all())
+                        ->update(['read_at' => now()]);
+                }
+            })
+            ->count();
 
         return response()->json(['updated_count' => $count]);
     }
@@ -109,6 +121,9 @@ class SystemMessageController extends Controller
 
         $message = SystemMessage::query()->findOrFail((int) $payload['id']);
         if ((int) $message->user_id !== (int) $request->user()->id) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+        if (! $this->canAccessMessage($message, $request->user())) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
         $message->is_pinned = (bool) $payload['is_pinned'];
@@ -149,25 +164,60 @@ class SystemMessageController extends Controller
         $taskSet = collect($accessibleTaskIds)->flip();
 
         return $messages->filter(function (SystemMessage $message) use ($orderSet, $taskSet, $user): bool {
-            $meta = is_array($message->meta) ? $message->meta : [];
-
-            $orderIds = $this->extractMetaIds($meta, 'order_id', 'order_ids');
-            if ($orderIds !== [] && collect($orderIds)->contains(fn ($id) => ! $orderSet->has((int) $id))) {
-                return false;
-            }
-
-            $taskIds = $this->extractMetaIds($meta, 'task_id', 'task_ids');
-            if ($taskIds !== [] && collect($taskIds)->contains(fn ($id) => ! $taskSet->has((int) $id))) {
-                return false;
-            }
-
-            $siteIds = $this->extractMetaIds($meta, 'site_id', 'site_ids');
-            if ($siteIds !== [] && ! $this->dataScopeService->canAccessSites($user, $siteIds)) {
-                return false;
-            }
-
-            return true;
+            return $this->canAccessMessage($message, $user, $orderSet, $taskSet);
         })->values();
+    }
+
+    private function canAccessMessage(
+        SystemMessage $message,
+        ?User $user,
+        ?Collection $orderSet = null,
+        ?Collection $taskSet = null
+    ): bool {
+        if (! $user || $user->hasRole('admin')) {
+            return true;
+        }
+
+        $meta = is_array($message->meta) ? $message->meta : [];
+
+        if ($orderSet === null) {
+            $orderIds = $this->extractMetaIds($meta, 'order_id', 'order_ids');
+            $accessibleOrderIds = $this->dataScopeService->applyPrePlanOrderScope(PrePlanOrder::query(), $user)
+                ->when($orderIds !== [], fn ($query) => $query->whereIn('id', $orderIds))
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->values()
+                ->all();
+            $orderSet = collect($accessibleOrderIds)->flip();
+        }
+
+        if ($taskSet === null) {
+            $taskIds = $this->extractMetaIds($meta, 'task_id', 'task_ids');
+            $accessibleTaskIds = $this->dataScopeService->applyDispatchTaskScope(DispatchTask::query(), $user)
+                ->when($taskIds !== [], fn ($query) => $query->whereIn('id', $taskIds))
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->values()
+                ->all();
+            $taskSet = collect($accessibleTaskIds)->flip();
+        }
+
+        $orderIds = $this->extractMetaIds($meta, 'order_id', 'order_ids');
+        if ($orderIds !== [] && collect($orderIds)->contains(fn ($id) => ! $orderSet->has((int) $id))) {
+            return false;
+        }
+
+        $taskIds = $this->extractMetaIds($meta, 'task_id', 'task_ids');
+        if ($taskIds !== [] && collect($taskIds)->contains(fn ($id) => ! $taskSet->has((int) $id))) {
+            return false;
+        }
+
+        $siteIds = $this->extractMetaIds($meta, 'site_id', 'site_ids');
+        if ($siteIds !== [] && ! $this->dataScopeService->canAccessSites($user, $siteIds)) {
+            return false;
+        }
+
+        return true;
     }
 
     /**

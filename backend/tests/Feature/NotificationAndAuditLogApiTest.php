@@ -261,4 +261,79 @@ class NotificationAndAuditLogApiTest extends TestCase
             ->all();
         $this->assertTrue(collect($allTitles)->every(fn ($title) => str_contains((string) $title, '分页范围内消息')));
     }
+
+    public function test_message_actions_respect_data_scope_after_filtering(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $siteA = \App\Models\LogisticsSite::query()->orderBy('id')->firstOrFail();
+        $siteB = \App\Models\LogisticsSite::query()->where('id', '!=', $siteA->id)->orderBy('id')->firstOrFail();
+        $dispatcher->forceFill([
+            'data_scope_type' => 'site',
+            'data_scope' => ['site_ids' => [(int) $siteA->id]],
+        ])->save();
+        Sanctum::actingAs($dispatcher);
+
+        $categoryId = (int) CargoCategory::query()->value('id');
+        $inScopeOrder = PrePlanOrder::query()->create([
+            'order_no' => 'PO-MSG-ACTION-IN-001',
+            'cargo_category_id' => $categoryId,
+            'client_name' => '范围内消息动作客户',
+            'pickup_site_id' => (int) $siteA->id,
+            'pickup_address' => '范围内装货地',
+            'dropoff_site_id' => (int) $siteA->id,
+            'dropoff_address' => '范围内卸货地',
+            'status' => 'pending',
+            'audit_status' => 'approved',
+        ]);
+        $outScopeOrder = PrePlanOrder::query()->create([
+            'order_no' => 'PO-MSG-ACTION-OUT-001',
+            'cargo_category_id' => $categoryId,
+            'client_name' => '范围外消息动作客户',
+            'pickup_site_id' => (int) $siteB->id,
+            'pickup_address' => '范围外装货地',
+            'dropoff_site_id' => (int) $siteB->id,
+            'dropoff_address' => '范围外卸货地',
+            'status' => 'pending',
+            'audit_status' => 'approved',
+        ]);
+
+        $inScopeMessage = SystemMessage::query()->create([
+            'user_id' => (int) $dispatcher->id,
+            'message_type' => 'audit_notice',
+            'title' => '范围内动作消息',
+            'content' => '应可操作',
+            'meta' => ['order_id' => (int) $inScopeOrder->id],
+        ]);
+        $outScopeMessage = SystemMessage::query()->create([
+            'user_id' => (int) $dispatcher->id,
+            'message_type' => 'audit_notice',
+            'title' => '范围外动作消息',
+            'content' => '不应可操作',
+            'meta' => ['order_id' => (int) $outScopeOrder->id],
+        ]);
+
+        $this->postJson('/api/v1/message/read', ['id' => $inScopeMessage->id])
+            ->assertOk()
+            ->assertJsonPath('id', $inScopeMessage->id);
+        $this->assertDatabaseHas('system_messages', [
+            'id' => $inScopeMessage->id,
+        ]);
+        $this->assertNotNull(SystemMessage::query()->findOrFail($inScopeMessage->id)->read_at);
+
+        $this->postJson('/api/v1/message/read', ['id' => $outScopeMessage->id])
+            ->assertStatus(403);
+        $this->assertNull(SystemMessage::query()->findOrFail($outScopeMessage->id)->read_at);
+
+        $this->postJson('/api/v1/message/pin', [
+            'id' => $outScopeMessage->id,
+            'is_pinned' => true,
+        ])->assertStatus(403);
+        $this->assertFalse((bool) SystemMessage::query()->findOrFail($outScopeMessage->id)->is_pinned);
+
+        $batchResponse = $this->postJson('/api/v1/message/read-batch', [
+            'ids' => [$inScopeMessage->id, $outScopeMessage->id],
+        ])->assertOk();
+        $batchResponse->assertJsonPath('updated_count', 0);
+    }
 }
