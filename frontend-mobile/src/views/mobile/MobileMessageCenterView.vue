@@ -58,9 +58,7 @@ const formatNotificationTime = (message) => {
 const openTaskDetail = async (row) => {
   const taskId = Number(row?.meta?.task_id || 0)
   if (!taskId) return
-  if (row?.id && !row?.read_at) {
-    await markRead(row.id)
-  }
+  await markRelatedTaskMessagesRead(taskId)
   await router.push({ name: 'mobile-task-detail', params: { id: taskId } })
 }
 
@@ -148,6 +146,23 @@ const togglePin = async (row) => {
 const markDispatchNoticeRead = async (row) => {
   if (!row?.id || row?.read_at) return
   await markRead(row.id)
+}
+
+const markRelatedTaskMessagesRead = async (taskId) => {
+  const ids = messages.value
+    .filter((item) => Number(item?.meta?.task_id || 0) === Number(taskId) && !item.read_at)
+    .map((item) => item.id)
+  if (!ids.length) return
+  if (ids.length === 1) {
+    await markRead(ids[0])
+    return
+  }
+  try {
+    await api.post('/message/read-batch', { ids })
+    await loadMessages(pagination.page)
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '批量已读失败')
+  }
 }
 
 onMounted(loadMessages)

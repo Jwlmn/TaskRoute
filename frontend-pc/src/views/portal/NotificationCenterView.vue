@@ -56,6 +56,19 @@ const markReadSilently = async (id) => {
   }
 }
 
+const markRelatedTaskMessagesReadSilently = async (taskId) => {
+  if (!taskId) return
+  const ids = messages.value
+    .filter((item) => Number(item?.meta?.task_id || 0) === Number(taskId) && !item.read_at)
+    .map((item) => item.id)
+  if (!ids.length) return
+  try {
+    await api.post('/message/read-batch', { ids })
+  } catch {
+    // ignore
+  }
+}
+
 const loadMessages = async () => {
   loading.value = true
   try {
@@ -182,6 +195,7 @@ const handleNotificationAction = async (row) => {
     return
   }
   if (row?.message_type === 'dispatch_notice' && isDispatchNotificationUser.value) {
+    await markRelatedTaskMessagesReadSilently(row?.meta?.task_id)
     await openDispatchTaskOrders(row)
     await loadMessages()
     return

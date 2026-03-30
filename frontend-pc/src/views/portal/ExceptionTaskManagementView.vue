@@ -194,9 +194,26 @@ const siteExceptionRanking = computed(() => {
 })
 const applyDriverRankingFilter = (item) => {
   filterForm.value.driver_focus = filterForm.value.driver_focus === item.account ? '' : (item.account || '')
+  if (filterForm.value.driver_focus) {
+    const matchedTask = displayedExceptionTasks.value.find((task) => (task.driver?.account || '') === filterForm.value.driver_focus)
+    if (matchedTask) {
+      selectedExceptionTask.value = matchedTask
+      exceptionDetailDialogVisible.value = true
+    }
+  }
 }
 const applySiteRankingFilter = (item) => {
   filterForm.value.site_focus = filterForm.value.site_focus === item.name ? '' : (item.name || '')
+  if (filterForm.value.site_focus) {
+    const matchedTask = displayedExceptionTasks.value.find((task) => {
+      const orders = Array.isArray(task.orders) ? task.orders : []
+      return orders.some((order) => (order.pickup_address || '') === filterForm.value.site_focus)
+    })
+    if (matchedTask) {
+      selectedExceptionTask.value = matchedTask
+      exceptionDetailDialogVisible.value = true
+    }
+  }
 }
 
 watch(() => filterForm.value.status, (status) => {
