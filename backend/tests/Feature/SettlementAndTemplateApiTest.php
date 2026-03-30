@@ -393,4 +393,48 @@ class SettlementAndTemplateApiTest extends TestCase
             Carbon::parse((string) $paidResponse->json('paid_at'))->toIso8601String()
         );
     }
+
+    public function test_settlement_detail_and_list_include_audit_operators(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        Sanctum::actingAs($dispatcher);
+
+        $statement = SettlementStatement::query()->create([
+            'statement_no' => 'ST-FLOW-004',
+            'client_name' => '审计展示客户',
+            'period_start' => now()->subDays(2)->toDateString(),
+            'period_end' => now()->toDateString(),
+            'order_count' => 1,
+            'total_base_amount' => 1000,
+            'total_loss_deduct_amount' => 0,
+            'total_freight_amount' => 1000,
+            'status' => 'paid',
+            'created_by' => $dispatcher->id,
+            'confirmed_by' => $dispatcher->id,
+            'confirmed_at' => now()->subHours(3),
+            'invoiced_by' => $dispatcher->id,
+            'invoiced_at' => now()->subHours(2),
+            'paid_by' => $dispatcher->id,
+            'paid_at' => now()->subHour(),
+            'meta' => ['order_ids' => []],
+        ]);
+
+        $this->postJson('/api/v1/settlement/detail', [
+            'id' => $statement->id,
+        ])->assertOk()
+            ->assertJsonPath('creator.id', $dispatcher->id)
+            ->assertJsonPath('creator.account', $dispatcher->account)
+            ->assertJsonPath('confirmer.id', $dispatcher->id)
+            ->assertJsonPath('invoicer.id', $dispatcher->id)
+            ->assertJsonPath('payer.id', $dispatcher->id);
+
+        $this->postJson('/api/v1/settlement/list', [
+            'client_name' => '审计展示客户',
+        ])->assertOk()
+            ->assertJsonPath('data.0.creator.id', $dispatcher->id)
+            ->assertJsonPath('data.0.confirmer.id', $dispatcher->id)
+            ->assertJsonPath('data.0.invoicer.id', $dispatcher->id)
+            ->assertJsonPath('data.0.payer.id', $dispatcher->id);
+    }
 }

@@ -31,6 +31,12 @@ class SettlementStatementController extends Controller
         $clientName = trim((string) ($payload['client_name'] ?? ''));
 
         $data = $this->scopedStatementQuery($request)
+            ->with([
+                'creator:id,account,name',
+                'confirmer:id,account,name',
+                'invoicer:id,account,name',
+                'payer:id,account,name',
+            ])
             ->when($clientName !== '', fn ($query) => $query->where('client_name', 'like', "%{$clientName}%"))
             ->when($payload['status'] ?? null, fn ($query, $status) => $query->where('status', $status))
             ->latest()
@@ -46,6 +52,13 @@ class SettlementStatementController extends Controller
         ]);
 
         $statement = $this->scopedStatementQuery($request)->findOrFail((int) $payload['id']);
+        $statement->loadMissing([
+            'creator:id,account,name',
+            'confirmer:id,account,name',
+            'invoicer:id,account,name',
+            'payer:id,account,name',
+        ]);
+
         $orderIds = collect(data_get($statement->meta, 'order_ids', []))
             ->map(fn ($id) => (int) $id)
             ->filter()
