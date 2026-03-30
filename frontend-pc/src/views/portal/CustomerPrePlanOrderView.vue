@@ -9,6 +9,7 @@ import {
   auditStatusTypeMap,
   freightSchemeLabelMap,
   getFreightTemplateMeta,
+  sortNotificationMessages,
 } from '../../utils/prePlanOrder'
 
 const loading = ref(false)
@@ -206,12 +207,8 @@ const loadMessages = async () => {
     const { data } = await api.post('/message/list', {
       unread_only: unreadOnly.value,
     })
-    const rawMessages = Array.isArray(data?.data) ? data.data : []
-    messages.value = rawMessages.sort((a, b) => {
-      const aUnread = a?.read_at ? 1 : 0
-      const bUnread = b?.read_at ? 1 : 0
-      if (aUnread !== bUnread) return aUnread - bUnread
-      return String(b?.created_at || '').localeCompare(String(a?.created_at || ''))
+    messages.value = sortNotificationMessages(Array.isArray(data?.data) ? data.data : [], {
+      pinnedFirst: false,
     })
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '加载审核通知失败')

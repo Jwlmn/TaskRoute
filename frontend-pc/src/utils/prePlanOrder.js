@@ -62,3 +62,21 @@ export const formatFreightTemplateLabel = (row) => {
   const template = getFreightTemplateMeta(row)
   return template?.name || '未命中模板'
 }
+
+export const sortNotificationMessages = (rawMessages, options = {}) => {
+  const { pinnedFirst = true } = options
+
+  return [...rawMessages].sort((a, b) => {
+    if (pinnedFirst) {
+      const aPinned = a?.is_pinned ? 1 : 0
+      const bPinned = b?.is_pinned ? 1 : 0
+      if (aPinned !== bPinned) return bPinned - aPinned
+    }
+
+    const aUnread = a?.read_at ? 1 : 0
+    const bUnread = b?.read_at ? 1 : 0
+    if (aUnread !== bUnread) return aUnread - bUnread
+
+    return String(b?.created_at || '').localeCompare(String(a?.created_at || ''))
+  })
+}

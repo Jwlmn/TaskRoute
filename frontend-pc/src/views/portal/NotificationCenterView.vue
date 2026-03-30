@@ -9,6 +9,7 @@ import {
   auditStatusLabelMap,
   auditStatusTypeMap,
   formatDateTime,
+  sortNotificationMessages,
 } from '../../utils/prePlanOrder'
 
 const loading = ref(false)
@@ -35,18 +36,6 @@ const messageTypeLabelMap = {
   audit_reminder: '审核催办',
 }
 
-const sortMessages = (rawMessages) => rawMessages.sort((a, b) => {
-  const aPinned = a?.is_pinned ? 1 : 0
-  const bPinned = b?.is_pinned ? 1 : 0
-  if (aPinned !== bPinned) return bPinned - aPinned
-
-  const aUnread = a?.read_at ? 1 : 0
-  const bUnread = b?.read_at ? 1 : 0
-  if (aUnread !== bUnread) return aUnread - bUnread
-
-  return String(b?.created_at || '').localeCompare(String(a?.created_at || ''))
-})
-
 const loadMessages = async () => {
   loading.value = true
   try {
@@ -56,7 +45,7 @@ const loadMessages = async () => {
       message_type: filterForm.value.message_type || undefined,
       pinned_only: filterForm.value.pinned_only || false,
     })
-    messages.value = sortMessages(Array.isArray(data?.data) ? data.data : [])
+    messages.value = sortNotificationMessages(Array.isArray(data?.data) ? data.data : [])
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '加载通知失败')
   } finally {
