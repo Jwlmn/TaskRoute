@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\CargoCategory;
+use App\Models\FreightRateTemplate;
 use App\Models\PrePlanOrder;
 use App\Models\User;
 use App\Models\Vehicle;
@@ -159,6 +160,110 @@ class PrePlanOrderAuditApiTest extends TestCase
         $this->postJson('/api/v1/pre-plan-order/customer-resubmit', [
             'id' => $orderId,
         ])->assertOk()->assertJsonPath('audit_status', 'pending_approval');
+    }
+
+    public function test_customer_update_refreshes_matched_freight_template_meta(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $customer = User::query()->where('account', 'customer')->firstOrFail();
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $cargo = CargoCategory::query()->firstOrFail();
+
+        $templateA = FreightRateTemplate::query()->create([
+            'name' => '客户改址模板A',
+            'client_name' => '客户模板切换',
+            'cargo_category_id' => $cargo->id,
+            'pickup_address' => '上海仓A',
+            'dropoff_address' => '上海店A',
+            'freight_calc_scheme' => 'by_weight',
+            'freight_unit_price' => 80,
+            'priority' => 200,
+            'is_active' => true,
+        ]);
+        $templateB = FreightRateTemplate::query()->create([
+            'name' => '客户改址模板B',
+            'client_name' => '客户模板切换',
+            'cargo_category_id' => $cargo->id,
+            'pickup_address' => '上海仓B',
+            'dropoff_address' => '上海店B',
+            'freight_calc_scheme' => 'by_weight',
+            'freight_unit_price' => 88,
+            'priority' => 200,
+            'is_active' => true,
+        ]);
+
+        Sanctum::actingAs($customer);
+        $submitResponse = $this->postJson('/api/v1/pre-plan-order/customer-submit', [
+            'cargo_category_id' => $cargo->id,
+            'client_name' => '客户模板切换',
+            'pickup_address' => '上海仓A',
+            'dropoff_address' => '上海店A',
+        ])->assertCreated()
+            ->assertJsonPath('meta.freight_template_id', $templateA->id);
+        $orderId = (int) $submitResponse->json('id');
+
+        Sanctum::actingAs($dispatcher);
+        $this->postJson('/api/v1/pre-plan-order/audit-reject', [
+            'id' => $orderId,
+            'audit_remark' => '请修正地址后重新提交',
+        ])->assertOk();
+
+        Sanctum::actingAs($customer);
+        $this->postJson('/api/v1/pre-plan-order/customer-update', [
+            'id' => $orderId,
+            'pickup_address' => '上海仓B',
+            'dropoff_address' => '上海店B',
+        ])->assertOk()
+            ->assertJsonPath('meta.freight_template_id', $templateB->id)
+            ->assertJsonPath('meta.freight_template_name', $templateB->name);
+    }
+
+    public function test_customer_update_clears_stale_freight_template_meta_when_no_match_exists(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $customer = User::query()->where('account', 'customer')->firstOrFail();
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $cargo = CargoCategory::query()->firstOrFail();
+
+        $template = FreightRateTemplate::query()->create([
+            'name' => '客户清空模板',
+            'client_name' => '客户模板清空',
+            'cargo_category_id' => $cargo->id,
+            'pickup_address' => '上海仓C',
+            'dropoff_address' => '上海店C',
+            'freight_calc_scheme' => 'by_weight',
+            'freight_unit_price' => 66,
+            'priority' => 200,
+            'is_active' => true,
+        ]);
+
+        Sanctum::actingAs($customer);
+        $submitResponse = $this->postJson('/api/v1/pre-plan-order/customer-submit', [
+            'cargo_category_id' => $cargo->id,
+            'client_name' => '客户模板清空',
+            'pickup_address' => '上海仓C',
+            'dropoff_address' => '上海店C',
+        ])->assertCreated()
+            ->assertJsonPath('meta.freight_template_id', $template->id);
+        $orderId = (int) $submitResponse->json('id');
+
+        Sanctum::actingAs($dispatcher);
+        $this->postJson('/api/v1/pre-plan-order/audit-reject', [
+            'id' => $orderId,
+            'audit_remark' => '地址需要重新确认',
+        ])->assertOk();
+
+        Sanctum::actingAs($customer);
+        $response = $this->postJson('/api/v1/pre-plan-order/customer-update', [
+            'id' => $orderId,
+            'pickup_address' => '未命中仓库',
+            'dropoff_address' => '未命中门店',
+        ])->assertOk();
+
+        $this->assertNull(data_get($response->json(), 'meta.freight_template_id'));
+        $this->assertNull(data_get($response->json(), 'meta.freight_template_name'));
     }
 
     public function test_dispatcher_can_batch_create_pre_plan_orders(): void

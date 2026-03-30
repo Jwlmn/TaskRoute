@@ -387,6 +387,7 @@ class PrePlanOrderController extends Controller
 
         unset($payload['id']);
         $payload = $this->prepareOrderPayload($payload, $order);
+        $payload = $this->refreshFreightTemplatePayload($payload, $order, $request->user());
         $order->fill($payload);
         $this->appendOrderHistory($order, 'customer_update', $request, [
             'updated_fields' => array_values(array_keys($payload)),
@@ -1348,6 +1349,9 @@ class PrePlanOrderController extends Controller
     {
         $template = $this->resolveFreightTemplate($payload, $user);
         if (! $template) {
+            $meta = is_array($payload['meta'] ?? null) ? $payload['meta'] : [];
+            unset($meta['freight_template_id'], $meta['freight_template_name']);
+            $payload['meta'] = $meta;
             return $payload;
         }
 
@@ -1375,6 +1379,38 @@ class PrePlanOrderController extends Controller
         $meta['freight_template_id'] = (int) $template->id;
         $meta['freight_template_name'] = (string) $template->name;
         $payload['meta'] = $meta;
+
+        return $payload;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function refreshFreightTemplatePayload(array $payload, PrePlanOrder $order, ?\App\Models\User $user = null): array
+    {
+        $resolvedPayload = $this->applyFreightTemplateToPayload([
+            'client_name' => $payload['client_name'] ?? $order->client_name,
+            'cargo_category_id' => $payload['cargo_category_id'] ?? $order->cargo_category_id,
+            'pickup_site_id' => array_key_exists('pickup_site_id', $payload) ? $payload['pickup_site_id'] : $order->pickup_site_id,
+            'pickup_address' => $payload['pickup_address'] ?? $order->pickup_address,
+            'dropoff_site_id' => array_key_exists('dropoff_site_id', $payload) ? $payload['dropoff_site_id'] : $order->dropoff_site_id,
+            'dropoff_address' => $payload['dropoff_address'] ?? $order->dropoff_address,
+            'freight_calc_scheme' => array_key_exists('freight_calc_scheme', $payload) ? $payload['freight_calc_scheme'] : $order->freight_calc_scheme,
+            'freight_unit_price' => array_key_exists('freight_unit_price', $payload) ? $payload['freight_unit_price'] : $order->freight_unit_price,
+            'freight_trip_count' => array_key_exists('freight_trip_count', $payload) ? $payload['freight_trip_count'] : $order->freight_trip_count,
+            'loss_allowance_kg' => array_key_exists('loss_allowance_kg', $payload) ? $payload['loss_allowance_kg'] : $order->loss_allowance_kg,
+            'loss_deduct_unit_price' => array_key_exists('loss_deduct_unit_price', $payload) ? $payload['loss_deduct_unit_price'] : $order->loss_deduct_unit_price,
+            'meta' => is_array($order->meta) ? $order->meta : [],
+        ], $user);
+
+        foreach (['freight_calc_scheme', 'freight_unit_price', 'freight_trip_count', 'loss_allowance_kg', 'loss_deduct_unit_price'] as $field) {
+            if (! array_key_exists($field, $payload) || $payload[$field] === null || $payload[$field] === '') {
+                $payload[$field] = $resolvedPayload[$field] ?? null;
+            }
+        }
+
+        $payload['meta'] = is_array($resolvedPayload['meta'] ?? null) ? $resolvedPayload['meta'] : [];
 
         return $payload;
     }
