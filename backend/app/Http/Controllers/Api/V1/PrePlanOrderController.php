@@ -365,10 +365,7 @@ class PrePlanOrderController extends Controller
             'id' => ['required', 'integer', 'exists:pre_plan_orders,id'],
         ]);
 
-        $order = $this->scopedOrderQuery($request)->findOrFail($payload['id']);
-        if (! $this->canAccessCustomerOwnedOrder($request, $order)) {
-            abort(404);
-        }
+        $order = $this->customerOwnedOrderQuery($request)->findOrFail($payload['id']);
 
         $order->loadMissing([
             'cargoCategory:id,name,code',
@@ -406,10 +403,7 @@ class PrePlanOrderController extends Controller
             'meta' => ['sometimes', 'array'],
         ]);
 
-        $order = $this->scopedOrderQuery($request)->findOrFail($payload['id']);
-        if (! $this->canAccessCustomerOwnedOrder($request, $order)) {
-            abort(404);
-        }
+        $order = $this->customerOwnedOrderQuery($request)->findOrFail($payload['id']);
         if ($order->audit_status !== 'rejected') {
             return response()->json(['message' => '仅已驳回计划单可由客户修改'], 422);
         }
@@ -436,10 +430,7 @@ class PrePlanOrderController extends Controller
         ]);
 
         return DB::transaction(function () use ($payload, $request): JsonResponse {
-            $order = $this->scopedOrderQuery($request)->lockForUpdate()->findOrFail($payload['id']);
-            if (! $this->canAccessCustomerOwnedOrder($request, $order)) {
-                abort(404);
-            }
+            $order = $this->customerOwnedOrderQuery($request)->lockForUpdate()->findOrFail($payload['id']);
             if ($order->audit_status !== 'rejected') {
                 return response()->json(['message' => '仅已驳回计划单可重新提报'], 422);
             }
@@ -929,10 +920,9 @@ class PrePlanOrderController extends Controller
             'id' => ['required', 'integer', 'exists:pre_plan_orders,id'],
         ]);
 
-        $order = $this->scopedOrderQuery($request)->findOrFail((int) $payload['id']);
-        if (! $this->canAccessCustomerOwnedOrder($request, $order)) {
-            abort(404);
-        }
+        $order = $request->user()?->hasRole('customer')
+            ? $this->customerOwnedOrderQuery($request)->findOrFail((int) $payload['id'])
+            : $this->scopedOrderQuery($request)->findOrFail((int) $payload['id']);
         $snapshot = data_get($order->meta, 'rejected_snapshot');
         if (! is_array($snapshot)) {
             return response()->json([
@@ -1135,6 +1125,12 @@ class PrePlanOrderController extends Controller
         );
     }
 
+    private function customerOwnedOrderQuery(Request $request): Builder
+    {
+        return $this->scopedOrderQuery($request)
+            ->where('submitter_id', (int) $request->user()->id);
+    }
+
     private function prepareOrderPayload(array $payload, ?PrePlanOrder $current = null): array
     {
         $payload = $this->hydrateSiteReference($payload, 'pickup_site_id', 'pickup_address', $current?->pickup_site_id, $current?->pickup_address);
@@ -1198,20 +1194,6 @@ class PrePlanOrderController extends Controller
         return ! $prePlanOrder->dispatchTasks()
             ->whereHas('waypoints', fn ($query) => $query->whereIn('status', ['arrived', 'completed']))
             ->exists();
-    }
-
-    private function canAccessCustomerOwnedOrder(Request $request, PrePlanOrder $order): bool
-    {
-        $user = $request->user();
-        if (! $user) {
-            return false;
-        }
-
-        if ($user->hasAnyRole(['admin', 'dispatcher'])) {
-            return true;
-        }
-
-        return (int) $order->submitter_id === (int) $user->id;
     }
 
     /**
