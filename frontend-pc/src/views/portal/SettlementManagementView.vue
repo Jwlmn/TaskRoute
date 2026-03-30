@@ -54,6 +54,17 @@ const formatOperator = (operator) => {
 
 const canTransitionTo = (row, targetStatus) => transitionMap[row?.status] === targetStatus
 
+const getErrorMessage = (error, fallback) => {
+  const validationErrors = error?.response?.data?.errors
+  if (validationErrors && typeof validationErrors === 'object') {
+    const firstMessage = Object.values(validationErrors).flat().find(Boolean)
+    if (typeof firstMessage === 'string' && firstMessage.trim()) {
+      return firstMessage
+    }
+  }
+  return error?.response?.data?.message || fallback
+}
+
 const loadStatements = async () => {
   loading.value = true
   try {
@@ -63,7 +74,7 @@ const loadStatements = async () => {
     const { data } = await api.post('/settlement/list', payload)
     statements.value = Array.isArray(data?.data) ? data.data : []
   } catch (error) {
-    ElMessage.error(error?.response?.data?.message || '加载结算单失败')
+    ElMessage.error(getErrorMessage(error, '加载结算单失败'))
   } finally {
     loading.value = false
   }
@@ -98,7 +109,7 @@ const createStatement = async () => {
     createDialogVisible.value = false
     await loadStatements()
   } catch (error) {
-    ElMessage.error(error?.response?.data?.message || '生成结算单失败')
+    ElMessage.error(getErrorMessage(error, '生成结算单失败'))
   } finally {
     creating.value = false
   }
@@ -112,7 +123,7 @@ const openDetail = async (row) => {
     detail.value = data
   } catch (error) {
     detailDialogVisible.value = false
-    ElMessage.error(error?.response?.data?.message || '加载结算单详情失败')
+    ElMessage.error(getErrorMessage(error, '加载结算单详情失败'))
   }
 }
 
@@ -123,7 +134,7 @@ const updateStatus = async (row, status) => {
     ElMessage.success('状态更新成功')
     await loadStatements()
   } catch (error) {
-    ElMessage.error(error?.response?.data?.message || '状态更新失败')
+    ElMessage.error(getErrorMessage(error, '状态更新失败'))
   } finally {
     updating.value = false
   }
