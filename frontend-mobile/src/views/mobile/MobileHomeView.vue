@@ -1,13 +1,16 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '../../services/api'
 import { readCurrentUser } from '../../utils/auth'
 import { filterTasksByDataScope } from '../../utils/dataScope'
 
+const router = useRouter()
 const user = computed(() => readCurrentUser())
 const loading = ref(false)
 const generatedAt = ref('')
+const driverTasks = ref([])
 const stats = ref([
   { label: '待接单', value: 0 },
   { label: '执行中', value: 0 },
@@ -37,6 +40,72 @@ const buildDriverStats = (tasks) => {
     { label: '已完成', value: map.completed },
   ]
 }
+const pendingAcceptTask = computed(() => driverTasks.value.find((task) => task?.status === 'assigned') || null)
+const activeTask = computed(() => driverTasks.value.find((task) => ['accepted', 'in_progress'].includes(task?.status)) || null)
+const recentHandledExceptionTask = computed(() => driverTasks.value
+  .filter((task) => task?.route_meta?.exception?.status === 'handled')
+  .sort((a, b) => String(b?.route_meta?.exception?.handled_at || '').localeCompare(String(a?.route_meta?.exception?.handled_at || '')))
+  [0] || null)
+const driverHomeShortcuts = computed(() => {
+  if (user.value?.role !== 'driver') return []
+
+  const items = [
+    {
+      key: 'assigned',
+      title: '待接单',
+      description: pendingAcceptTask.value
+        ? `当前优先任务：${pendingAcceptTask.value.task_no}`
+        : '当前没有待接单任务',
+      count: stats.value.find((item) => item.label === '待接单')?.value || 0,
+      type: pendingAcceptTask.value ? 'warning' : 'info',
+      actionLabel: '去待接单',
+      disabled: !pendingAcceptTask.value,
+      action: () => router.push({ name: 'mobile-tasks', query: { status_group: 'assigned' } }),
+    },
+    {
+      key: 'active',
+      title: '执行中',
+      description: activeTask.value
+        ? `继续处理任务：${activeTask.value.task_no}`
+        : '当前没有执行中的任务',
+      count: stats.value.find((item) => item.label === '执行中')?.value || 0,
+      type: activeTask.value ? 'primary' : 'info',
+      actionLabel: activeTask.value ? '查看当前任务' : '查看任务列表',
+      disabled: false,
+      action: () => (activeTask.value
+        ? router.push({ name: 'mobile-task-detail', params: { id: activeTask.value.id } })
+        : router.push({ name: 'mobile-tasks', query: { status_group: 'in_progress' } })),
+    },
+    {
+      key: 'handled-exception',
+      title: '异常处理结果',
+      description: recentHandledExceptionTask.value
+        ? `最近处理：${recentHandledExceptionTask.value.task_no}｜${recentHandledExceptionTask.value.route_meta?.exception?.handle_note || '请查看处理结果'}`
+        : '当前没有新的异常处理结果',
+      count: recentHandledExceptionTask.value ? 1 : 0,
+      type: recentHandledExceptionTask.value ? 'success' : 'info',
+      actionLabel: recentHandledExceptionTask.value ? '查看处理结果' : '查看任务列表',
+      disabled: false,
+      action: () => (recentHandledExceptionTask.value
+        ? router.push({ name: 'mobile-task-detail', params: { id: recentHandledExceptionTask.value.id } })
+        : router.push({ name: 'mobile-tasks' })),
+    },
+  ]
+
+  return items
+})
+const jumpToStat = async (label) => {
+  if (user.value?.role !== 'driver') return
+  if (label === '待接单') {
+    await router.push({ name: 'mobile-tasks', query: { status_group: 'assigned' } })
+    return
+  }
+  if (label === '执行中') {
+    await router.push({ name: 'mobile-tasks', query: { status_group: 'in_progress' } })
+    return
+  }
+  await router.push({ name: 'mobile-tasks', query: { status_group: 'completed' } })
+}
 
 const fetchHomeStats = async () => {
   loading.value = true
@@ -47,6 +116,7 @@ const fetchHomeStats = async () => {
         user.value,
         Array.isArray(data?.data) ? data.data : [],
       )
+      driverTasks.value = tasks
       stats.value = buildDriverStats(tasks)
       generatedAt.value = new Date().toLocaleString('zh-CN', { hour12: false })
       return
@@ -74,6 +144,7 @@ const fetchHomeStats = async () => {
     }
 
     const { data } = await api.post('/dashboard/overview', {})
+    driverTasks.value = []
     stats.value = [
       { label: '待调度', value: data?.metrics?.pending_pre_plan_orders || 0 },
       { label: '待接单', value: data?.metrics?.assigned_tasks || 0 },
@@ -102,12 +173,35 @@ onMounted(() => {
 
     <el-row :gutter="10">
       <el-col v-for="item in stats" :key="item.label" :span="8">
-        <el-card shadow="hover" v-loading="loading">
+        <el-card shadow="hover" v-loading="loading" class="order-tag-clickable" @click="jumpToStat(item.label)">
           <div class="mobile-stat-label">{{ item.label }}</div>
           <div class="mobile-stat-value">{{ item.value }}</div>
         </el-card>
       </el-col>
     </el-row>
+    <el-card v-if="driverHomeShortcuts.length" shadow="never" class="mt-12">
+      <template #header>
+        <div class="mobile-section-title">司机任务提醒</div>
+      </template>
+      <div
+        v-for="item in driverHomeShortcuts"
+        :key="item.key"
+        class="mb-12"
+      >
+        <el-alert
+          :closable="false"
+          show-icon
+          :type="item.type"
+          :title="`${item.title}（${item.count}）`"
+          :description="item.description"
+        />
+        <div class="mt-8">
+          <el-button size="small" type="primary" :disabled="item.disabled" @click="item.action()">
+            {{ item.actionLabel }}
+          </el-button>
+        </div>
+      </div>
+    </el-card>
     <el-button class="mt-12" plain size="small" :loading="loading" @click="fetchHomeStats">刷新数据</el-button>
   </div>
 </template>
