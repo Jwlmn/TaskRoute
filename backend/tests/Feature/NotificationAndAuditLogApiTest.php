@@ -337,6 +337,74 @@ class NotificationAndAuditLogApiTest extends TestCase
         $batchResponse->assertJsonPath('updated_count', 0);
     }
 
+    public function test_message_batch_read_only_updates_accessible_unread_messages_and_pin_allows_accessible_message(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $siteA = \App\Models\LogisticsSite::query()->orderBy('id')->firstOrFail();
+        $siteB = \App\Models\LogisticsSite::query()->where('id', '!=', $siteA->id)->orderBy('id')->firstOrFail();
+        $dispatcher->forceFill([
+            'data_scope_type' => 'site',
+            'data_scope' => ['site_ids' => [(int) $siteA->id]],
+        ])->save();
+        Sanctum::actingAs($dispatcher);
+
+        $categoryId = (int) CargoCategory::query()->value('id');
+        $inScopeOrder = PrePlanOrder::query()->create([
+            'order_no' => 'PO-MSG-MIX-IN-001',
+            'cargo_category_id' => $categoryId,
+            'client_name' => '范围内混合客户',
+            'pickup_site_id' => (int) $siteA->id,
+            'pickup_address' => '范围内装货地',
+            'dropoff_site_id' => (int) $siteA->id,
+            'dropoff_address' => '范围内卸货地',
+            'status' => 'pending',
+            'audit_status' => 'approved',
+        ]);
+        $outScopeOrder = PrePlanOrder::query()->create([
+            'order_no' => 'PO-MSG-MIX-OUT-001',
+            'cargo_category_id' => $categoryId,
+            'client_name' => '范围外混合客户',
+            'pickup_site_id' => (int) $siteB->id,
+            'pickup_address' => '范围外装货地',
+            'dropoff_site_id' => (int) $siteB->id,
+            'dropoff_address' => '范围外卸货地',
+            'status' => 'pending',
+            'audit_status' => 'approved',
+        ]);
+
+        $accessibleMessage = SystemMessage::query()->create([
+            'user_id' => (int) $dispatcher->id,
+            'message_type' => 'audit_notice',
+            'title' => '可读可置顶消息',
+            'content' => '范围内',
+            'meta' => ['order_id' => (int) $inScopeOrder->id],
+        ]);
+        $inaccessibleMessage = SystemMessage::query()->create([
+            'user_id' => (int) $dispatcher->id,
+            'message_type' => 'audit_notice',
+            'title' => '不可读消息',
+            'content' => '范围外',
+            'meta' => ['order_id' => (int) $outScopeOrder->id],
+        ]);
+
+        $this->postJson('/api/v1/message/pin', [
+            'id' => $accessibleMessage->id,
+            'is_pinned' => true,
+        ])->assertOk()
+            ->assertJsonPath('id', $accessibleMessage->id)
+            ->assertJsonPath('is_pinned', true);
+        $this->assertTrue((bool) SystemMessage::query()->findOrFail($accessibleMessage->id)->is_pinned);
+
+        $batchResponse = $this->postJson('/api/v1/message/read-batch', [
+            'ids' => [$accessibleMessage->id, $inaccessibleMessage->id],
+        ])->assertOk();
+        $batchResponse->assertJsonPath('updated_count', 1);
+
+        $this->assertNotNull(SystemMessage::query()->findOrFail($accessibleMessage->id)->read_at);
+        $this->assertNull(SystemMessage::query()->findOrFail($inaccessibleMessage->id)->read_at);
+    }
+
     public function test_customer_audit_messages_include_order_context_meta(): void
     {
         $this->seed(DatabaseSeeder::class);
