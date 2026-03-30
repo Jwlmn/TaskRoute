@@ -31,6 +31,8 @@ class PrePlanOrderController extends Controller
     {
         $payload = $request->validate([
             'keyword' => ['nullable', 'string', 'max:100'],
+            'submitter_keyword' => ['nullable', 'string', 'max:100'],
+            'auditor_keyword' => ['nullable', 'string', 'max:100'],
             'status' => ['nullable', 'in:pending,scheduled,in_progress,completed,cancelled'],
             'audit_status' => ['nullable', 'in:pending_approval,approved,rejected'],
             'is_locked' => ['nullable', 'boolean'],
@@ -44,6 +46,10 @@ class PrePlanOrderController extends Controller
 
         return response()->json(
             $this->scopedOrderQuery($request)
+                ->with([
+                    'submitter:id,account,name',
+                    'auditor:id,account,name',
+                ])
                 ->when($payload['keyword'] ?? null, function ($query, $keyword): void {
                     $kw = trim((string) $keyword);
                     if ($kw === '') {
@@ -56,6 +62,26 @@ class PrePlanOrderController extends Controller
                             ->orWhere('dropoff_address', 'like', "%{$kw}%")
                             ->orWhere('pickup_contact_name', 'like', "%{$kw}%")
                             ->orWhere('dropoff_contact_name', 'like', "%{$kw}%");
+                    });
+                })
+                ->when($payload['submitter_keyword'] ?? null, function ($query, $keyword): void {
+                    $kw = trim((string) $keyword);
+                    if ($kw === '') {
+                        return;
+                    }
+                    $query->whereHas('submitter', function ($sub) use ($kw): void {
+                        $sub->where('users.name', 'like', "%{$kw}%")
+                            ->orWhere('users.account', 'like', "%{$kw}%");
+                    });
+                })
+                ->when($payload['auditor_keyword'] ?? null, function ($query, $keyword): void {
+                    $kw = trim((string) $keyword);
+                    if ($kw === '') {
+                        return;
+                    }
+                    $query->whereHas('auditor', function ($sub) use ($kw): void {
+                        $sub->where('users.name', 'like', "%{$kw}%")
+                            ->orWhere('users.account', 'like', "%{$kw}%");
                     });
                 })
                 ->when($payload['status'] ?? null, fn ($query, $status) => $query->where('status', $status))

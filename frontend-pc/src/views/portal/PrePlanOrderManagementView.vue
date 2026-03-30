@@ -25,6 +25,8 @@ const sites = ref([])
 const vehicles = ref([])
 const filterForm = reactive({
   keyword: '',
+  submitter_keyword: '',
+  auditor_keyword: '',
   status: '',
   audit_status: '',
   is_locked: '',
@@ -402,6 +404,8 @@ const loadPrePlanOrders = async () => {
   try {
     const payload = {}
     if (filterForm.keyword.trim()) payload.keyword = filterForm.keyword.trim()
+    if (filterForm.submitter_keyword.trim()) payload.submitter_keyword = filterForm.submitter_keyword.trim()
+    if (filterForm.auditor_keyword.trim()) payload.auditor_keyword = filterForm.auditor_keyword.trim()
     if (filterForm.status) payload.status = filterForm.status
     if (filterForm.audit_status) payload.audit_status = filterForm.audit_status
     if (filterForm.is_locked !== '') payload.is_locked = filterForm.is_locked
@@ -419,6 +423,8 @@ const loadPrePlanOrders = async () => {
 
 const resetFilters = async () => {
   filterForm.keyword = ''
+  filterForm.submitter_keyword = ''
+  filterForm.auditor_keyword = ''
   filterForm.status = ''
   filterForm.audit_status = ''
   filterForm.is_locked = ''
@@ -1263,6 +1269,12 @@ onUnmounted(() => {
       <el-form-item label="关键词">
         <el-input v-model="filterForm.keyword" clearable placeholder="订单号/客户/装卸地址/联系人" style="width: 240px" />
       </el-form-item>
+      <el-form-item label="提交人">
+        <el-input v-model="filterForm.submitter_keyword" clearable placeholder="账号或姓名" style="width: 160px" />
+      </el-form-item>
+      <el-form-item label="审核人">
+        <el-input v-model="filterForm.auditor_keyword" clearable placeholder="账号或姓名" style="width: 160px" />
+      </el-form-item>
       <el-form-item label="状态">
         <el-select v-model="filterForm.status" clearable placeholder="全部状态" style="width: 140px">
           <el-option label="待调度" value="pending" />
@@ -1368,6 +1380,16 @@ onUnmounted(() => {
           <el-tag :type="auditStatusTypeMap[row.audit_status] || 'info'">
             {{ getLabel(auditStatusLabelMap, row.audit_status) }}
           </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="提交人" min-width="140">
+        <template #default="{ row }">
+          {{ row.submitter?.name || row.submitter?.account || (row.submitter_id ? `#${row.submitter_id}` : '-') }}
+        </template>
+      </el-table-column>
+      <el-table-column label="审核人" min-width="140">
+        <template #default="{ row }">
+          {{ row.auditor?.name || row.auditor?.account || (row.audited_by ? `#${row.audited_by}` : '-') }}
         </template>
       </el-table-column>
       <el-table-column label="锁单" min-width="80">
