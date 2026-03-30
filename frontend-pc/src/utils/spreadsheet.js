@@ -20,7 +20,7 @@ const triggerDownload = (filename, buffer, mimeType = XLSX_MIME) => {
   window.URL.revokeObjectURL(url)
 }
 
-const normalizeCellValue = (value) => {
+export const normalizeCellValue = (value) => {
   if (value === null || value === undefined) return ''
   if (value instanceof Date) return value.toISOString()
   if (Array.isArray(value)) {
@@ -35,6 +35,32 @@ const normalizeCellValue = (value) => {
     if (value.hyperlink && value.text) return String(value.text)
   }
   return String(value)
+}
+
+export const normalizeWorksheetRows = (worksheet) => {
+  if (!worksheet) return []
+
+  const headerRow = worksheet.getRow(1)
+  const headers = headerRow.values
+    .slice(1)
+    .map((value) => normalizeCellValue(value).trim())
+
+  const rows = []
+  for (let rowNumber = 2; rowNumber <= worksheet.rowCount; rowNumber += 1) {
+    const row = worksheet.getRow(rowNumber)
+    const normalized = {}
+
+    headers.forEach((header, index) => {
+      if (!header) return
+      normalized[header] = normalizeCellValue(row.getCell(index + 1).value).trim()
+    })
+
+    if (Object.values(normalized).some((value) => value !== '')) {
+      rows.push(normalized)
+    }
+  }
+
+  return rows
 }
 
 export const exportRowsToXlsx = async ({ filename, sheetName, rows }) => {
@@ -98,27 +124,5 @@ export const parseSpreadsheetFile = async (file) => {
   await workbook.xlsx.load(buffer)
 
   const worksheet = workbook.worksheets?.[0]
-  if (!worksheet) return []
-
-  const headerRow = worksheet.getRow(1)
-  const headers = headerRow.values
-    .slice(1)
-    .map((value) => normalizeCellValue(value).trim())
-
-  const rows = []
-  for (let rowNumber = 2; rowNumber <= worksheet.rowCount; rowNumber += 1) {
-    const row = worksheet.getRow(rowNumber)
-    const normalized = {}
-
-    headers.forEach((header, index) => {
-      if (!header) return
-      normalized[header] = normalizeCellValue(row.getCell(index + 1).value).trim()
-    })
-
-    if (Object.values(normalized).some((value) => value !== '')) {
-      rows.push(normalized)
-    }
-  }
-
-  return rows
+  return normalizeWorksheetRows(worksheet)
 }
