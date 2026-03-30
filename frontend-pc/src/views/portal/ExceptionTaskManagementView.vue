@@ -28,9 +28,15 @@ const filterForm = ref({
   handled_by_keyword: '',
   handled_by_me: false,
   overtime_only: false,
+  overtime_level: '',
 })
 const currentUser = readCurrentUser()
 const overtimeThresholdMinutes = 30
+const overtimeLevelOptions = [
+  { label: '超时 30 分钟', value: '30', min: 30 },
+  { label: '超时 60 分钟', value: '60', min: 60 },
+  { label: '超时 120 分钟', value: '120', min: 120 },
+]
 
 const exceptionTypeLabelMap = {
   vehicle_breakdown: '车辆故障',
@@ -107,6 +113,11 @@ const getPendingDurationTagType = (task) => {
   if (minutes >= overtimeThresholdMinutes) return 'warning'
   return 'info'
 }
+const isTaskMatchedOvertimeLevel = (task) => {
+  const level = overtimeLevelOptions.find((item) => item.value === filterForm.value.overtime_level)
+  if (!level) return true
+  return getPendingDurationMinutes(task) >= level.min
+}
 
 const currentException = computed(() => selectedExceptionTask.value?.route_meta?.exception || null)
 const currentExceptionHistory = computed(() => {
@@ -116,10 +127,14 @@ const currentExceptionHistory = computed(() => {
 const selectedTaskOrders = computed(() => Array.isArray(selectedExceptionTask.value?.orders) ? selectedExceptionTask.value.orders : [])
 const primaryTaskOrder = computed(() => selectedTaskOrders.value[0] || null)
 const displayedExceptionTasks = computed(() => {
-  if (filterForm.value.status !== 'pending' || !filterForm.value.overtime_only) {
-    return exceptionTasks.value
-  }
-  return exceptionTasks.value.filter((task) => getPendingDurationMinutes(task) >= overtimeThresholdMinutes)
+  if (filterForm.value.status !== 'pending') return exceptionTasks.value
+
+  return exceptionTasks.value.filter((task) => {
+    if (filterForm.value.overtime_only && getPendingDurationMinutes(task) < overtimeThresholdMinutes) {
+      return false
+    }
+    return isTaskMatchedOvertimeLevel(task)
+  })
 })
 const pendingExceptionCount = computed(() => exceptionTasks.value.filter((task) => task.route_meta?.exception?.status === 'pending').length)
 const overtimeExceptionCount = computed(() => exceptionTasks.value.filter((task) => getPendingDurationMinutes(task) >= overtimeThresholdMinutes).length)
@@ -127,6 +142,11 @@ const longestPendingMinutes = computed(() => {
   const durationList = exceptionTasks.value.map((task) => getPendingDurationMinutes(task))
   return durationList.length ? Math.max(...durationList) : 0
 })
+const exceptionTypeStats = computed(() => Object.entries(exceptionTypeLabelMap).map(([value, label]) => ({
+  value,
+  label,
+  count: exceptionTasks.value.filter((task) => task.route_meta?.exception?.type === value).length,
+})).filter((item) => item.count > 0))
 
 watch(() => filterForm.value.status, (status) => {
   if (status !== 'handled') {
@@ -135,6 +155,7 @@ watch(() => filterForm.value.status, (status) => {
     filterForm.value.handled_by_me = false
   } else {
     filterForm.value.overtime_only = false
+    filterForm.value.overtime_level = ''
   }
 })
 
@@ -279,6 +300,23 @@ onMounted(async () => {
         </el-card>
       </el-col>
     </el-row>
+    <el-card shadow="never" class="mb-12" v-if="filterForm.status === 'pending' && exceptionTypeStats.length">
+      <div class="table-header">
+        <div class="mobile-section-title">异常类型分布</div>
+        <div class="text-secondary">当前待处理池内统计</div>
+      </div>
+      <el-space wrap>
+        <el-tag
+          v-for="item in exceptionTypeStats"
+          :key="item.value"
+          :type="filterForm.exception_type === item.value ? 'primary' : 'info'"
+          class="order-tag-clickable"
+          @click="filterForm.exception_type = filterForm.exception_type === item.value ? '' : item.value"
+        >
+          {{ item.label }}：{{ item.count }}
+        </el-tag>
+      </el-space>
+    </el-card>
     <el-form inline class="mb-12">
       <el-form-item label="处理状态">
         <el-select v-model="filterForm.status" style="width: 140px">
@@ -329,6 +367,16 @@ onMounted(async () => {
         <el-checkbox v-model="filterForm.overtime_only">
           仅看超时异常（>{{ overtimeThresholdMinutes }} 分钟）
         </el-checkbox>
+      </el-form-item>
+      <el-form-item v-if="filterForm.status === 'pending'" label="超时分层">
+        <el-select v-model="filterForm.overtime_level" clearable placeholder="全部时长" style="width: 160px">
+          <el-option
+            v-for="item in overtimeLevelOptions"
+            :key="item.value"
+            :label="item.label"
+            :value="item.value"
+          />
+        </el-select>
       </el-form-item>
       <el-form-item>
         <el-button type="primary" @click="loadExceptionTasks">查询</el-button>

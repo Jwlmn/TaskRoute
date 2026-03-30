@@ -55,8 +55,12 @@ const formatNotificationTime = (message) => {
   return date.toLocaleString('zh-CN', { hour12: false })
 }
 
-const openTaskDetail = async (taskId) => {
+const openTaskDetail = async (row) => {
+  const taskId = Number(row?.meta?.task_id || 0)
   if (!taskId) return
+  if (row?.id && !row?.read_at) {
+    await markRead(row.id)
+  }
   await router.push({ name: 'mobile-task-detail', params: { id: taskId } })
 }
 
@@ -141,6 +145,11 @@ const togglePin = async (row) => {
   }
 }
 
+const markDispatchNoticeRead = async (row) => {
+  if (!row?.id || row?.read_at) return
+  await markRead(row.id)
+}
+
 onMounted(loadMessages)
 
 onUnmounted(() => {
@@ -181,6 +190,7 @@ watch(
       <el-select v-model="filterForm.message_type" clearable size="small" placeholder="消息类型">
         <el-option label="审核通知" value="audit_notice" />
         <el-option label="审核催办" value="audit_reminder" />
+        <el-option label="调度通知" value="dispatch_notice" />
       </el-select>
       <el-select v-model="filterForm.read_status" size="small">
         <el-option label="全部" value="all" />
@@ -236,9 +246,17 @@ watch(
               v-if="row.meta?.task_id"
               link
               type="info"
-              @click="openTaskDetail(row.meta.task_id)"
+              @click="openTaskDetail(row)"
             >
               查看任务
+            </el-button>
+            <el-button
+              v-if="row.message_type === 'dispatch_notice' && !row.read_at"
+              link
+              type="primary"
+              @click="markDispatchNoticeRead(row)"
+            >
+              已读本条
             </el-button>
             <el-button link type="primary" :disabled="!!row.read_at" @click="markRead(row.id)">已读</el-button>
             <el-button link type="warning" :loading="pinningId === row.id" @click="togglePin(row)">

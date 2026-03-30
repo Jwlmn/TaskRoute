@@ -44,6 +44,7 @@ const filterForm = ref({
 const messageTypeLabelMap = {
   audit_notice: '审核通知',
   audit_reminder: '审核催办',
+  dispatch_notice: '调度通知',
 }
 
 const loadMessages = async () => {
@@ -138,6 +139,20 @@ const openOrderDetail = async (row) => {
   }
 }
 
+const openDispatchTaskOrders = async (row) => {
+  const taskId = Number(row?.meta?.task_id || 0)
+  const taskNo = row?.meta?.task_no || ''
+  if (!taskId) return
+  await router.push({
+    name: 'dispatch-workbench',
+    query: {
+      task_no: taskNo,
+      focus_task_id: String(taskId),
+      open_orders: '1',
+    },
+  })
+}
+
 const goToAuditPendingOrders = async () => {
   await router.push({
     name: 'pre-plan-order-management',
@@ -150,6 +165,10 @@ const goToAuditPendingOrders = async () => {
 const handleNotificationAction = async (row) => {
   if (row?.message_type === 'audit_reminder') {
     await goToAuditPendingOrders()
+    return
+  }
+  if (row?.message_type === 'dispatch_notice' && isDispatchNotificationUser.value) {
+    await openDispatchTaskOrders(row)
     return
   }
 
@@ -187,6 +206,7 @@ const handleNotificationAction = async (row) => {
 
 const getNotificationActionLabel = (row) => {
   if (row?.message_type === 'audit_reminder') return '前往待审核清单'
+  if (row?.message_type === 'dispatch_notice' && isDispatchNotificationUser.value) return '查看任务'
   if (isDispatchNotificationUser.value && row?.meta?.audit_status === 'pending_approval') return '去审核'
   if (isCustomerNotificationUser.value && row?.meta?.audit_status === 'rejected') return '去重提'
   return '查看订单'
