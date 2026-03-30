@@ -74,6 +74,13 @@ const formatDateTime = (value) => {
 
 const formatEntityChange = (label, beforeValue, afterValue) => `${label}：${beforeValue || '-'} -> ${afterValue || '-'}`
 const formatOperator = (name, account, id) => name || account || (id ? `#${id}` : '-')
+const formatVehicleDisplay = (plateNumber, name, id) => {
+  if (plateNumber && name) return `${plateNumber}｜${name}`
+  if (plateNumber) return plateNumber
+  if (name) return name
+  return id ? `#${id}` : '-'
+}
+const formatDriverDisplay = (name, account, id) => name || account || (id ? `#${id}` : '-')
 
 const currentException = computed(() => selectedExceptionTask.value?.route_meta?.exception || null)
 const currentExceptionHistory = computed(() => {
@@ -392,10 +399,22 @@ onMounted(async () => {
           {{ formatEntityChange('状态', getLabel(taskStatusLabelMap, currentException.previous_task_status), getLabel(taskStatusLabelMap, currentException.current_task_status)) }}
         </el-descriptions-item>
         <el-descriptions-item label="车辆变更">
-          {{ formatEntityChange('车辆', currentException.previous_vehicle_id ? `#${currentException.previous_vehicle_id}` : '-', currentException.current_vehicle_id ? `#${currentException.current_vehicle_id}` : '-') }}
+          {{
+            formatEntityChange(
+              '车辆',
+              formatVehicleDisplay(currentException.previous_vehicle_plate_number, currentException.previous_vehicle_name, currentException.previous_vehicle_id),
+              formatVehicleDisplay(currentException.current_vehicle_plate_number, currentException.current_vehicle_name, currentException.current_vehicle_id),
+            )
+          }}
         </el-descriptions-item>
         <el-descriptions-item label="司机变更">
-          {{ formatEntityChange('司机', currentException.previous_driver_id ? `#${currentException.previous_driver_id}` : '-', currentException.current_driver_id ? `#${currentException.current_driver_id}` : '-') }}
+          {{
+            formatEntityChange(
+              '司机',
+              formatDriverDisplay(currentException.previous_driver_name, currentException.previous_driver_account, currentException.previous_driver_id),
+              formatDriverDisplay(currentException.current_driver_name, currentException.current_driver_account, currentException.current_driver_id),
+            )
+          }}
         </el-descriptions-item>
       </el-descriptions>
 
@@ -438,10 +457,18 @@ onMounted(async () => {
               任务状态：{{ getLabel(taskStatusLabelMap, item.previous_task_status) }} -> {{ getLabel(taskStatusLabelMap, item.current_task_status) }}
             </div>
             <div v-if="item.previous_vehicle_id || item.current_vehicle_id">
-              车辆变更：{{ item.previous_vehicle_id ? `#${item.previous_vehicle_id}` : '-' }} -> {{ item.current_vehicle_id ? `#${item.current_vehicle_id}` : '-' }}
+              车辆变更：{{
+                formatVehicleDisplay(item.previous_vehicle_plate_number, item.previous_vehicle_name, item.previous_vehicle_id)
+              }} -> {{
+                formatVehicleDisplay(item.current_vehicle_plate_number, item.current_vehicle_name, item.current_vehicle_id)
+              }}
             </div>
             <div v-if="item.previous_driver_id || item.current_driver_id">
-              司机变更：{{ item.previous_driver_id ? `#${item.previous_driver_id}` : '-' }} -> {{ item.current_driver_id ? `#${item.current_driver_id}` : '-' }}
+              司机变更：{{
+                formatDriverDisplay(item.previous_driver_name, item.previous_driver_account, item.previous_driver_id)
+              }} -> {{
+                formatDriverDisplay(item.current_driver_name, item.current_driver_account, item.current_driver_id)
+              }}
             </div>
           </el-card>
         </el-timeline-item>

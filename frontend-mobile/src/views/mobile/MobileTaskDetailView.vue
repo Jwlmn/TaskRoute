@@ -145,6 +145,13 @@ const exceptionStatusChangeLabelMap = {
   cancelled: '已取消',
 }
 const formatOperator = (name, account, id) => name || account || (id ? `#${id}` : '-')
+const formatVehicleDisplay = (plateNumber, name, id) => {
+  if (plateNumber && name) return `${plateNumber}｜${name}`
+  if (plateNumber) return plateNumber
+  if (name) return name
+  return id ? `#${id}` : '-'
+}
+const formatDriverDisplay = (name, account, id) => name || account || (id ? `#${id}` : '-')
 
 const formatExceptionStatusChange = (fromStatus, toStatus) => (
   `${getLabel(exceptionStatusChangeLabelMap, fromStatus)} -> ${getLabel(exceptionStatusChangeLabelMap, toStatus)}`
@@ -174,7 +181,8 @@ const handledExceptionSummaryLines = () => {
   }
 
   if (exception.handle_action === 'reassign') {
-    lines.push(`改派车辆：${exception.reassign_vehicle_id ? `#${exception.reassign_vehicle_id}` : '-'}`)
+    lines.push(`改派车辆：${formatVehicleDisplay(exception.current_vehicle_plate_number, exception.current_vehicle_name, exception.reassign_vehicle_id)}`)
+    lines.push(`当前司机：${formatDriverDisplay(exception.current_driver_name, exception.current_driver_account, exception.current_driver_id)}`)
   }
 
   return lines
@@ -214,7 +222,14 @@ const getExceptionHistoryDetailLines = (item) => {
     lines.push(`状态变化：${formatExceptionStatusChange(item.previous_task_status, item.current_task_status)}`)
   }
   if (item.previous_vehicle_id || item.current_vehicle_id) {
-    lines.push(`车辆变化：${item.previous_vehicle_id ? `#${item.previous_vehicle_id}` : '-'} -> ${item.current_vehicle_id ? `#${item.current_vehicle_id}` : '-'}`)
+    lines.push(
+      `车辆变化：${formatVehicleDisplay(item.previous_vehicle_plate_number, item.previous_vehicle_name, item.previous_vehicle_id)} -> ${formatVehicleDisplay(item.current_vehicle_plate_number, item.current_vehicle_name, item.current_vehicle_id)}`,
+    )
+  }
+  if (item.previous_driver_id || item.current_driver_id) {
+    lines.push(
+      `司机变化：${formatDriverDisplay(item.previous_driver_name, item.previous_driver_account, item.previous_driver_id)} -> ${formatDriverDisplay(item.current_driver_name, item.current_driver_account, item.current_driver_id)}`,
+    )
   }
 
   return lines
@@ -582,7 +597,22 @@ onUnmounted(() => {
           {{ formatExceptionStatusChange(handledException()?.previous_task_status, handledException()?.current_task_status) }}
         </el-descriptions-item>
         <el-descriptions-item v-if="handledException()?.handle_action === 'reassign'" label="改派车辆">
-          {{ handledException()?.reassign_vehicle_id ? `#${handledException()?.reassign_vehicle_id}` : '-' }}
+          {{
+            formatVehicleDisplay(
+              handledException()?.current_vehicle_plate_number,
+              handledException()?.current_vehicle_name,
+              handledException()?.reassign_vehicle_id,
+            )
+          }}
+        </el-descriptions-item>
+        <el-descriptions-item v-if="handledException()?.handle_action === 'reassign'" label="当前司机">
+          {{
+            formatDriverDisplay(
+              handledException()?.current_driver_name,
+              handledException()?.current_driver_account,
+              handledException()?.current_driver_id,
+            )
+          }}
         </el-descriptions-item>
       </el-descriptions>
       <el-card

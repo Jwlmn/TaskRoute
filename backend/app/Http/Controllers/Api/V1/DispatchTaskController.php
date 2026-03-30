@@ -374,6 +374,10 @@ class DispatchTaskController extends Controller
             $task = $this->dataScopeService->applyDispatchTaskScope(DispatchTask::query(), $request->user())
                 ->lockForUpdate()
                 ->findOrFail($payload['task_id']);
+            $task->loadMissing([
+                'vehicle:id,plate_number,name',
+                'driver:id,account,name',
+            ]);
             $routeMeta = is_array($task->route_meta) ? $task->route_meta : [];
             $exception = is_array($routeMeta['exception'] ?? null) ? $routeMeta['exception'] : null;
             if (! $exception) {
@@ -394,6 +398,14 @@ class DispatchTaskController extends Controller
             $oldVehicleId = (int) ($task->vehicle_id ?? 0);
             $oldDriverId = (int) ($task->driver_id ?? 0);
             $oldTaskStatus = (string) ($task->status ?? '');
+            $oldVehiclePlateNumber = $task->vehicle?->plate_number;
+            $oldVehicleName = $task->vehicle?->name;
+            $oldDriverAccount = $task->driver?->account;
+            $oldDriverName = $task->driver?->name;
+            $nextVehiclePlateNumber = $oldVehiclePlateNumber;
+            $nextVehicleName = $oldVehicleName;
+            $nextDriverAccount = $oldDriverAccount;
+            $nextDriverName = $oldDriverName;
 
             if ($payload['action'] === 'cancel') {
                 $task->status = 'cancelled';
@@ -411,7 +423,7 @@ class DispatchTaskController extends Controller
                 $vehicle = Vehicle::query()
                     ->where('id', (int) $payload['reassign_vehicle_id'])
                     ->where('status', 'idle')
-                    ->with('driver:id,role,status')
+                    ->with('driver:id,account,name,role,status')
                     ->first();
                 if (! $vehicle || ! $this->dataScopeService->canAccessSite($request->user(), (int) $vehicle->site_id)) {
                     throw ValidationException::withMessages([
@@ -424,6 +436,10 @@ class DispatchTaskController extends Controller
                     ]);
                 }
 
+                $nextVehiclePlateNumber = $vehicle->plate_number;
+                $nextVehicleName = $vehicle->name;
+                $nextDriverAccount = $vehicle->driver?->account;
+                $nextDriverName = $vehicle->driver?->name;
                 $task->vehicle_id = (int) $vehicle->id;
                 $task->driver_id = (int) $vehicle->driver_id;
                 $task->status = 'assigned';
@@ -448,10 +464,18 @@ class DispatchTaskController extends Controller
                 'occurred_at' => now()->toDateTimeString(),
                 'previous_task_status' => $oldTaskStatus,
                 'previous_vehicle_id' => $oldVehicleId > 0 ? $oldVehicleId : null,
+                'previous_vehicle_plate_number' => $oldVehiclePlateNumber,
+                'previous_vehicle_name' => $oldVehicleName,
                 'previous_driver_id' => $oldDriverId > 0 ? $oldDriverId : null,
+                'previous_driver_account' => $oldDriverAccount,
+                'previous_driver_name' => $oldDriverName,
                 'current_task_status' => (string) $task->status,
                 'current_vehicle_id' => $task->vehicle_id ? (int) $task->vehicle_id : null,
+                'current_vehicle_plate_number' => $nextVehiclePlateNumber,
+                'current_vehicle_name' => $nextVehicleName,
                 'current_driver_id' => $task->driver_id ? (int) $task->driver_id : null,
+                'current_driver_account' => $nextDriverAccount,
+                'current_driver_name' => $nextDriverName,
                 'reassign_vehicle_id' => $payload['reassign_vehicle_id'] ?? null,
             ];
 
@@ -466,10 +490,18 @@ class DispatchTaskController extends Controller
                 'reassign_vehicle_id' => $payload['reassign_vehicle_id'] ?? null,
                 'previous_task_status' => $oldTaskStatus,
                 'previous_vehicle_id' => $oldVehicleId > 0 ? $oldVehicleId : null,
+                'previous_vehicle_plate_number' => $oldVehiclePlateNumber,
+                'previous_vehicle_name' => $oldVehicleName,
                 'previous_driver_id' => $oldDriverId > 0 ? $oldDriverId : null,
+                'previous_driver_account' => $oldDriverAccount,
+                'previous_driver_name' => $oldDriverName,
                 'current_task_status' => (string) $task->status,
                 'current_vehicle_id' => $task->vehicle_id ? (int) $task->vehicle_id : null,
+                'current_vehicle_plate_number' => $nextVehiclePlateNumber,
+                'current_vehicle_name' => $nextVehicleName,
                 'current_driver_id' => $task->driver_id ? (int) $task->driver_id : null,
+                'current_driver_account' => $nextDriverAccount,
+                'current_driver_name' => $nextDriverName,
                 'history' => $history,
             ]);
 
