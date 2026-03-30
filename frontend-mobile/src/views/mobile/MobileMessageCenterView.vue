@@ -40,6 +40,7 @@ const filterForm = reactive({
   read_status: 'all',
   message_type: '',
   pinned_only: false,
+  task_focus: '',
 })
 let filterDebounceTimer = null
 let loadAbortController = null
@@ -116,7 +117,9 @@ const displayMessages = computed(() => {
     }
   })
 
-  return [...grouped.values()]
+  const list = [...grouped.values()]
+  if (!filterForm.task_focus) return list
+  return list.filter((item) => String(item?.meta?.task_id || '') === String(filterForm.task_focus))
 })
 const isExpandedMessageRow = (row) => expandedMessageKeys.value.includes(row?.aggregate_key)
 const toggleExpandedMessageRow = (row) => {
@@ -130,6 +133,14 @@ const toggleExpandedMessageRow = (row) => {
 const getAggregateItems = (row) => {
   const items = Array.isArray(row?.aggregate_items) ? row.aggregate_items : []
   return [...items].sort((a, b) => String(b?.created_at || '').localeCompare(String(a?.created_at || '')))
+}
+const focusTaskMessages = (row) => {
+  const taskId = String(row?.meta?.task_id || '')
+  if (!taskId) return
+  filterForm.task_focus = taskId
+}
+const clearTaskFocus = () => {
+  filterForm.task_focus = ''
 }
 
 const openTaskDetail = async (row) => {
@@ -311,6 +322,10 @@ watch(
         <el-button size="small" plain @click="markReadBatch">批量已读</el-button>
       </div>
     </div>
+    <div v-if="filterForm.task_focus" class="mobile-message-content">
+      <el-tag closable @close="clearTaskFocus">任务 ID：{{ filterForm.task_focus }}</el-tag>
+      <el-button link type="primary" @click="clearTaskFocus">清空任务聚焦</el-button>
+    </div>
 
     <el-table
       :data="displayMessages"
@@ -352,6 +367,7 @@ watch(
             <el-button link type="primary" @click="toggleExpandedMessageRow(row)">
               {{ isExpandedMessageRow(row) ? '收起本组明细' : '展开本组明细' }}
             </el-button>
+            <el-button link type="primary" @click="focusTaskMessages(row)">只看本任务通知</el-button>
             <div v-if="isExpandedMessageRow(row)" class="text-secondary">
               <div
                 v-for="item in getAggregateItems(row)"

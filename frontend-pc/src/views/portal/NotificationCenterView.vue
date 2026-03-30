@@ -40,6 +40,7 @@ const filterForm = ref({
   read_status: 'all',
   message_type: '',
   pinned_only: false,
+  task_focus: '',
 })
 
 const messageTypeLabelMap = {
@@ -110,7 +111,9 @@ const displayMessages = computed(() => {
     }
   })
 
-  return [...grouped.values()]
+  const list = [...grouped.values()]
+  if (!filterForm.value.task_focus) return list
+  return list.filter((item) => String(item?.meta?.task_id || '') === String(filterForm.value.task_focus))
 })
 const isExpandedMessageRow = (row) => expandedMessageKeys.value.includes(row?.aggregate_key)
 const toggleExpandedMessageRow = (row) => {
@@ -124,6 +127,14 @@ const toggleExpandedMessageRow = (row) => {
 const getAggregateItems = (row) => {
   const items = Array.isArray(row?.aggregate_items) ? row.aggregate_items : []
   return [...items].sort((a, b) => String(b?.created_at || '').localeCompare(String(a?.created_at || '')))
+}
+const focusTaskMessages = (row) => {
+  const taskId = String(row?.meta?.task_id || '')
+  if (!taskId) return
+  filterForm.value.task_focus = taskId
+}
+const clearTaskFocus = () => {
+  filterForm.value.task_focus = ''
 }
 
 const markReadSilently = async (id) => {
@@ -385,6 +396,14 @@ onMounted(loadMessages)
       <el-form-item>
         <el-checkbox v-model="filterForm.pinned_only">仅看置顶</el-checkbox>
       </el-form-item>
+      <el-form-item v-if="filterForm.task_focus" label="任务聚焦">
+        <el-space wrap>
+          <el-tag closable @close="clearTaskFocus">
+            任务 ID：{{ filterForm.task_focus }}
+          </el-tag>
+          <el-button link type="primary" @click="clearTaskFocus">清空</el-button>
+        </el-space>
+      </el-form-item>
       <el-form-item>
         <el-button type="primary" @click="loadMessages">查询</el-button>
       </el-form-item>
@@ -426,6 +445,7 @@ onMounted(loadMessages)
             <el-button link type="primary" @click="toggleExpandedMessageRow(row)">
               {{ isExpandedMessageRow(row) ? '收起本组明细' : '展开本组明细' }}
             </el-button>
+            <el-button link type="primary" @click="focusTaskMessages(row)">只看本任务通知</el-button>
             <div v-if="isExpandedMessageRow(row)" class="text-secondary">
               <div
                 v-for="item in getAggregateItems(row)"
