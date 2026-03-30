@@ -27,8 +27,10 @@ const filterForm = ref({
   handle_action: '',
   handled_by_keyword: '',
   handled_by_me: false,
+  overtime_only: false,
 })
 const currentUser = readCurrentUser()
+const overtimeThresholdMinutes = 30
 
 const exceptionTypeLabelMap = {
   vehicle_breakdown: '车辆故障',
@@ -83,6 +85,28 @@ const formatVehicleDisplay = (plateNumber, name, id) => {
   return id ? `#${id}` : '-'
 }
 const formatDriverDisplay = (name, account, id) => name || account || (id ? `#${id}` : '-')
+const getPendingDurationMinutes = (task) => {
+  const reportedAt = task?.route_meta?.exception?.reported_at
+  if (!reportedAt) return 0
+  const date = new Date(reportedAt)
+  if (Number.isNaN(date.getTime())) return 0
+  return Math.max(0, Math.floor((Date.now() - date.getTime()) / 60000))
+}
+const formatPendingDurationMinutes = (minutes) => {
+  if (minutes <= 0) return '刚刚'
+  const hours = Math.floor(minutes / 60)
+  const remainMinutes = minutes % 60
+  if (hours <= 0) return `${remainMinutes} 分钟`
+  if (remainMinutes === 0) return `${hours} 小时`
+  return `${hours} 小时 ${remainMinutes} 分钟`
+}
+const formatPendingDuration = (task) => formatPendingDurationMinutes(getPendingDurationMinutes(task))
+const getPendingDurationTagType = (task) => {
+  const minutes = getPendingDurationMinutes(task)
+  if (minutes >= overtimeThresholdMinutes * 2) return 'danger'
+  if (minutes >= overtimeThresholdMinutes) return 'warning'
+  return 'info'
+}
 
 const currentException = computed(() => selectedExceptionTask.value?.route_meta?.exception || null)
 const currentExceptionHistory = computed(() => {
@@ -91,12 +115,26 @@ const currentExceptionHistory = computed(() => {
 })
 const selectedTaskOrders = computed(() => Array.isArray(selectedExceptionTask.value?.orders) ? selectedExceptionTask.value.orders : [])
 const primaryTaskOrder = computed(() => selectedTaskOrders.value[0] || null)
+const displayedExceptionTasks = computed(() => {
+  if (filterForm.value.status !== 'pending' || !filterForm.value.overtime_only) {
+    return exceptionTasks.value
+  }
+  return exceptionTasks.value.filter((task) => getPendingDurationMinutes(task) >= overtimeThresholdMinutes)
+})
+const pendingExceptionCount = computed(() => exceptionTasks.value.filter((task) => task.route_meta?.exception?.status === 'pending').length)
+const overtimeExceptionCount = computed(() => exceptionTasks.value.filter((task) => getPendingDurationMinutes(task) >= overtimeThresholdMinutes).length)
+const longestPendingMinutes = computed(() => {
+  const durationList = exceptionTasks.value.map((task) => getPendingDurationMinutes(task))
+  return durationList.length ? Math.max(...durationList) : 0
+})
 
 watch(() => filterForm.value.status, (status) => {
   if (status !== 'handled') {
     filterForm.value.handle_action = ''
     filterForm.value.handled_by_keyword = ''
     filterForm.value.handled_by_me = false
+  } else {
+    filterForm.value.overtime_only = false
   }
 })
 
@@ -219,6 +257,28 @@ onMounted(async () => {
         <el-button type="primary" plain @click="loadExceptionTasks">刷新异常</el-button>
       </div>
     </template>
+    <el-row :gutter="12" class="mb-12">
+      <el-col :span="8">
+        <el-card shadow="never">
+          <div class="text-secondary mb-8">当前异常总量</div>
+          <div class="card-title">{{ exceptionTasks.length }}</div>
+        </el-card>
+      </el-col>
+      <el-col :span="8">
+        <el-card shadow="never">
+          <div class="text-secondary mb-8">超时异常数</div>
+          <div class="card-title">{{ overtimeExceptionCount }}</div>
+          <div class="text-secondary">阈值 {{ overtimeThresholdMinutes }} 分钟</div>
+        </el-card>
+      </el-col>
+      <el-col :span="8">
+        <el-card shadow="never">
+          <div class="text-secondary mb-8">最长待处理时长</div>
+          <div class="card-title">{{ longestPendingMinutes > 0 ? formatPendingDurationMinutes(longestPendingMinutes) : '-' }}</div>
+          <div class="text-secondary">待处理 {{ pendingExceptionCount }} 条</div>
+        </el-card>
+      </el-col>
+    </el-row>
     <el-form inline class="mb-12">
       <el-form-item label="处理状态">
         <el-select v-model="filterForm.status" style="width: 140px">
@@ -265,11 +325,16 @@ onMounted(async () => {
           </span>
         </el-checkbox>
       </el-form-item>
+      <el-form-item v-if="filterForm.status === 'pending'">
+        <el-checkbox v-model="filterForm.overtime_only">
+          仅看超时异常（>{{ overtimeThresholdMinutes }} 分钟）
+        </el-checkbox>
+      </el-form-item>
       <el-form-item>
         <el-button type="primary" @click="loadExceptionTasks">查询</el-button>
       </el-form-item>
     </el-form>
-    <el-table :data="exceptionTasks" stripe v-loading="loadingExceptions">
+    <el-table :data="displayedExceptionTasks" stripe v-loading="loadingExceptions">
       <el-table-column prop="task_no" label="任务编号" min-width="180" />
       <el-table-column label="当前状态" min-width="110">
         <template #default="{ row }">
@@ -306,6 +371,17 @@ onMounted(async () => {
       <el-table-column label="上报时间" min-width="180">
         <template #default="{ row }">
           {{ formatDateTime(row.route_meta?.exception?.reported_at) }}
+        </template>
+      </el-table-column>
+      <el-table-column label="待处理时长" min-width="130">
+        <template #default="{ row }">
+          <el-tag
+            v-if="row.route_meta?.exception?.status === 'pending'"
+            :type="getPendingDurationTagType(row)"
+          >
+            {{ formatPendingDuration(row) }}
+          </el-tag>
+          <span v-else>-</span>
         </template>
       </el-table-column>
       <el-table-column label="处理动作" min-width="120">
