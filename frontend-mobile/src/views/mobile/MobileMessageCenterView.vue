@@ -1,11 +1,14 @@
 <script setup>
 import { onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '../../services/api'
 
+const router = useRouter()
 const messageTypeLabelMap = {
   audit_notice: '审核通知',
   audit_reminder: '审核催办',
+  dispatch_notice: '调度通知',
 }
 
 const auditStatusLabelMap = {
@@ -43,12 +46,18 @@ let loadAbortController = null
 const getLabel = (map, value) => map[value] || value || '-'
 const getNotificationOrderNo = (message) => message?.meta?.order_no || '-'
 const getNotificationAuditStatus = (message) => message?.meta?.audit_status || ''
+const getNotificationTaskNo = (message) => message?.meta?.task_no || '-'
 const formatNotificationTime = (message) => {
   const value = message?.created_at
   if (!value) return '-'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return String(value)
   return date.toLocaleString('zh-CN', { hour12: false })
+}
+
+const openTaskDetail = async (taskId) => {
+  if (!taskId) return
+  await router.push({ name: 'mobile-task-detail', params: { id: taskId } })
 }
 
 const loadMessages = async (page = pagination.page) => {
@@ -214,14 +223,23 @@ watch(
           </div>
           <div class="mobile-message-content">{{ row.content || '-' }}</div>
           <div class="mobile-message-extra">
-            <span>关联订单：{{ getNotificationOrderNo(row) }}</span>
+            <span v-if="row.meta?.task_id">关联任务：{{ getNotificationTaskNo(row) }}</span>
+            <span v-else>关联订单：{{ getNotificationOrderNo(row) }}</span>
             <span>通知时间：{{ formatNotificationTime(row) }}</span>
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="130" fixed="right">
+      <el-table-column label="操作" width="160" fixed="right">
         <template #default="{ row }">
           <div class="mobile-message-row-actions">
+            <el-button
+              v-if="row.meta?.task_id"
+              link
+              type="info"
+              @click="openTaskDetail(row.meta.task_id)"
+            >
+              查看任务
+            </el-button>
             <el-button link type="primary" :disabled="!!row.read_at" @click="markRead(row.id)">已读</el-button>
             <el-button link type="warning" :loading="pinningId === row.id" @click="togglePin(row)">
               {{ row.is_pinned ? '取消置顶' : '置顶' }}

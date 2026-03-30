@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\DispatchTask;
+use App\Models\SystemMessage;
 use App\Models\Vehicle;
 use App\Services\Auth\DataScopeService;
 use Illuminate\Http\JsonResponse;
@@ -507,10 +508,97 @@ class DispatchTaskController extends Controller
 
             $task->route_meta = $routeMeta;
             $task->save();
+            $this->notifyDriversForHandledException(
+                task: $task,
+                action: (string) $payload['action'],
+                oldDriverId: $oldDriverId > 0 ? $oldDriverId : null,
+                newDriverId: $task->driver_id ? (int) $task->driver_id : null,
+                handleNote: $payload['handle_note'] ?? null,
+            );
             return response()->json(
                 $task->fresh(['vehicle:id,plate_number,name', 'driver:id,account,name'])
             );
         });
+    }
+
+    private function notifyDriversForHandledException(
+        DispatchTask $task,
+        string $action,
+        ?int $oldDriverId,
+        ?int $newDriverId,
+        ?string $handleNote = null,
+    ): void {
+        $taskId = (int) $task->id;
+        $taskNo = (string) $task->task_no;
+        $noteText = $handleNote ? "，备注：{$handleNote}" : '';
+
+        if ($action === 'continue' && $newDriverId) {
+            $this->createDispatchNotice(
+                userId: $newDriverId,
+                title: '任务异常已处理',
+                content: "任务 {$taskNo} 的异常已处理，请继续执行{$noteText}",
+                taskId: $taskId,
+                taskNo: $taskNo,
+                action: $action,
+            );
+            return;
+        }
+
+        if ($action === 'cancel' && $oldDriverId) {
+            $this->createDispatchNotice(
+                userId: $oldDriverId,
+                title: '任务已取消',
+                content: "任务 {$taskNo} 因异常已取消，请停止执行{$noteText}",
+                taskId: $taskId,
+                taskNo: $taskNo,
+                action: $action,
+            );
+            return;
+        }
+
+        if ($action === 'reassign') {
+            if ($oldDriverId) {
+                $this->createDispatchNotice(
+                    userId: $oldDriverId,
+                    title: '任务已改派',
+                    content: "任务 {$taskNo} 已改派给其他司机，请停止执行{$noteText}",
+                    taskId: $taskId,
+                    taskNo: $taskNo,
+                    action: $action,
+                );
+            }
+            if ($newDriverId) {
+                $this->createDispatchNotice(
+                    userId: $newDriverId,
+                    title: '收到改派任务',
+                    content: "任务 {$taskNo} 已改派给你，请及时查看并执行{$noteText}",
+                    taskId: $taskId,
+                    taskNo: $taskNo,
+                    action: $action,
+                );
+            }
+        }
+    }
+
+    private function createDispatchNotice(
+        int $userId,
+        string $title,
+        string $content,
+        int $taskId,
+        string $taskNo,
+        string $action,
+    ): void {
+        SystemMessage::query()->create([
+            'user_id' => $userId,
+            'message_type' => 'dispatch_notice',
+            'title' => $title,
+            'content' => $content,
+            'meta' => [
+                'task_id' => $taskId,
+                'task_no' => $taskNo,
+                'handle_action' => $action,
+            ],
+        ]);
     }
 
     private function canAccessTask(Request $request, DispatchTask $dispatchTask): bool
