@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
 import CustomerPrePlanOrderView from './CustomerPrePlanOrderView.vue'
@@ -59,6 +59,7 @@ const mountView = async () => {
 
 describe('CustomerPrePlanOrderView', () => {
   beforeEach(() => {
+    vi.useFakeTimers()
     getMock.mockReset()
     postMock.mockReset()
     messageErrorMock.mockReset()
@@ -69,6 +70,11 @@ describe('CustomerPrePlanOrderView', () => {
         cargo_categories: [],
       },
     })
+  })
+
+  afterEach(() => {
+    vi.runOnlyPendingTimers()
+    vi.useRealTimers()
   })
 
   it('加载通知后按未读优先和时间倒序展示', async () => {
@@ -178,5 +184,67 @@ describe('CustomerPrePlanOrderView', () => {
     })
     expect(messageSuccessMock).toHaveBeenCalledWith('已标记为已读')
     expect(wrapper.vm.messages[0].read_at).toBe('2026-03-30 11:05:00')
+  })
+
+  it('创建表单填写完整后会防抖预览命中模板', async () => {
+    postMock
+      .mockResolvedValueOnce(buildListResponse([]))
+      .mockResolvedValueOnce(buildListResponse([]))
+      .mockResolvedValueOnce({
+        data: {
+          matched: true,
+          template: {
+            id: 88,
+            name: '华东油品模板',
+            pickup_site: { name: '上海库' },
+            dropoff_site: { name: '苏州店' },
+          },
+        },
+      })
+
+    const wrapper = await mountView()
+    wrapper.vm.openCreate()
+    wrapper.vm.form.client_name = '华东客户'
+    wrapper.vm.form.cargo_category_id = 9
+    wrapper.vm.form.pickup_address = '上海装货地'
+    wrapper.vm.form.dropoff_address = '苏州卸货地'
+
+    await wrapper.vm.$nextTick()
+    await vi.advanceTimersByTimeAsync(300)
+    await flushPromises()
+
+    expect(postMock).toHaveBeenNthCalledWith(3, '/freight-template/match-preview', {
+      client_name: '华东客户',
+      cargo_category_id: 9,
+      pickup_address: '上海装货地',
+      dropoff_address: '苏州卸货地',
+    })
+    expect(wrapper.vm.templatePreview).toEqual({
+      id: 88,
+      name: '华东油品模板',
+      pickup_site: { name: '上海库' },
+      dropoff_site: { name: '苏州店' },
+    })
+    expect(wrapper.text()).toContain('预计命中模板：华东油品模板（装货站点:上海库 / 卸货站点:苏州店）')
+  })
+
+  it('创建表单信息不完整时不会请求模板预览', async () => {
+    postMock
+      .mockResolvedValueOnce(buildListResponse([]))
+      .mockResolvedValueOnce(buildListResponse([]))
+
+    const wrapper = await mountView()
+    wrapper.vm.openCreate()
+    wrapper.vm.form.client_name = '信息不完整客户'
+    wrapper.vm.form.cargo_category_id = null
+    wrapper.vm.form.pickup_address = '上海装货地'
+    wrapper.vm.form.dropoff_address = ''
+
+    await wrapper.vm.$nextTick()
+    await vi.advanceTimersByTimeAsync(300)
+    await flushPromises()
+
+    expect(postMock).toHaveBeenCalledTimes(2)
+    expect(wrapper.vm.templatePreview).toBeNull()
   })
 })
