@@ -13,6 +13,9 @@ const dialogMode = ref('create')
 const compareDialogVisible = ref(false)
 const compareLoading = ref(false)
 const compareRows = ref([])
+const detailDialogVisible = ref(false)
+const detailLoading = ref(false)
+const detailOrder = ref(null)
 const orders = ref([])
 const messages = ref([])
 const unreadOnly = ref(true)
@@ -38,6 +41,14 @@ const auditStatusTypeMap = {
   pending_approval: 'warning',
   approved: 'success',
   rejected: 'danger',
+}
+
+const historyActionLabelMap = {
+  customer_submit: '客户提报',
+  customer_update: '客户修改',
+  customer_resubmit: '客户重提',
+  dispatcher_audit_approve: '审核通过',
+  dispatcher_audit_reject: '审核驳回',
 }
 
 const form = reactive({
@@ -118,6 +129,23 @@ const getFreightTemplateMeta = (row) => {
     id: templateId || null,
     name: templateName || '未命名模板',
   }
+}
+
+const formatDateTime = (value) => {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  const yyyy = date.getFullYear()
+  const mm = String(date.getMonth() + 1).padStart(2, '0')
+  const dd = String(date.getDate()).padStart(2, '0')
+  const hh = String(date.getHours()).padStart(2, '0')
+  const mi = String(date.getMinutes()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}`
+}
+
+const detailHistory = () => {
+  const list = detailOrder.value?.meta?.history
+  return Array.isArray(list) ? [...list].reverse() : []
 }
 
 const requestTemplatePreview = async () => {
@@ -295,6 +323,21 @@ const openRevisionCompare = async (row) => {
   }
 }
 
+const openDetail = async (row) => {
+  detailDialogVisible.value = true
+  detailLoading.value = true
+  detailOrder.value = null
+  try {
+    const { data } = await api.post('/pre-plan-order/customer-detail', { id: row.id })
+    detailOrder.value = data || null
+  } catch (error) {
+    detailDialogVisible.value = false
+    ElMessage.error(error?.response?.data?.message || '加载计划单详情失败')
+  } finally {
+    detailLoading.value = false
+  }
+}
+
 onMounted(async () => {
   await Promise.all([loadMeta(), loadOrders(), loadMessages()])
 })
@@ -368,6 +411,13 @@ onUnmounted(() => {
       <el-table-column prop="audit_remark" label="审核备注" min-width="180" />
       <el-table-column label="操作" min-width="180" fixed="right">
         <template #default="{ row }">
+          <el-button
+            link
+            type="info"
+            @click="openDetail(row)"
+          >
+            详情
+          </el-button>
           <el-button
             link
             type="primary"
@@ -572,6 +622,61 @@ onUnmounted(() => {
       <el-button type="primary" :loading="creating" @click="submit">
         {{ dialogMode === 'create' ? '提交审核' : '保存修改' }}
       </el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog v-model="detailDialogVisible" title="客户计划单详情" width="820px" destroy-on-close>
+    <el-skeleton :loading="detailLoading" animated :rows="6">
+      <template #default>
+        <el-descriptions v-if="detailOrder" :column="2" border size="small">
+          <el-descriptions-item label="订单号">{{ detailOrder.order_no || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="客户">{{ detailOrder.client_name || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="货品分类">{{ detailOrder.cargo_category?.name || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="审核状态">{{ getLabel(auditStatusLabelMap, detailOrder.audit_status) }}</el-descriptions-item>
+          <el-descriptions-item label="装货地">{{ detailOrder.pickup_address || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="卸货地">{{ detailOrder.dropoff_address || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="装货联系人">
+            {{ detailOrder.pickup_contact_name || '-' }} / {{ detailOrder.pickup_contact_phone || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="收货联系人">
+            {{ detailOrder.dropoff_contact_name || '-' }} / {{ detailOrder.dropoff_contact_phone || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="预计提货">{{ formatDateTime(detailOrder.expected_pickup_at) }}</el-descriptions-item>
+          <el-descriptions-item label="预计送达">{{ formatDateTime(detailOrder.expected_delivery_at) }}</el-descriptions-item>
+          <el-descriptions-item label="运价方式">{{ getLabel(freightSchemeLabelMap, detailOrder.freight_calc_scheme) }}</el-descriptions-item>
+          <el-descriptions-item label="运价单价">{{ detailOrder.freight_unit_price ?? '-' }}</el-descriptions-item>
+          <el-descriptions-item label="命中模板">
+            {{ getFreightTemplateMeta(detailOrder)?.name || '未命中模板' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="审核备注">{{ detailOrder.audit_remark || '-' }}</el-descriptions-item>
+        </el-descriptions>
+        <el-divider content-position="left">操作轨迹</el-divider>
+        <el-table :data="detailHistory()" size="small" stripe>
+          <el-table-column label="时间" min-width="160">
+            <template #default="{ row }">
+              {{ formatDateTime(row.at) }}
+            </template>
+          </el-table-column>
+          <el-table-column label="动作" min-width="140">
+            <template #default="{ row }">
+              {{ historyActionLabelMap[row.action] || row.action || '-' }}
+            </template>
+          </el-table-column>
+          <el-table-column label="操作人" min-width="140">
+            <template #default="{ row }">
+              {{ row.operator_name || row.operator_account || (row.operator_id ? `#${row.operator_id}` : '-') }}
+            </template>
+          </el-table-column>
+          <el-table-column label="附加信息" min-width="260">
+            <template #default="{ row }">
+              {{ row.extra && Object.keys(row.extra).length ? JSON.stringify(row.extra) : '-' }}
+            </template>
+          </el-table-column>
+        </el-table>
+      </template>
+    </el-skeleton>
+    <template #footer>
+      <el-button @click="detailDialogVisible = false">关闭</el-button>
     </template>
   </el-dialog>
 
