@@ -59,6 +59,8 @@ const recentTaskNotices = computed(() => tasks.value
     action: task.route_meta?.exception?.handle_action,
     handled_at: task.route_meta?.exception?.handled_at,
     note: task.route_meta?.exception?.handle_note || '',
+    summary: task.route_meta?.exception?.handle_note
+      || (task.route_meta?.exception?.handle_action === 'cancel' ? '调度已取消当前任务。' : '调度已将当前任务改派给其他司机。'),
   })))
 
 const normalizeTaskStatusGroup = (status) => {
@@ -232,7 +234,7 @@ watch(taskStatusFilter, () => {
             :closable="false"
             show-icon
             :title="notice.action === 'cancel' ? `任务 ${notice.task_no} 已取消` : `任务 ${notice.task_no} 已改派`"
-            :description="`${notice.note || (notice.action === 'cancel' ? '该任务已停止执行。' : '请停止执行并关注新任务安排。')} 处理时间：${formatDateTime(notice.handled_at)}`"
+            :description="`原因摘要：${notice.summary} 处理时间：${formatDateTime(notice.handled_at)}`"
           />
           <el-empty v-if="tasks.length === 0" description="当前筛选条件下无任务" />
           <div v-for="task in tasks" :key="task.id" class="mobile-task-item">

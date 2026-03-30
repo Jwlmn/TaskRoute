@@ -29,6 +29,8 @@ const filterForm = ref({
   handled_by_me: false,
   overtime_only: false,
   overtime_level: '',
+  driver_focus: '',
+  site_focus: '',
 })
 const currentUser = readCurrentUser()
 const overtimeThresholdMinutes = 30
@@ -140,6 +142,14 @@ const displayedExceptionTasks = computed(() => {
     if (filterForm.value.overtime_only && getPendingDurationMinutes(task) < overtimeThresholdMinutes) {
       return false
     }
+    if (filterForm.value.driver_focus && (task.driver?.account || '') !== filterForm.value.driver_focus) {
+      return false
+    }
+    if (filterForm.value.site_focus) {
+      const orders = Array.isArray(task.orders) ? task.orders : []
+      const matchedSite = orders.some((order) => (order.pickup_address || '') === filterForm.value.site_focus)
+      if (!matchedSite) return false
+    }
     return isTaskMatchedOvertimeLevel(task)
   })
 })
@@ -160,6 +170,7 @@ const driverExceptionRanking = computed(() => {
     const key = task.driver?.account || String(task.driver_id || 'unknown')
     const current = map.get(key) || {
       key,
+      account: task.driver?.account || '',
       name: formatDriverDisplay(task.driver?.name, task.driver?.account, task.driver_id),
       count: 0,
     }
@@ -181,6 +192,12 @@ const siteExceptionRanking = computed(() => {
   })
   return [...map.values()].sort((a, b) => b.count - a.count).slice(0, 5)
 })
+const applyDriverRankingFilter = (item) => {
+  filterForm.value.driver_focus = filterForm.value.driver_focus === item.account ? '' : (item.account || '')
+}
+const applySiteRankingFilter = (item) => {
+  filterForm.value.site_focus = filterForm.value.site_focus === item.name ? '' : (item.name || '')
+}
 
 watch(() => filterForm.value.status, (status) => {
   if (status !== 'handled') {
@@ -361,7 +378,7 @@ onMounted(async () => {
           <el-empty v-if="!driverExceptionRanking.length" description="暂无异常数据" />
           <div v-else>
             <div v-for="item in driverExceptionRanking" :key="`driver-rank-${item.key}`" class="mobile-exception-result-line">
-              {{ item.name }}：{{ item.count }} 次
+              <span class="order-tag-clickable" @click="applyDriverRankingFilter(item)">{{ item.name }}：{{ item.count }} 次</span>
             </div>
           </div>
         </el-card>
@@ -375,7 +392,7 @@ onMounted(async () => {
           <el-empty v-if="!siteExceptionRanking.length" description="暂无异常数据" />
           <div v-else>
             <div v-for="item in siteExceptionRanking" :key="`site-rank-${item.key}`" class="mobile-exception-result-line">
-              {{ item.name }}：{{ item.count }} 次
+              <span class="order-tag-clickable" @click="applySiteRankingFilter(item)">{{ item.name }}：{{ item.count }} 次</span>
             </div>
           </div>
         </el-card>
@@ -441,6 +458,16 @@ onMounted(async () => {
             :value="item.value"
           />
         </el-select>
+      </el-form-item>
+      <el-form-item v-if="filterForm.status === 'pending' && (filterForm.driver_focus || filterForm.site_focus)" label="聚合筛选">
+        <el-space wrap>
+          <el-tag v-if="filterForm.driver_focus" closable @close="filterForm.driver_focus = ''">
+            司机：{{ filterForm.driver_focus }}
+          </el-tag>
+          <el-tag v-if="filterForm.site_focus" closable @close="filterForm.site_focus = ''">
+            装货地：{{ filterForm.site_focus }}
+          </el-tag>
+        </el-space>
       </el-form-item>
       <el-form-item>
         <el-button type="primary" @click="loadExceptionTasks">查询</el-button>
