@@ -341,6 +341,38 @@ class PrePlanOrderAuditApiTest extends TestCase
         ])->assertNotFound();
     }
 
+    public function test_dispatcher_detail_returns_readable_submitter_and_auditor(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $customer = User::query()->where('account', 'customer')->firstOrFail();
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $cargo = CargoCategory::query()->firstOrFail();
+
+        Sanctum::actingAs($customer);
+        $submitResponse = $this->postJson('/api/v1/pre-plan-order/customer-submit', [
+            'cargo_category_id' => $cargo->id,
+            'client_name' => '调度详情可读用户',
+            'pickup_address' => '调度详情装货地',
+            'dropoff_address' => '调度详情卸货地',
+        ])->assertCreated();
+        $orderId = (int) $submitResponse->json('id');
+
+        Sanctum::actingAs($dispatcher);
+        $this->postJson('/api/v1/pre-plan-order/audit-approve', [
+            'id' => $orderId,
+            'audit_remark' => '审核通过',
+        ])->assertOk();
+
+        $this->postJson('/api/v1/pre-plan-order/detail', [
+            'id' => $orderId,
+        ])->assertOk()
+            ->assertJsonPath('submitter.id', $customer->id)
+            ->assertJsonPath('submitter.name', $customer->name)
+            ->assertJsonPath('auditor.id', $dispatcher->id)
+            ->assertJsonPath('auditor.name', $dispatcher->name);
+    }
+
     public function test_dispatcher_can_batch_create_pre_plan_orders(): void
     {
         $this->seed(DatabaseSeeder::class);

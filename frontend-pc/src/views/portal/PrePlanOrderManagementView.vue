@@ -1555,6 +1555,12 @@ onUnmounted(() => {
           <el-descriptions-item label="卸货地">{{ detailOrder.dropoff_address || '-' }}</el-descriptions-item>
           <el-descriptions-item label="状态">{{ getLabel(taskStatusLabelMap, detailOrder.status) }}</el-descriptions-item>
           <el-descriptions-item label="审核">{{ getLabel(auditStatusLabelMap, detailOrder.audit_status) }}</el-descriptions-item>
+          <el-descriptions-item label="提报人">
+            {{ detailOrder.submitter?.name || detailOrder.submitter?.account || (detailOrder.submitter_id ? `#${detailOrder.submitter_id}` : '-') }}
+          </el-descriptions-item>
+          <el-descriptions-item label="审核人">
+            {{ detailOrder.auditor?.name || detailOrder.auditor?.account || (detailOrder.audited_by ? `#${detailOrder.audited_by}` : '-') }}
+          </el-descriptions-item>
           <el-descriptions-item label="命中模板">
             {{ formatFreightTemplateLabel(detailOrder) }}
           </el-descriptions-item>
