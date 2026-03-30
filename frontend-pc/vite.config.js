@@ -114,6 +114,14 @@ export default defineConfig({
       ],
     }),
   ],
+  test: {
+    environment: 'jsdom',
+    server: {
+      deps: {
+        inline: ['element-plus'],
+      },
+    },
+  },
   build: {
     // `exceljs` 已经按需拆成独立异步块，适度放宽告警阈值，避免误报掩盖真正的首屏大包问题。
     chunkSizeWarningLimit: 1000,
