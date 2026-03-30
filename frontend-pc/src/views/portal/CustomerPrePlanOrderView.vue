@@ -7,8 +7,13 @@ import PrePlanOrderDetailContent from '../../components/pre-plan-order/PrePlanOr
 import {
   auditStatusLabelMap,
   auditStatusTypeMap,
+  formatNotificationTime,
   freightSchemeLabelMap,
   getFreightTemplateMeta,
+  getNotificationAuditStatus,
+  getNotificationOrderNo,
+  getNotificationReadLabel,
+  getNotificationReadTagType,
   loadRevisionCompareDiffs,
   sortNotificationMessages,
 } from '../../utils/prePlanOrder'
@@ -415,30 +420,30 @@ onUnmounted(() => {
       <el-table-column prop="content" label="内容" min-width="260" show-overflow-tooltip />
       <el-table-column label="关联订单" min-width="160">
         <template #default="{ row }">
-          {{ row?.meta?.order_no || '-' }}
+          {{ getNotificationOrderNo(row) }}
         </template>
       </el-table-column>
       <el-table-column label="审核结果" min-width="110">
         <template #default="{ row }">
           <el-tag
-            v-if="row?.meta?.audit_status"
-            :type="auditStatusTypeMap[row.meta.audit_status] || 'info'"
+            v-if="getNotificationAuditStatus(row)"
+            :type="auditStatusTypeMap[getNotificationAuditStatus(row)] || 'info'"
           >
-            {{ getLabel(auditStatusLabelMap, row.meta.audit_status) }}
+            {{ getLabel(auditStatusLabelMap, getNotificationAuditStatus(row)) }}
           </el-tag>
           <span v-else>-</span>
         </template>
       </el-table-column>
       <el-table-column label="状态" min-width="90">
         <template #default="{ row }">
-          <el-tag :type="row.read_at ? 'info' : 'danger'">
-            {{ row.read_at ? '已读' : '未读' }}
+          <el-tag :type="getNotificationReadTagType(row)">
+            {{ getNotificationReadLabel(row) }}
           </el-tag>
         </template>
       </el-table-column>
       <el-table-column label="通知时间" min-width="160">
         <template #default="{ row }">
-          {{ row.created_at || '-' }}
+          {{ formatNotificationTime(row) }}
         </template>
       </el-table-column>
       <el-table-column label="操作" min-width="180" fixed="right">

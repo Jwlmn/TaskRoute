@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  formatNotificationTime,
   formatFreightTemplateLabel,
+  getNotificationAuditStatus,
+  getNotificationOrderNo,
+  getNotificationReadLabel,
+  getNotificationReadTagType,
   getFreightTemplateMeta,
   loadRevisionCompareDiffs,
   sortNotificationMessages,
@@ -77,5 +82,32 @@ describe('prePlanOrder utils', () => {
     await expect(loadRevisionCompareDiffs(httpClient, 101)).resolves.toEqual([
       { field: 'pickup_address', before: '旧地址', after: '新地址' },
     ])
+  })
+
+  it('notification display helpers normalize shared card fields', () => {
+    const unreadMessage = {
+      created_at: '2026-03-30T08:30:00+08:00',
+      read_at: null,
+      meta: {
+        order_no: 'PO-20260330-001',
+        audit_status: 'rejected',
+      },
+    }
+    const readMessage = {
+      created_at: null,
+      read_at: '2026-03-30T09:00:00+08:00',
+      meta: {},
+    }
+
+    expect(getNotificationOrderNo(unreadMessage)).toBe('PO-20260330-001')
+    expect(getNotificationOrderNo(readMessage)).toBe('-')
+    expect(getNotificationAuditStatus(unreadMessage)).toBe('rejected')
+    expect(getNotificationAuditStatus(readMessage)).toBe('')
+    expect(getNotificationReadTagType(unreadMessage)).toBe('danger')
+    expect(getNotificationReadTagType(readMessage)).toBe('info')
+    expect(getNotificationReadLabel(unreadMessage)).toBe('未读')
+    expect(getNotificationReadLabel(readMessage)).toBe('已读')
+    expect(formatNotificationTime(unreadMessage)).toBe('2026-03-30 08:30')
+    expect(formatNotificationTime(readMessage)).toBe('-')
   })
 })

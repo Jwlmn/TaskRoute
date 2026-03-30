@@ -87,3 +87,13 @@ export const loadRevisionCompareDiffs = async (httpClient, orderId) => {
   const response = await httpClient.post('/pre-plan-order/revision-compare', { id: orderId })
   return Array.isArray(response?.data?.diffs) ? response.data.diffs : []
 }
+
+export const getNotificationOrderNo = (message) => message?.meta?.order_no || '-'
+
+export const getNotificationAuditStatus = (message) => message?.meta?.audit_status || ''
+
+export const getNotificationReadTagType = (message) => (message?.read_at ? 'info' : 'danger')
+
+export const getNotificationReadLabel = (message) => (message?.read_at ? '已读' : '未读')
+
+export const formatNotificationTime = (message) => formatDateTime(message?.created_at)
