@@ -9,6 +9,7 @@ use App\Models\LogisticsSite;
 use App\Models\PrePlanOrder;
 use App\Models\SystemMessage;
 use App\Services\Auth\DataScopeService;
+use App\Services\Freight\FreightTemplateMatcherService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -19,7 +20,10 @@ use Throwable;
 
 class PrePlanOrderController extends Controller
 {
-    public function __construct(private readonly DataScopeService $dataScopeService)
+    public function __construct(
+        private readonly DataScopeService $dataScopeService,
+        private readonly FreightTemplateMatcherService $freightTemplateMatcherService,
+    )
     {
     }
 
@@ -114,7 +118,7 @@ class PrePlanOrderController extends Controller
         if (! $this->dataScopeService->canAccessSites($request->user(), [$payload['pickup_site_id'] ?? null, $payload['dropoff_site_id'] ?? null])) {
             return response()->json(['message' => '当前账号不可创建该范围内的计划单'], 403);
         }
-        $payload = $this->applyFreightTemplateToPayload($payload);
+        $payload = $this->applyFreightTemplateToPayload($payload, $request->user());
 
         $order = PrePlanOrder::query()->create($payload);
         $this->appendOrderHistory($order, 'dispatcher_create', $request);
@@ -161,7 +165,7 @@ class PrePlanOrderController extends Controller
                 if (! $this->dataScopeService->canAccessSites($request->user(), [$orderPayload['pickup_site_id'] ?? null, $orderPayload['dropoff_site_id'] ?? null])) {
                     abort(403, '当前账号不可创建该范围内的计划单');
                 }
-                $orderPayload = $this->applyFreightTemplateToPayload($orderPayload);
+                $orderPayload = $this->applyFreightTemplateToPayload($orderPayload, $request->user());
 
                 $order = PrePlanOrder::query()->create($orderPayload);
                 $this->appendOrderHistory($order, 'dispatcher_batch_create', $request);
@@ -255,7 +259,7 @@ class PrePlanOrderController extends Controller
                     $errors[] = ['line' => $line, 'message' => '当前账号不可导入该范围内的计划单'];
                     continue;
                 }
-                $orderPayload = $this->applyFreightTemplateToPayload($orderPayload);
+                $orderPayload = $this->applyFreightTemplateToPayload($orderPayload, $request->user());
 
                 $created[] = PrePlanOrder::query()->create($orderPayload);
             } catch (Throwable $e) {
@@ -305,7 +309,7 @@ class PrePlanOrderController extends Controller
         $payload['audit_remark'] = null;
         $payload['status'] = 'pending';
         $payload = $this->prepareOrderPayload($payload);
-        $payload = $this->applyFreightTemplateToPayload($payload);
+        $payload = $this->applyFreightTemplateToPayload($payload, $request->user());
 
         $order = PrePlanOrder::query()->create($payload);
         $this->appendOrderHistory($order, 'customer_submit', $request);
@@ -1340,9 +1344,9 @@ class PrePlanOrderController extends Controller
      * @param array<string, mixed> $payload
      * @return array<string, mixed>
      */
-    private function applyFreightTemplateToPayload(array $payload): array
+    private function applyFreightTemplateToPayload(array $payload, ?\App\Models\User $user = null): array
     {
-        $template = $this->resolveFreightTemplate($payload);
+        $template = $this->resolveFreightTemplate($payload, $user);
         if (! $template) {
             return $payload;
         }
@@ -1378,34 +1382,9 @@ class PrePlanOrderController extends Controller
     /**
      * @param array<string, mixed> $payload
      */
-    private function resolveFreightTemplate(array $payload): ?FreightRateTemplate
+    private function resolveFreightTemplate(array $payload, ?\App\Models\User $user = null): ?FreightRateTemplate
     {
-        $query = FreightRateTemplate::query()
-            ->where('is_active', true)
-            ->when(! empty($payload['client_name']), fn ($q) => $q->where(function ($sub) use ($payload): void {
-                $sub->whereNull('client_name')->orWhere('client_name', (string) $payload['client_name']);
-            }))
-            ->when(! empty($payload['cargo_category_id']), fn ($q) => $q->where(function ($sub) use ($payload): void {
-                $sub->whereNull('cargo_category_id')->orWhere('cargo_category_id', (int) $payload['cargo_category_id']);
-            }))
-            ->when(array_key_exists('pickup_site_id', $payload), fn ($q) => $q->where(function ($sub) use ($payload): void {
-                $sub->whereNull('pickup_site_id')->orWhere('pickup_site_id', $payload['pickup_site_id']);
-            }))
-            ->when(! empty($payload['pickup_address']), fn ($q) => $q->where(function ($sub) use ($payload): void {
-                $sub->whereNull('pickup_address')->orWhere('pickup_address', (string) $payload['pickup_address']);
-            }))
-            ->when(array_key_exists('dropoff_site_id', $payload), fn ($q) => $q->where(function ($sub) use ($payload): void {
-                $sub->whereNull('dropoff_site_id')->orWhere('dropoff_site_id', $payload['dropoff_site_id']);
-            }))
-            ->when(! empty($payload['dropoff_address']), fn ($q) => $q->where(function ($sub) use ($payload): void {
-                $sub->whereNull('dropoff_address')->orWhere('dropoff_address', (string) $payload['dropoff_address']);
-            }))
-            ->orderByRaw('case when pickup_site_id is null then 0 else 1 end desc')
-            ->orderByRaw('case when dropoff_site_id is null then 0 else 1 end desc')
-            ->orderByDesc('priority')
-            ->orderByDesc('id');
-
-        return $query->first();
+        return $this->freightTemplateMatcherService->match($payload, $user);
     }
 
     /**

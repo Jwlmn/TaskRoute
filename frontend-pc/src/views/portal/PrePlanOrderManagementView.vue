@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 import api from '../../services/api'
@@ -46,6 +46,10 @@ const detailLoading = ref(false)
 const currentEditId = ref(null)
 const detailOrder = ref(null)
 const currentEditTemplateMeta = ref(null)
+const createTemplatePreview = ref(null)
+const editTemplatePreview = ref(null)
+const previewingCreateTemplate = ref(false)
+const previewingEditTemplate = ref(false)
 
 const createFormRef = ref()
 const editFormRef = ref()
@@ -198,6 +202,9 @@ const detailHistory = computed(() => {
   return Array.isArray(list) ? [...list].reverse() : []
 })
 
+let createTemplatePreviewTimer = null
+let editTemplatePreviewTimer = null
+
 const formatDateTime = (value) => {
   if (!value) return '-'
   const date = new Date(value)
@@ -227,6 +234,63 @@ const formatFreightTemplateLabel = (row) => {
   return template?.name || '未命中模板'
 }
 
+const buildTemplatePreviewPayload = (form) => ({
+  client_name: form.client_name?.trim() || null,
+  cargo_category_id: form.cargo_category_id || null,
+  pickup_site_id: form.pickup_site_id || null,
+  pickup_address: form.pickup_address?.trim() || null,
+  dropoff_site_id: form.dropoff_site_id || null,
+  dropoff_address: form.dropoff_address?.trim() || null,
+})
+
+const canPreviewTemplate = (payload) => (
+  !!payload.client_name
+  && !!payload.cargo_category_id
+  && !!payload.pickup_address
+  && !!payload.dropoff_address
+)
+
+const formatTemplatePreviewText = (template) => {
+  if (!template) return '未命中模板'
+  const siteTags = [
+    template.pickup_site?.name ? `装货站点:${template.pickup_site.name}` : null,
+    template.dropoff_site?.name ? `卸货站点:${template.dropoff_site.name}` : null,
+  ].filter(Boolean)
+  return siteTags.length ? `${template.name}（${siteTags.join(' / ')}）` : template.name
+}
+
+const requestTemplatePreview = async (form, targetRef, loadingRef) => {
+  const payload = buildTemplatePreviewPayload(form)
+  if (!canPreviewTemplate(payload)) {
+    targetRef.value = null
+    return
+  }
+
+  loadingRef.value = true
+  try {
+    const { data } = await api.post('/freight-template/match-preview', payload)
+    targetRef.value = data?.matched ? data.template : null
+  } catch {
+    targetRef.value = null
+  } finally {
+    loadingRef.value = false
+  }
+}
+
+const scheduleCreateTemplatePreview = () => {
+  if (createTemplatePreviewTimer) clearTimeout(createTemplatePreviewTimer)
+  createTemplatePreviewTimer = setTimeout(() => {
+    requestTemplatePreview(createForm, createTemplatePreview, previewingCreateTemplate)
+  }, 250)
+}
+
+const scheduleEditTemplatePreview = () => {
+  if (editTemplatePreviewTimer) clearTimeout(editTemplatePreviewTimer)
+  editTemplatePreviewTimer = setTimeout(() => {
+    requestTemplatePreview(editForm, editTemplatePreview, previewingEditTemplate)
+  }, 250)
+}
+
 const resetCreateForm = () => {
   createForm.cargo_category_id = null
   createForm.client_name = ''
@@ -248,6 +312,7 @@ const resetCreateForm = () => {
   createForm.loss_deduct_unit_price = null
   createForm.expected_pickup_at = ''
   createForm.expected_delivery_at = ''
+  createTemplatePreview.value = null
   createFormRef.value?.clearValidate()
 }
 
@@ -275,6 +340,7 @@ const resetEditForm = () => {
   editForm.status = ''
   currentEditId.value = null
   currentEditTemplateMeta.value = null
+  editTemplatePreview.value = null
   editFormRef.value?.clearValidate()
 }
 
@@ -507,6 +573,12 @@ const openEditDialog = (row) => {
   resetEditForm()
   currentEditId.value = row.id
   currentEditTemplateMeta.value = getFreightTemplateMeta(row)
+  editTemplatePreview.value = getFreightTemplateMeta(row)
+    ? {
+        id: getFreightTemplateMeta(row).id,
+        name: getFreightTemplateMeta(row).name,
+      }
+    : null
   fillOrderForm(editForm, row)
   editForm.status = row.status
   editDialogVisible.value = true
@@ -1170,6 +1242,43 @@ onMounted(() => {
   loadMeta()
   loadSites()
 })
+
+watch(
+  () => [
+    createDialogVisible.value,
+    createForm.client_name,
+    createForm.cargo_category_id,
+    createForm.pickup_site_id,
+    createForm.pickup_address,
+    createForm.dropoff_site_id,
+    createForm.dropoff_address,
+  ],
+  ([visible]) => {
+    if (!visible) return
+    scheduleCreateTemplatePreview()
+  }
+)
+
+watch(
+  () => [
+    editDialogVisible.value,
+    editForm.client_name,
+    editForm.cargo_category_id,
+    editForm.pickup_site_id,
+    editForm.pickup_address,
+    editForm.dropoff_site_id,
+    editForm.dropoff_address,
+  ],
+  ([visible]) => {
+    if (!visible) return
+    scheduleEditTemplatePreview()
+  }
+)
+
+onUnmounted(() => {
+  if (createTemplatePreviewTimer) clearTimeout(createTemplatePreviewTimer)
+  if (editTemplatePreviewTimer) clearTimeout(editTemplatePreviewTimer)
+})
 </script>
 
 <template>
@@ -1550,7 +1659,7 @@ onMounted(() => {
         type="info"
         :closable="false"
         show-icon
-        title="保存后系统会按客户、站点、地址和货品分类自动匹配运价模板。"
+        :title="previewingCreateTemplate ? '正在预览命中模板...' : `预计命中模板：${formatTemplatePreviewText(createTemplatePreview)}`"
       />
       <el-row :gutter="12">
         <el-col :span="12">
@@ -1774,7 +1883,8 @@ onMounted(() => {
         type="info"
         :closable="false"
         show-icon
-        :title="currentEditTemplateMeta ? `当前命中模板：${currentEditTemplateMeta.name}` : '当前未命中模板，保存后系统会重新按规则匹配。'"
+        :title="previewingEditTemplate ? '正在预览命中模板...' : `预计命中模板：${formatTemplatePreviewText(editTemplatePreview)}`"
+        :description="currentEditTemplateMeta ? `当前已保存模板：${currentEditTemplateMeta.name}` : '当前未命中模板，保存后系统会按客户、站点、地址和货品分类重新匹配。'"
       />
       <el-row :gutter="12">
         <el-col :span="12">

@@ -68,6 +68,10 @@ Route::prefix('v1')->group(function (): void {
             Route::post('/freight-template/update', [FreightRateTemplateController::class, 'update']);
         });
 
+        Route::middleware(['role:admin|dispatcher', 'permission:dispatch'])->group(function (): void {
+            Route::post('/freight-template/match-preview', [FreightRateTemplateController::class, 'previewMatch']);
+        });
+
         Route::middleware(['role:admin|dispatcher', 'permission:settlement'])->group(function (): void {
             Route::post('/settlement/list', [SettlementStatementController::class, 'list']);
             Route::post('/settlement/create', [SettlementStatementController::class, 'create']);

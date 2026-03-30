@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\FreightRateTemplate;
 use App\Services\Auth\DataScopeService;
+use App\Services\Freight\FreightTemplateMatcherService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -12,7 +13,10 @@ use Illuminate\Validation\ValidationException;
 
 class FreightRateTemplateController extends Controller
 {
-    public function __construct(private readonly DataScopeService $dataScopeService)
+    public function __construct(
+        private readonly DataScopeService $dataScopeService,
+        private readonly FreightTemplateMatcherService $freightTemplateMatcherService,
+    )
     {
     }
 
@@ -86,6 +90,31 @@ class FreightRateTemplateController extends Controller
         $template->update($payload);
 
         return response()->json($template->fresh()->loadMissing(['pickupSite:id,name', 'dropoffSite:id,name']));
+    }
+
+    public function previewMatch(Request $request): JsonResponse
+    {
+        $payload = $request->validate([
+            'client_name' => ['nullable', 'string', 'max:255'],
+            'cargo_category_id' => ['nullable', 'integer', 'exists:cargo_categories,id'],
+            'pickup_site_id' => ['nullable', 'integer', 'exists:logistics_sites,id'],
+            'pickup_address' => ['nullable', 'string', 'max:255'],
+            'dropoff_site_id' => ['nullable', 'integer', 'exists:logistics_sites,id'],
+            'dropoff_address' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $template = $this->freightTemplateMatcherService->match($payload, $request->user());
+        if (! $template) {
+            return response()->json([
+                'matched' => false,
+                'template' => null,
+            ]);
+        }
+
+        return response()->json([
+            'matched' => true,
+            'template' => $template->loadMissing(['pickupSite:id,name', 'dropoffSite:id,name']),
+        ]);
     }
 
     private function validatePayload(Request $request, bool $forUpdate = false): array

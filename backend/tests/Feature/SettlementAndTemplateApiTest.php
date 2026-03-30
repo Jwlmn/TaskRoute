@@ -194,6 +194,46 @@ class SettlementAndTemplateApiTest extends TestCase
         $this->assertNotSame($globalTemplate->id, (int) $response->json('meta.freight_template_id'));
     }
 
+    public function test_dispatcher_can_preview_matched_freight_template(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $cargo = CargoCategory::query()->firstOrFail();
+        $site = LogisticsSite::query()->findOrFail(1);
+        Sanctum::actingAs($dispatcher);
+
+        $siteTemplate = FreightRateTemplate::query()->create([
+            'name' => '预览站点模板',
+            'client_name' => '预览客户',
+            'cargo_category_id' => $cargo->id,
+            'pickup_site_id' => $site->id,
+            'freight_calc_scheme' => 'by_weight',
+            'freight_unit_price' => 21,
+            'priority' => 300,
+            'is_active' => true,
+        ]);
+
+        $this->postJson('/api/v1/freight-template/match-preview', [
+            'client_name' => '预览客户',
+            'cargo_category_id' => $cargo->id,
+            'pickup_site_id' => $site->id,
+            'pickup_address' => $site->address,
+            'dropoff_address' => '任意卸货地',
+        ])->assertOk()
+            ->assertJsonPath('matched', true)
+            ->assertJsonPath('template.id', $siteTemplate->id)
+            ->assertJsonPath('template.name', '预览站点模板');
+
+        $this->postJson('/api/v1/freight-template/match-preview', [
+            'client_name' => '不存在的客户',
+            'cargo_category_id' => $cargo->id,
+            'pickup_address' => '未知装货地',
+            'dropoff_address' => '未知卸货地',
+        ])->assertOk()
+            ->assertJsonPath('matched', false)
+            ->assertJsonPath('template', null);
+    }
+
     public function test_dispatcher_can_create_settlement_statement_from_completed_orders(): void
     {
         $this->seed(DatabaseSeeder::class);
