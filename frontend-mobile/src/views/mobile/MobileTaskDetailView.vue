@@ -6,6 +6,7 @@ import api from '../../services/api'
 import {
   buildUploadWarningMessage,
   canOperateTaskDetail,
+  getTaskOperationBlockReason,
   hasPendingTaskException,
   resolveTaskIdParam,
   shouldShowAcceptTaskTip,
@@ -127,6 +128,7 @@ const getGroupImageIndex = (group, doc) =>
 const hasPendingException = () => hasPendingTaskException(detail.value)
 const canOperateTask = () => canOperateTaskDetail(detail.value)
 const shouldShowAcceptTip = () => shouldShowAcceptTaskTip(detail.value)
+const taskOperationBlockReason = () => getTaskOperationBlockReason(detail.value)
 const handledException = () => {
   if (detail.value?.route_meta?.exception?.status !== 'handled') return null
   return detail.value.route_meta.exception
@@ -156,6 +158,22 @@ const formatDriverDisplay = (name, account, id) => name || account || (id ? `#${
 const formatExceptionStatusChange = (fromStatus, toStatus) => (
   `${getLabel(exceptionStatusChangeLabelMap, fromStatus)} -> ${getLabel(exceptionStatusChangeLabelMap, toStatus)}`
 )
+const getHandledExceptionAlertType = () => {
+  if (handledException()?.handle_action === 'cancel') return 'error'
+  if (handledException()?.handle_action === 'reassign') return 'warning'
+  return 'success'
+}
+const getHandledExceptionAlertDescription = () => {
+  const exception = handledException()
+  if (!exception) return ''
+  if (exception.handle_action === 'cancel') {
+    return exception.handle_note || '调度已取消当前任务，后续节点与单据操作均已停止。'
+  }
+  if (exception.handle_action === 'reassign') {
+    return exception.handle_note || '调度已将任务改派给其他司机，当前账号仅可查看处理结果。'
+  }
+  return exception.handle_note || '调度已处理当前异常，请按处理结果继续查看任务状态'
+}
 
 const handledExceptionSummaryLines = () => {
   const exception = handledException()
@@ -571,11 +589,19 @@ onUnmounted(() => {
       <el-alert
         v-else-if="handledException()"
         class="mb-12"
-        type="success"
+        :type="getHandledExceptionAlertType()"
         :closable="false"
         show-icon
         :title="`异常已处理：${getLabel(exceptionActionLabelMap, handledException()?.handle_action)}`"
-        :description="handledException()?.handle_note || '调度已处理当前异常，请按处理结果继续查看任务状态'"
+        :description="getHandledExceptionAlertDescription()"
+      />
+      <el-alert
+        v-if="taskOperationBlockReason() && !hasPendingException()"
+        class="mb-12"
+        :type="handledException()?.handle_action === 'cancel' ? 'error' : 'info'"
+        :closable="false"
+        show-icon
+        :title="taskOperationBlockReason()"
       />
       <el-descriptions
         v-if="handledException()"
@@ -703,11 +729,11 @@ onUnmounted(() => {
 
             <template v-if="getOrderWaypoint(order)">
               <el-alert
-                v-if="shouldShowAcceptTip()"
+                v-if="taskOperationBlockReason()"
                 class="mobile-order-operation-tip"
-                type="warning"
+                :type="handledException()?.handle_action === 'cancel' ? 'error' : 'warning'"
                 :closable="false"
-                title="当前任务尚未接单，仅可查看详情；请先在任务列表点击“接单”后再执行节点和上传单据"
+                :title="taskOperationBlockReason()"
               />
               <div class="mobile-task-actions mobile-order-actions">
                 <el-button
