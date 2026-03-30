@@ -257,7 +257,13 @@ const loadMessages = async () => {
     const { data } = await api.post('/message/list', {
       unread_only: unreadOnly.value,
     })
-    messages.value = Array.isArray(data?.data) ? data.data : []
+    const rawMessages = Array.isArray(data?.data) ? data.data : []
+    messages.value = rawMessages.sort((a, b) => {
+      const aUnread = a?.read_at ? 1 : 0
+      const bUnread = b?.read_at ? 1 : 0
+      if (aUnread !== bUnread) return aUnread - bUnread
+      return String(b?.created_at || '').localeCompare(String(a?.created_at || ''))
+    })
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '加载审核通知失败')
   } finally {
@@ -487,6 +493,17 @@ onUnmounted(() => {
       <el-table-column label="关联订单" min-width="160">
         <template #default="{ row }">
           {{ row?.meta?.order_no || '-' }}
+        </template>
+      </el-table-column>
+      <el-table-column label="审核结果" min-width="110">
+        <template #default="{ row }">
+          <el-tag
+            v-if="row?.meta?.audit_status"
+            :type="auditStatusTypeMap[row.meta.audit_status] || 'info'"
+          >
+            {{ getLabel(auditStatusLabelMap, row.meta.audit_status) }}
+          </el-tag>
+          <span v-else>-</span>
         </template>
       </el-table-column>
       <el-table-column label="状态" min-width="90">
