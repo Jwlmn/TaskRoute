@@ -341,6 +341,48 @@ class PrePlanOrderAuditApiTest extends TestCase
         ])->assertNotFound();
     }
 
+    public function test_customer_cannot_update_or_resubmit_other_customer_rejected_order(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $customer = User::query()->where('account', 'customer')->firstOrFail();
+        $otherCustomer = User::factory()->create([
+            'account' => 'customer-update-other',
+            'name' => '其他客户乙',
+            'role' => 'customer',
+            'status' => 'active',
+            'password' => bcrypt('password'),
+        ]);
+        $otherCustomer->syncRoleAndPermissions();
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $cargo = CargoCategory::query()->firstOrFail();
+
+        Sanctum::actingAs($customer);
+        $submitResponse = $this->postJson('/api/v1/pre-plan-order/customer-submit', [
+            'cargo_category_id' => $cargo->id,
+            'client_name' => '越权修改隔离客户',
+            'pickup_address' => '原始装货地',
+            'dropoff_address' => '原始卸货地',
+        ])->assertCreated();
+        $orderId = (int) $submitResponse->json('id');
+
+        Sanctum::actingAs($dispatcher);
+        $this->postJson('/api/v1/pre-plan-order/audit-reject', [
+            'id' => $orderId,
+            'audit_remark' => '请补充后重新提交',
+        ])->assertOk();
+
+        Sanctum::actingAs($otherCustomer);
+        $this->postJson('/api/v1/pre-plan-order/customer-update', [
+            'id' => $orderId,
+            'pickup_address' => '越权改地址',
+        ])->assertNotFound();
+
+        $this->postJson('/api/v1/pre-plan-order/customer-resubmit', [
+            'id' => $orderId,
+        ])->assertNotFound();
+    }
+
     public function test_dispatcher_detail_returns_readable_submitter_and_auditor(): void
     {
         $this->seed(DatabaseSeeder::class);
