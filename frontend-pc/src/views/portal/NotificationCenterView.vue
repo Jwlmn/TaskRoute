@@ -31,6 +31,8 @@ const detailCompareLoading = ref(false)
 const detailCompareRows = ref([])
 
 const currentUser = computed(() => readCurrentUser())
+const isDispatchNotificationUser = computed(() => hasPermission(currentUser.value, 'dispatch'))
+const isCustomerNotificationUser = computed(() => hasPermission(currentUser.value, 'customer_orders'))
 
 const filterForm = ref({
   keyword: '',
@@ -145,6 +147,51 @@ const goToAuditPendingOrders = async () => {
   })
 }
 
+const handleNotificationAction = async (row) => {
+  if (row?.message_type === 'audit_reminder') {
+    await goToAuditPendingOrders()
+    return
+  }
+
+  const orderId = Number(row?.meta?.order_id || 0)
+  const orderNo = row?.meta?.order_no || ''
+  const auditStatus = row?.meta?.audit_status || ''
+  if (!orderId) return
+
+  if (isDispatchNotificationUser.value && auditStatus === 'pending_approval') {
+    await router.push({
+      name: 'pre-plan-order-management',
+      query: {
+        audit_status: 'pending_approval',
+        keyword: orderNo,
+        focus_order_id: String(orderId),
+        open_detail: '1',
+      },
+    })
+    return
+  }
+
+  if (isCustomerNotificationUser.value && auditStatus === 'rejected') {
+    await router.push({
+      name: 'customer-pre-plan-order',
+      query: {
+        focus_order_id: String(orderId),
+        open_edit: '1',
+      },
+    })
+    return
+  }
+
+  await openOrderDetail(row)
+}
+
+const getNotificationActionLabel = (row) => {
+  if (row?.message_type === 'audit_reminder') return '前往待审核清单'
+  if (isDispatchNotificationUser.value && row?.meta?.audit_status === 'pending_approval') return '去审核'
+  if (isCustomerNotificationUser.value && row?.meta?.audit_status === 'rejected') return '去重提'
+  return '查看订单'
+}
+
 onMounted(loadMessages)
 </script>
 
@@ -229,21 +276,12 @@ onMounted(loadMessages)
       <el-table-column label="操作" min-width="220" fixed="right">
         <template #default="{ row }">
           <el-button
-            v-if="row.message_type === 'audit_reminder'"
             link
-            type="primary"
-            @click="goToAuditPendingOrders"
+            :type="row.message_type === 'audit_reminder' ? 'primary' : 'info'"
+            :disabled="row.message_type !== 'audit_reminder' && (!row?.meta?.order_id || !resolveOrderDetailEndpoint())"
+            @click="handleNotificationAction(row)"
           >
-            前往待审核清单
-          </el-button>
-          <el-button
-            v-else
-            link
-            type="info"
-            :disabled="!row?.meta?.order_id || !resolveOrderDetailEndpoint()"
-            @click="openOrderDetail(row)"
-          >
-            查看订单
+            {{ getNotificationActionLabel(row) }}
           </el-button>
           <el-button link type="primary" :disabled="!!row.read_at" @click="markRead(row.id)">已读</el-button>
           <el-button link type="warning" :loading="pinningId === row.id" @click="togglePin(row)">

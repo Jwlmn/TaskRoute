@@ -1,5 +1,6 @@
 <script setup>
 import { onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '../../services/api'
 import { getLabel } from '../../utils/labels'
@@ -19,6 +20,7 @@ import {
   sortNotificationMessages,
 } from '../../utils/prePlanOrder'
 
+const route = useRoute()
 const loading = ref(false)
 const loadingMessages = ref(false)
 const creating = ref(false)
@@ -317,8 +319,25 @@ const openDetailById = async (id) => {
   await openDetail({ id })
 }
 
+const openOrderActionFromRoute = async () => {
+  const focusOrderId = Number(route.query.focus_order_id || 0)
+  if (!focusOrderId) return
+  const matchedOrder = orders.value.find((item) => item.id === focusOrderId)
+  if (!matchedOrder) return
+
+  if (route.query.open_edit === '1' && matchedOrder.audit_status === 'rejected') {
+    openEdit(matchedOrder)
+    return
+  }
+
+  if (route.query.open_detail === '1') {
+    await openDetail(matchedOrder)
+  }
+}
+
 onMounted(async () => {
   await Promise.all([loadMeta(), loadOrders(), loadMessages()])
+  await openOrderActionFromRoute()
 })
 
 watch(
@@ -332,6 +351,13 @@ watch(
   ([visible]) => {
     if (!visible) return
     scheduleTemplatePreview()
+  }
+)
+
+watch(
+  () => [route.query.focus_order_id, route.query.open_detail, route.query.open_edit],
+  async () => {
+    await openOrderActionFromRoute()
   }
 )
 
