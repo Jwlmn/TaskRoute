@@ -13,6 +13,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class SettlementStatementController extends Controller
 {
@@ -122,8 +123,11 @@ class SettlementStatementController extends Controller
 
         $statement = $this->scopedStatementQuery($request)->findOrFail((int) $payload['id']);
         if (array_key_exists('status', $payload)) {
-            $statement->status = $payload['status'];
-            if ($payload['status'] === 'confirmed') {
+            $nextStatus = (string) $payload['status'];
+            $this->assertValidStatusTransition($statement, $nextStatus);
+
+            $statement->status = $nextStatus;
+            if ($nextStatus === 'confirmed' && ! $statement->confirmed_at) {
                 $statement->confirmed_at = now();
                 $statement->confirmed_by = (int) $request->user()->id;
             }
@@ -187,5 +191,26 @@ class SettlementStatementController extends Controller
                 $builder->orWhereJsonContains('meta->order_ids', $orderId);
             }
         });
+    }
+
+    private function assertValidStatusTransition(SettlementStatement $statement, string $nextStatus): void
+    {
+        $allowedTransitions = [
+            'draft' => ['confirmed'],
+            'confirmed' => ['invoiced'],
+            'invoiced' => ['paid'],
+            'paid' => [],
+        ];
+
+        $currentStatus = (string) $statement->status;
+        if ($currentStatus === $nextStatus) {
+            return;
+        }
+
+        if (! in_array($nextStatus, $allowedTransitions[$currentStatus] ?? [], true)) {
+            throw ValidationException::withMessages([
+                'status' => ['结算单状态仅支持按 draft -> confirmed -> invoiced -> paid 顺序流转'],
+            ]);
+        }
     }
 }

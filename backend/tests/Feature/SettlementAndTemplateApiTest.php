@@ -8,6 +8,7 @@ use App\Models\PrePlanOrder;
 use App\Models\SettlementStatement;
 use App\Models\User;
 use Database\Seeders\DatabaseSeeder;
+use Illuminate\Support\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -230,5 +231,98 @@ class SettlementAndTemplateApiTest extends TestCase
             'id' => $outScopeStatement->id,
             'remark' => '越权更新尝试',
         ])->assertNotFound();
+    }
+
+    public function test_settlement_status_must_follow_ordered_flow(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        Sanctum::actingAs($dispatcher);
+
+        $statement = SettlementStatement::query()->create([
+            'statement_no' => 'ST-FLOW-001',
+            'client_name' => '状态流转客户',
+            'period_start' => now()->subDays(2)->toDateString(),
+            'period_end' => now()->toDateString(),
+            'order_count' => 1,
+            'total_base_amount' => 1000,
+            'total_loss_deduct_amount' => 0,
+            'total_freight_amount' => 1000,
+            'status' => 'draft',
+            'created_by' => $dispatcher->id,
+            'meta' => ['order_ids' => []],
+        ]);
+
+        $confirmResponse = $this->postJson('/api/v1/settlement/update', [
+            'id' => $statement->id,
+            'status' => 'confirmed',
+        ])->assertOk()
+            ->assertJsonPath('status', 'confirmed');
+
+        $this->assertNotNull($confirmResponse->json('confirmed_at'));
+        $this->assertSame($dispatcher->id, (int) $confirmResponse->json('confirmed_by'));
+
+        $this->postJson('/api/v1/settlement/update', [
+            'id' => $statement->id,
+            'status' => 'paid',
+        ])->assertStatus(422)
+            ->assertJsonValidationErrors(['status']);
+
+        $this->postJson('/api/v1/settlement/update', [
+            'id' => $statement->id,
+            'status' => 'invoiced',
+        ])->assertOk()
+            ->assertJsonPath('status', 'invoiced');
+
+        $this->postJson('/api/v1/settlement/update', [
+            'id' => $statement->id,
+            'status' => 'paid',
+        ])->assertOk()
+            ->assertJsonPath('status', 'paid');
+
+        $this->postJson('/api/v1/settlement/update', [
+            'id' => $statement->id,
+            'status' => 'draft',
+        ])->assertStatus(422)
+            ->assertJsonValidationErrors(['status']);
+    }
+
+    public function test_settlement_repeat_confirm_keeps_original_confirmation_info(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        Sanctum::actingAs($dispatcher);
+
+        $statement = SettlementStatement::query()->create([
+            'statement_no' => 'ST-FLOW-002',
+            'client_name' => '确认幂等客户',
+            'period_start' => now()->subDays(2)->toDateString(),
+            'period_end' => now()->toDateString(),
+            'order_count' => 1,
+            'total_base_amount' => 1000,
+            'total_loss_deduct_amount' => 0,
+            'total_freight_amount' => 1000,
+            'status' => 'confirmed',
+            'created_by' => $dispatcher->id,
+            'confirmed_by' => $dispatcher->id,
+            'confirmed_at' => now()->subHour(),
+            'meta' => ['order_ids' => []],
+        ]);
+
+        $originalConfirmedAt = $statement->confirmed_at?->toDateTimeString();
+
+        $response = $this->postJson('/api/v1/settlement/update', [
+            'id' => $statement->id,
+            'status' => 'confirmed',
+            'remark' => '补充备注',
+        ])->assertOk()
+            ->assertJsonPath('status', 'confirmed')
+            ->assertJsonPath('remark', '补充备注');
+
+        $this->assertSame($dispatcher->id, (int) $response->json('confirmed_by'));
+        $this->assertSame(
+            Carbon::parse($originalConfirmedAt)->toIso8601String(),
+            Carbon::parse((string) $response->json('confirmed_at'))->toIso8601String()
+        );
     }
 }
