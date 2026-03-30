@@ -8,7 +8,9 @@ use App\Models\ElectronicDocument;
 use App\Models\PrePlanOrder;
 use App\Models\TaskWaypoint;
 use App\Models\Vehicle;
+use App\Services\Auth\DataScopeService;
 use App\Services\Dispatch\SmartDispatchService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -16,7 +18,10 @@ use Illuminate\Support\Str;
 
 class DriverTaskExecutionController extends Controller
 {
-    public function __construct(private readonly SmartDispatchService $smartDispatchService)
+    public function __construct(
+        private readonly SmartDispatchService $smartDispatchService,
+        private readonly DataScopeService $dataScopeService,
+    )
     {
     }
 
@@ -26,13 +31,9 @@ class DriverTaskExecutionController extends Controller
             'task_id' => ['required', 'integer', 'exists:dispatch_tasks,id'],
         ]);
 
-        $task = DispatchTask::query()
+        $task = $this->scopedTaskQuery($request)
             ->with(['orders.cargoCategory', 'waypoints.documents', 'documents.waypoint'])
             ->findOrFail($payload['task_id']);
-
-        if ((int) $task->driver_id !== (int) $request->user()->id) {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
 
         $this->hydrateDocumentUrls($task, $request);
 
@@ -46,10 +47,7 @@ class DriverTaskExecutionController extends Controller
         ]);
 
         return DB::transaction(function () use ($payload, $request): JsonResponse {
-            $task = DispatchTask::query()->lockForUpdate()->findOrFail($payload['task_id']);
-            if ((int) $task->driver_id !== (int) $request->user()->id) {
-                return response()->json(['message' => 'Forbidden'], 403);
-            }
+            $task = $this->scopedTaskQuery($request)->lockForUpdate()->findOrFail($payload['task_id']);
 
             if (in_array($task->status, ['completed', 'cancelled'], true)) {
                 return response()->json(['message' => '当前任务不可开始'], 422);
@@ -85,10 +83,7 @@ class DriverTaskExecutionController extends Controller
         ]);
 
         return DB::transaction(function () use ($payload, $request): JsonResponse {
-            $task = DispatchTask::query()->lockForUpdate()->findOrFail($payload['task_id']);
-            if ((int) $task->driver_id !== (int) $request->user()->id) {
-                return response()->json(['message' => 'Forbidden'], 403);
-            }
+            $task = $this->scopedTaskQuery($request)->lockForUpdate()->findOrFail($payload['task_id']);
             if (! in_array($task->status, ['accepted', 'in_progress'], true)) {
                 return response()->json(['message' => '请先接单后再上报异常'], 422);
             }
@@ -154,10 +149,7 @@ class DriverTaskExecutionController extends Controller
             'lat' => ['nullable', 'numeric'],
         ]);
 
-        $task = DispatchTask::query()->findOrFail($payload['task_id']);
-        if ((int) $task->driver_id !== (int) $request->user()->id) {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
+        $task = $this->scopedTaskQuery($request)->findOrFail($payload['task_id']);
         if (! in_array($task->status, ['accepted', 'in_progress'], true)) {
             return response()->json(['message' => '请先接单后再执行节点操作'], 422);
         }
@@ -203,10 +195,7 @@ class DriverTaskExecutionController extends Controller
             'lat' => ['nullable', 'numeric'],
         ]);
 
-        $task = DispatchTask::query()->findOrFail($payload['task_id']);
-        if ((int) $task->driver_id !== (int) $request->user()->id) {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
+        $task = $this->scopedTaskQuery($request)->findOrFail($payload['task_id']);
         if (! in_array($task->status, ['accepted', 'in_progress'], true)) {
             return response()->json(['message' => '请先接单后再执行节点操作'], 422);
         }
@@ -295,10 +284,7 @@ class DriverTaskExecutionController extends Controller
             ]
         );
 
-        $task = DispatchTask::query()->findOrFail($payload['task_id']);
-        if ((int) $task->driver_id !== (int) $request->user()->id) {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
+        $task = $this->scopedTaskQuery($request)->findOrFail($payload['task_id']);
         if (! in_array($task->status, ['accepted', 'in_progress'], true)) {
             return response()->json(['message' => '请先接单后再上传单据'], 422);
         }
@@ -364,6 +350,11 @@ class DriverTaskExecutionController extends Controller
     {
         $base = rtrim($request->getSchemeAndHttpHost(), '/');
         return $base.'/storage/'.ltrim($path, '/');
+    }
+
+    private function scopedTaskQuery(Request $request): Builder
+    {
+        return $this->dataScopeService->applyDispatchTaskScope(DispatchTask::query(), $request->user());
     }
 
     private function hasPendingException(DispatchTask $task): bool

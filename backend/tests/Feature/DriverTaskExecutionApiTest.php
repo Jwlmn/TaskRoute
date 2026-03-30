@@ -506,4 +506,29 @@ class DriverTaskExecutionApiTest extends TestCase
             'freight_amount' => 3000.00,
         ]);
     }
+
+    public function test_driver_cannot_access_other_driver_task_by_payload_interfaces(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $driver = User::query()->where('account', 'driver')->firstOrFail();
+        $otherDriver = User::query()->where('account', 'driver2')->firstOrFail();
+
+        $task = DispatchTask::query()->create([
+            'task_no' => 'DT-OTHER-DRIVER-ONLY',
+            'driver_id' => $otherDriver->id,
+            'status' => 'assigned',
+            'dispatch_mode' => 'single_vehicle_single_order',
+        ]);
+
+        Sanctum::actingAs($driver);
+
+        $this->postJson('/api/v1/driver-task/detail', [
+            'task_id' => $task->id,
+        ])->assertNotFound();
+
+        $this->postJson('/api/v1/driver-task/start', [
+            'task_id' => $task->id,
+        ])->assertNotFound();
+    }
 }

@@ -197,7 +197,8 @@ class DispatchTaskController extends Controller
             'planned_end_at' => ['sometimes', 'nullable', 'date'],
         ]);
 
-        $dispatchTask = DispatchTask::query()->findOrFail($payload['id']);
+        $dispatchTask = $this->dataScopeService->applyDispatchTaskScope(DispatchTask::query(), $request->user())
+            ->findOrFail($payload['id']);
         if (! $this->canAccessTask($request, $dispatchTask)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
