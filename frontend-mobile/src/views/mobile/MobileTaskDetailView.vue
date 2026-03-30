@@ -133,6 +133,42 @@ const exceptionActionLabelMap = {
   reassign: '改派车辆',
 }
 
+const exceptionStatusChangeLabelMap = {
+  assigned: '待接单',
+  accepted: '已接单',
+  in_progress: '执行中',
+  completed: '已完成',
+  cancelled: '已取消',
+}
+
+const formatExceptionStatusChange = (fromStatus, toStatus) => (
+  `${getLabel(exceptionStatusChangeLabelMap, fromStatus)} -> ${getLabel(exceptionStatusChangeLabelMap, toStatus)}`
+)
+
+const handledExceptionSummaryLines = () => {
+  const exception = handledException()
+  if (!exception) return []
+
+  const lines = [
+    `处理动作：${getLabel(exceptionActionLabelMap, exception.handle_action)}`,
+    `处理时间：${formatDateTime(exception.handled_at)}`,
+  ]
+
+  if (exception.handle_note) {
+    lines.push(`处理备注：${exception.handle_note}`)
+  }
+
+  if (exception.previous_task_status || exception.current_task_status) {
+    lines.push(`状态变化：${formatExceptionStatusChange(exception.previous_task_status, exception.current_task_status)}`)
+  }
+
+  if (exception.handle_action === 'reassign') {
+    lines.push(`改派车辆：${exception.reassign_vehicle_id ? `#${exception.reassign_vehicle_id}` : '-'}`)
+  }
+
+  return lines
+}
+
 const formatDateTime = (value) => {
   if (!value) return '-'
   const date = new Date(value)
@@ -472,7 +508,8 @@ onUnmounted(() => {
         type="success"
         :closable="false"
         show-icon
-        :title="`异常已处理：${handledException()?.handle_note || '调度已处理该异常'}`"
+        :title="`异常已处理：${getLabel(exceptionActionLabelMap, handledException()?.handle_action)}`"
+        :description="handledException()?.handle_note || '调度已处理当前异常，请按处理结果继续查看任务状态'"
       />
       <el-descriptions
         v-if="handledException()"
@@ -485,9 +522,36 @@ onUnmounted(() => {
           {{ getLabel(exceptionActionLabelMap, handledException()?.handle_action) }}
         </el-descriptions-item>
         <el-descriptions-item label="处理时间">
-          {{ handledException()?.handled_at || '-' }}
+          {{ formatDateTime(handledException()?.handled_at) }}
+        </el-descriptions-item>
+        <el-descriptions-item label="处理备注">
+          {{ handledException()?.handle_note || '-' }}
+        </el-descriptions-item>
+        <el-descriptions-item label="状态变化">
+          {{ formatExceptionStatusChange(handledException()?.previous_task_status, handledException()?.current_task_status) }}
+        </el-descriptions-item>
+        <el-descriptions-item v-if="handledException()?.handle_action === 'reassign'" label="改派车辆">
+          {{ handledException()?.reassign_vehicle_id ? `#${handledException()?.reassign_vehicle_id}` : '-' }}
         </el-descriptions-item>
       </el-descriptions>
+      <el-card
+        v-if="handledExceptionSummaryLines().length"
+        shadow="never"
+        class="mb-12"
+      >
+        <template #header>
+          <div class="mobile-section-title">异常处理结果</div>
+        </template>
+        <div class="mobile-exception-result-list">
+          <div
+            v-for="(line, index) in handledExceptionSummaryLines()"
+            :key="`exception-result-${index}`"
+            class="mobile-exception-result-line"
+          >
+            {{ line }}
+          </div>
+        </div>
+      </el-card>
 
       <el-card shadow="never" class="mb-12">
         <template #header>
