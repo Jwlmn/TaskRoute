@@ -1,12 +1,13 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '../../services/api'
 import { readCurrentUser } from '../../utils/auth'
 import { filterTasksByDataScope } from '../../utils/dataScope'
 
 const router = useRouter()
+const route = useRoute()
 const loading = ref(false)
 const actionLoading = ref(false)
 const reportingLocation = ref(false)
@@ -70,6 +71,12 @@ const normalizeTaskStatusGroup = (status) => {
   if (status === 'accepted' || status === 'in_progress') return 'in_progress'
   if (status === 'completed' || status === 'cancelled') return 'completed'
   return 'assigned'
+}
+const syncStatusFilterFromRoute = () => {
+  const nextFilter = String(route.query.status_group || 'all')
+  if (['all', 'assigned', 'in_progress', 'completed'].includes(nextFilter)) {
+    taskStatusFilter.value = nextFilter
+  }
 }
 
 const fetchTasks = async (page = pagination.value.page) => {
@@ -171,6 +178,7 @@ const startTask = async (taskId) => {
 }
 
 onMounted(() => {
+  syncStatusFilterFromRoute()
   fetchTasks().then(() => {
     reportCurrentLocation()
   })
@@ -210,6 +218,13 @@ watch(debouncedKeyword, () => {
 watch(taskStatusFilter, () => {
   searchTasks()
 })
+
+watch(
+  () => route.query.status_group,
+  () => {
+    syncStatusFilterFromRoute()
+  },
+)
 </script>
 
 <template>

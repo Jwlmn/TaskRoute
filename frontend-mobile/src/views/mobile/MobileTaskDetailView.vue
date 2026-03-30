@@ -174,6 +174,37 @@ const getHandledExceptionAlertDescription = () => {
   }
   return exception.handle_note || '调度已处理当前异常，请按处理结果继续查看任务状态'
 }
+const getHandledExceptionNextStepTitle = () => {
+  const exception = handledException()
+  if (!exception) return ''
+  if (exception.handle_action === 'cancel') return '当前任务已停止，建议返回任务列表查看后续安排。'
+  if (exception.handle_action === 'reassign') return '当前任务已改派，建议返回任务列表确认是否有新的待接单任务。'
+  return '当前异常已关闭，可继续查看任务详情并按节点推进执行。'
+}
+const getHandledExceptionNextStepDescription = () => {
+  const exception = handledException()
+  if (!exception) return ''
+  if (exception.handle_action === 'cancel') return '取消后的任务不再允许继续上传单据或推进节点。'
+  if (exception.handle_action === 'reassign') return '改派后的原任务仅保留结果查看能力，后续执行以新司机为准。'
+  return '如仍有待完成节点，可继续在当前页面处理到达、完成和单据上传。'
+}
+const goTaskList = async (statusGroup = 'all') => {
+  await router.push({
+    name: 'mobile-tasks',
+    query: statusGroup && statusGroup !== 'all' ? { status_group: statusGroup } : {},
+  })
+}
+const goHandledExceptionNextStep = async () => {
+  const exception = handledException()
+  if (!exception) return
+  if (exception.handle_action === 'cancel' || exception.handle_action === 'reassign') {
+    await goTaskList('assigned')
+    return
+  }
+  if (detail.value?.id) {
+    await loadDetail()
+  }
+}
 
 const handledExceptionSummaryLines = () => {
   const exception = handledException()
@@ -595,6 +626,36 @@ onUnmounted(() => {
         :title="`异常已处理：${getLabel(exceptionActionLabelMap, handledException()?.handle_action)}`"
         :description="getHandledExceptionAlertDescription()"
       />
+      <el-card
+        v-if="handledException()"
+        shadow="never"
+        class="mb-12"
+      >
+        <template #header>
+          <div class="table-header">
+            <div class="mobile-section-title">下一步建议</div>
+            <el-tag size="small" :type="getHandledExceptionAlertType()">
+              {{ getLabel(exceptionActionLabelMap, handledException()?.handle_action) }}
+            </el-tag>
+          </div>
+        </template>
+        <div class="mobile-exception-result-list">
+          <div class="mobile-exception-result-line">{{ getHandledExceptionNextStepTitle() }}</div>
+          <div class="mobile-exception-result-line text-secondary">{{ getHandledExceptionNextStepDescription() }}</div>
+        </div>
+        <el-space wrap class="mt-8">
+          <el-button type="primary" size="small" @click="goHandledExceptionNextStep">
+            {{
+              handledException()?.handle_action === 'continue'
+                ? '刷新当前任务'
+                : '返回待接单列表'
+            }}
+          </el-button>
+          <el-button plain size="small" @click="goTaskList()">
+            返回任务列表
+          </el-button>
+        </el-space>
+      </el-card>
       <el-alert
         v-if="taskOperationBlockReason() && !hasPendingException()"
         class="mb-12"
