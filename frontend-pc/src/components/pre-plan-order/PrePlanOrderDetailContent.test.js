@@ -113,6 +113,28 @@ describe('PrePlanOrderDetailContent', () => {
     expect(wrapper.text()).toContain('暂无差异（可能尚未修改关键字段）')
   })
 
+  it('驳回状态下展示版本对比差异明细', () => {
+    const compareRows = [
+      {
+        field: 'pickup_address',
+        before: '旧装货地',
+        after: '新装货地',
+      },
+    ]
+    const wrapper = mountComponent({
+      showCompare: true,
+      compareRows,
+      compareLoading: false,
+    })
+
+    const text = wrapper.text()
+    const tables = wrapper.findAllComponents({ name: 'ElTable' })
+
+    expect(text).toContain('驳回后版本对比')
+    expect(text).not.toContain('暂无差异（可能尚未修改关键字段）')
+    expect(tables[0].props('data')).toEqual(compareRows)
+  })
+
   it('无模板与无实名信息时回退到占位展示', () => {
     const order = buildOrder()
     order.submitter = null
