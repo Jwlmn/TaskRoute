@@ -297,7 +297,9 @@ class PrePlanOrderAuditApiTest extends TestCase
         $detailResponse
             ->assertJsonPath('id', $orderId)
             ->assertJsonPath('audit_status', 'rejected')
-            ->assertJsonPath('audit_remark', '请补充装货说明');
+            ->assertJsonPath('audit_remark', '请补充装货说明')
+            ->assertJsonPath('auditor.id', $dispatcher->id)
+            ->assertJsonPath('auditor.name', $dispatcher->name);
 
         $history = collect($detailResponse->json('meta.history'));
         $this->assertTrue($history->contains(fn (array $item): bool => ($item['action'] ?? null) === 'customer_submit'));

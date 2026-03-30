@@ -344,6 +344,12 @@ class PrePlanOrderController extends Controller
             abort(404);
         }
 
+        $order->loadMissing([
+            'cargoCategory:id,name,code',
+            'submitter:id,account,name',
+            'auditor:id,account,name',
+        ]);
+
         return response()->json($order);
     }
 
@@ -1006,6 +1012,11 @@ class PrePlanOrderController extends Controller
         ]);
 
         $prePlanOrder = $this->scopedOrderQuery($request)->findOrFail($payload['id']);
+        $prePlanOrder->loadMissing([
+            'cargoCategory:id,name,code',
+            'submitter:id,account,name',
+            'auditor:id,account,name',
+        ]);
 
         return response()->json($prePlanOrder);
     }

@@ -68,6 +68,16 @@ class PrePlanOrder extends Model
         return $this->belongsTo(CargoCategory::class);
     }
 
+    public function submitter(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'submitter_id');
+    }
+
+    public function auditor(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'audited_by');
+    }
+
     public function pickupSite(): BelongsTo
     {
         return $this->belongsTo(LogisticsSite::class, 'pickup_site_id');

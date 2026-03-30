@@ -667,7 +667,7 @@ onUnmounted(() => {
           </el-descriptions-item>
           <el-descriptions-item label="审核备注">{{ detailOrder.audit_remark || '-' }}</el-descriptions-item>
           <el-descriptions-item label="审核人">
-            {{ detailOrder.audited_by ? `#${detailOrder.audited_by}` : '-' }}
+            {{ detailOrder.auditor?.name || detailOrder.auditor?.account || (detailOrder.audited_by ? `#${detailOrder.audited_by}` : '-') }}
           </el-descriptions-item>
           <el-descriptions-item label="审核时间">
             {{ formatDateTime(detailOrder.audited_at) }}
