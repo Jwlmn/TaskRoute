@@ -340,8 +340,8 @@ class PrePlanOrderController extends Controller
         ]);
 
         $order = $this->scopedOrderQuery($request)->findOrFail($payload['id']);
-        if ((int) $order->submitter_id !== (int) $request->user()->id) {
-            return response()->json(['message' => 'Forbidden'], 403);
+        if (! $this->canAccessCustomerOwnedOrder($request, $order)) {
+            abort(404);
         }
 
         return response()->json($order);
@@ -375,8 +375,8 @@ class PrePlanOrderController extends Controller
         ]);
 
         $order = $this->scopedOrderQuery($request)->findOrFail($payload['id']);
-        if ((int) $order->submitter_id !== (int) $request->user()->id) {
-            return response()->json(['message' => 'Forbidden'], 403);
+        if (! $this->canAccessCustomerOwnedOrder($request, $order)) {
+            abort(404);
         }
         if ($order->audit_status !== 'rejected') {
             return response()->json(['message' => '仅已驳回计划单可由客户修改'], 422);
@@ -405,8 +405,8 @@ class PrePlanOrderController extends Controller
 
         return DB::transaction(function () use ($payload, $request): JsonResponse {
             $order = $this->scopedOrderQuery($request)->lockForUpdate()->findOrFail($payload['id']);
-            if ((int) $order->submitter_id !== (int) $request->user()->id) {
-                return response()->json(['message' => 'Forbidden'], 403);
+            if (! $this->canAccessCustomerOwnedOrder($request, $order)) {
+                abort(404);
             }
             if ($order->audit_status !== 'rejected') {
                 return response()->json(['message' => '仅已驳回计划单可重新提报'], 422);
@@ -898,6 +898,9 @@ class PrePlanOrderController extends Controller
         ]);
 
         $order = $this->scopedOrderQuery($request)->findOrFail((int) $payload['id']);
+        if (! $this->canAccessCustomerOwnedOrder($request, $order)) {
+            abort(404);
+        }
         $snapshot = data_get($order->meta, 'rejected_snapshot');
         if (! is_array($snapshot)) {
             return response()->json([
@@ -1158,6 +1161,20 @@ class PrePlanOrderController extends Controller
         return ! $prePlanOrder->dispatchTasks()
             ->whereHas('waypoints', fn ($query) => $query->whereIn('status', ['arrived', 'completed']))
             ->exists();
+    }
+
+    private function canAccessCustomerOwnedOrder(Request $request, PrePlanOrder $order): bool
+    {
+        $user = $request->user();
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->hasAnyRole(['admin', 'dispatcher'])) {
+            return true;
+        }
+
+        return (int) $order->submitter_id === (int) $user->id;
     }
 
     /**

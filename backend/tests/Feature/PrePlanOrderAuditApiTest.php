@@ -266,6 +266,79 @@ class PrePlanOrderAuditApiTest extends TestCase
         $this->assertNull(data_get($response->json(), 'meta.freight_template_name'));
     }
 
+    public function test_customer_can_view_own_order_detail_with_audit_and_history(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $customer = User::query()->where('account', 'customer')->firstOrFail();
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $cargo = CargoCategory::query()->firstOrFail();
+
+        Sanctum::actingAs($customer);
+        $submitResponse = $this->postJson('/api/v1/pre-plan-order/customer-submit', [
+            'cargo_category_id' => $cargo->id,
+            'client_name' => '客户详情查看',
+            'pickup_address' => '详情装货地',
+            'dropoff_address' => '详情卸货地',
+        ])->assertCreated();
+        $orderId = (int) $submitResponse->json('id');
+
+        Sanctum::actingAs($dispatcher);
+        $this->postJson('/api/v1/pre-plan-order/audit-reject', [
+            'id' => $orderId,
+            'audit_remark' => '请补充装货说明',
+        ])->assertOk();
+
+        Sanctum::actingAs($customer);
+        $detailResponse = $this->postJson('/api/v1/pre-plan-order/customer-detail', [
+            'id' => $orderId,
+        ])->assertOk();
+
+        $detailResponse
+            ->assertJsonPath('id', $orderId)
+            ->assertJsonPath('audit_status', 'rejected')
+            ->assertJsonPath('audit_remark', '请补充装货说明');
+
+        $history = collect($detailResponse->json('meta.history'));
+        $this->assertTrue($history->contains(fn (array $item): bool => ($item['action'] ?? null) === 'customer_submit'));
+        $this->assertTrue($history->contains(fn (array $item): bool => ($item['action'] ?? null) === 'dispatcher_audit_reject'));
+    }
+
+    public function test_customer_cannot_view_other_customer_order_detail_or_revision_compare(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $customer = User::query()->where('account', 'customer')->firstOrFail();
+        $otherCustomer = User::factory()->create([
+            'account' => 'customer-other',
+            'name' => '其他客户',
+            'role' => 'customer',
+            'status' => 'active',
+            'password' => bcrypt('password'),
+        ]);
+        $otherCustomer->syncRoleAndPermissions();
+
+        $cargo = CargoCategory::query()->firstOrFail();
+
+        Sanctum::actingAs($customer);
+        $submitResponse = $this->postJson('/api/v1/pre-plan-order/customer-submit', [
+            'cargo_category_id' => $cargo->id,
+            'client_name' => '隔离详情客户',
+            'pickup_address' => '隔离装货地',
+            'dropoff_address' => '隔离卸货地',
+        ])->assertCreated();
+        $orderId = (int) $submitResponse->json('id');
+
+        Sanctum::actingAs($otherCustomer);
+        $this->postJson('/api/v1/pre-plan-order/customer-detail', [
+            'id' => $orderId,
+        ])->assertNotFound();
+
+        $this->postJson('/api/v1/pre-plan-order/revision-compare', [
+            'id' => $orderId,
+        ])->assertNotFound();
+    }
+
     public function test_dispatcher_can_batch_create_pre_plan_orders(): void
     {
         $this->seed(DatabaseSeeder::class);
