@@ -185,6 +185,13 @@ class DashboardOverviewApiTest extends TestCase
             'driver_id' => $driverA->id,
             'dispatcher_id' => $dispatcher->id,
             'status' => 'in_progress',
+            'route_meta' => [
+                'exception' => [
+                    'status' => 'pending',
+                    'type' => 'traffic_jam',
+                    'description' => '测试看板待处理异常',
+                ],
+            ],
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -289,6 +296,7 @@ class DashboardOverviewApiTest extends TestCase
                     'vehicle_utilization_rate',
                     'on_time_order_rate',
                     'receipt_upload_rate',
+                    'driver_fulfillment_rate',
                 ],
                 'generated_at',
             ])
@@ -308,7 +316,8 @@ class DashboardOverviewApiTest extends TestCase
             ->assertJsonPath('rates.task_completion_rate', 40)
             ->assertJsonPath('rates.vehicle_utilization_rate', 33.33)
             ->assertJsonPath('rates.on_time_order_rate', 50)
-            ->assertJsonPath('rates.receipt_upload_rate', 50);
+            ->assertJsonPath('rates.receipt_upload_rate', 50)
+            ->assertJsonPath('rates.driver_fulfillment_rate', 50);
     }
 
     public function test_region_scoped_dispatcher_only_sees_scoped_dashboard_metrics(): void

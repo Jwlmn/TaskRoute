@@ -49,8 +49,10 @@ class DashboardOverviewController extends Controller
             ->distinct('driver_id')
             ->count('driver_id');
 
-        $exceptionAlerts = $this->dataScopeService->applyDispatchTaskScope(DispatchTask::query(), request()->user())
-            ->where('status', 'cancelled')
+        $scopedTaskQuery = $this->dataScopeService->applyDispatchTaskScope(DispatchTask::query(), request()->user());
+
+        $exceptionAlerts = (clone $scopedTaskQuery)
+            ->where('route_meta->exception->status', 'pending')
             ->count();
 
         $totalVehicles = $this->dataScopeService->applyVehicleScope(Vehicle::query(), request()->user())->count();
@@ -91,6 +93,18 @@ class DashboardOverviewController extends Controller
             })
             ->count();
 
+        $todayDriverTaskBase = (clone $scopedTaskQuery)
+            ->whereBetween('created_at', [$todayStart, $todayEnd])
+            ->whereNotNull('driver_id')
+            ->whereIn('status', ['assigned', 'accepted', 'in_progress', 'completed'])
+            ->count();
+
+        $todayCompletedDriverTasks = (clone $scopedTaskQuery)
+            ->whereBetween('created_at', [$todayStart, $todayEnd])
+            ->whereNotNull('driver_id')
+            ->where('status', 'completed')
+            ->count();
+
         return response()->json([
             'metrics' => [
                 'pending_pre_plan_orders' => $pendingPrePlanOrders,
@@ -114,6 +128,7 @@ class DashboardOverviewController extends Controller
                 'vehicle_utilization_rate' => $this->percentage($busyVehicles, $totalVehicles),
                 'on_time_order_rate' => $this->percentage($todayOnTimeOrders, $todayOnTimeOrderBase),
                 'receipt_upload_rate' => $this->percentage($todayReceiptUploadedTasks, $todayCompletedTasks),
+                'driver_fulfillment_rate' => $this->percentage($todayCompletedDriverTasks, $todayDriverTaskBase),
             ],
             'generated_at' => $now->toDateTimeString(),
         ]);

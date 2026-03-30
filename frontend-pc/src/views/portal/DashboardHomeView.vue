@@ -29,6 +29,7 @@ const overview = ref({
     vehicle_utilization_rate: 0,
     on_time_order_rate: 0,
     receipt_upload_rate: 0,
+    driver_fulfillment_rate: 0,
   },
   generated_at: '',
 })
@@ -55,7 +56,7 @@ const summaryCards = computed(() => [
   {
     label: '执行中任务',
     value: overview.value.metrics.in_progress_tasks,
-    hint: `异常预警 ${overview.value.metrics.exception_alerts} 条`,
+    hint: `待处理异常 ${overview.value.metrics.exception_alerts} 条`,
   },
   {
     label: '在线司机',
@@ -97,6 +98,11 @@ const rateCards = computed(() => [
     label: '回单上传率',
     value: Number(overview.value.rates.receipt_upload_rate || 0),
     description: '已完成任务中存在回单/签收单的占比',
+  },
+  {
+    label: '司机履约率',
+    value: Number(overview.value.rates.driver_fulfillment_rate || 0),
+    description: '今日已分配司机的有效任务中已完成的占比',
   },
 ])
 
