@@ -12,6 +12,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 class SystemMessageController extends Controller
 {
@@ -71,13 +72,7 @@ class SystemMessageController extends Controller
             'id' => ['required', 'integer', 'exists:system_messages,id'],
         ]);
 
-        $message = SystemMessage::query()->findOrFail($payload['id']);
-        if ((int) $message->user_id !== (int) $request->user()->id) {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
-        if (! $this->canAccessMessage($message, $request->user())) {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
+        $message = $this->resolveAccessibleOwnedMessage($request, (int) $payload['id']);
 
         if (! $message->read_at) {
             $message->read_at = now();
@@ -119,13 +114,7 @@ class SystemMessageController extends Controller
             'is_pinned' => ['required', 'boolean'],
         ]);
 
-        $message = SystemMessage::query()->findOrFail((int) $payload['id']);
-        if ((int) $message->user_id !== (int) $request->user()->id) {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
-        if (! $this->canAccessMessage($message, $request->user())) {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
+        $message = $this->resolveAccessibleOwnedMessage($request, (int) $payload['id']);
         $message->is_pinned = (bool) $payload['is_pinned'];
         $message->save();
 
@@ -218,6 +207,19 @@ class SystemMessageController extends Controller
         }
 
         return true;
+    }
+
+    private function resolveAccessibleOwnedMessage(Request $request, int $id): SystemMessage
+    {
+        $message = SystemMessage::query()
+            ->where('user_id', (int) $request->user()->id)
+            ->findOrFail($id);
+
+        if (! $this->canAccessMessage($message, $request->user())) {
+            throw new NotFoundHttpException();
+        }
+
+        return $message;
     }
 
     /**

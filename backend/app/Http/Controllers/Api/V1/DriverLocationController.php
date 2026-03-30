@@ -27,10 +27,8 @@ class DriverLocationController extends Controller
 
         $driverId = (int) $request->user()->id;
         if (! empty($payload['dispatch_task_id'])) {
-            $task = DispatchTask::query()->findOrFail($payload['dispatch_task_id']);
-            if ((int) $task->driver_id !== $driverId) {
-                return response()->json(['message' => 'Forbidden'], 403);
-            }
+            $task = $this->dataScopeService->applyDispatchTaskScope(DispatchTask::query(), $request->user())
+                ->findOrFail($payload['dispatch_task_id']);
         }
 
         $location = DriverLocation::query()->create([

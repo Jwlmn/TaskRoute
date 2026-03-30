@@ -322,13 +322,13 @@ class NotificationAndAuditLogApiTest extends TestCase
         $this->assertNotNull(SystemMessage::query()->findOrFail($inScopeMessage->id)->read_at);
 
         $this->postJson('/api/v1/message/read', ['id' => $outScopeMessage->id])
-            ->assertStatus(403);
+            ->assertNotFound();
         $this->assertNull(SystemMessage::query()->findOrFail($outScopeMessage->id)->read_at);
 
         $this->postJson('/api/v1/message/pin', [
             'id' => $outScopeMessage->id,
             'is_pinned' => true,
-        ])->assertStatus(403);
+        ])->assertNotFound();
         $this->assertFalse((bool) SystemMessage::query()->findOrFail($outScopeMessage->id)->is_pinned);
 
         $batchResponse = $this->postJson('/api/v1/message/read-batch', [

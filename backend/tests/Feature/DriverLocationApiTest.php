@@ -86,7 +86,7 @@ class DriverLocationApiTest extends TestCase
             'lat' => 31.23,
         ]);
 
-        $response->assertForbidden();
+        $response->assertNotFound();
         $this->assertSame(0, DriverLocation::query()->count());
     }
 
