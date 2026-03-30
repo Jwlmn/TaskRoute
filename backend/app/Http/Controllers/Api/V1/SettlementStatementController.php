@@ -5,6 +5,9 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\PrePlanOrder;
 use App\Models\SettlementStatement;
+use App\Services\Auth\DataScopeService;
+use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -13,6 +16,10 @@ use Illuminate\Support\Str;
 
 class SettlementStatementController extends Controller
 {
+    public function __construct(private readonly DataScopeService $dataScopeService)
+    {
+    }
+
     public function list(Request $request): JsonResponse
     {
         $payload = $request->validate([
@@ -22,7 +29,7 @@ class SettlementStatementController extends Controller
 
         $clientName = trim((string) ($payload['client_name'] ?? ''));
 
-        $data = SettlementStatement::query()
+        $data = $this->scopedStatementQuery($request)
             ->when($clientName !== '', fn ($query) => $query->where('client_name', 'like', "%{$clientName}%"))
             ->when($payload['status'] ?? null, fn ($query, $status) => $query->where('status', $status))
             ->latest()
@@ -37,12 +44,12 @@ class SettlementStatementController extends Controller
             'id' => ['required', 'integer', 'exists:settlement_statements,id'],
         ]);
 
-        $statement = SettlementStatement::query()->findOrFail((int) $payload['id']);
+        $statement = $this->scopedStatementQuery($request)->findOrFail((int) $payload['id']);
         $orderIds = collect(data_get($statement->meta, 'order_ids', []))
             ->map(fn ($id) => (int) $id)
             ->filter()
             ->values();
-        $orders = PrePlanOrder::query()
+        $orders = $this->scopedOrderQuery($request)
             ->whereIn('id', $orderIds->all())
             ->get([
                 'id',
@@ -76,7 +83,12 @@ class SettlementStatementController extends Controller
         ]);
 
         $result = DB::transaction(function () use ($payload, $request): SettlementStatement {
-            $orders = $this->querySettlementOrders($payload['client_name'], $payload['period_start'], $payload['period_end']);
+            $orders = $this->querySettlementOrders(
+                $request->user(),
+                $payload['client_name'],
+                $payload['period_start'],
+                $payload['period_end']
+            );
             $summary = $this->buildSummary($orders);
 
             return SettlementStatement::query()->create([
@@ -108,7 +120,7 @@ class SettlementStatementController extends Controller
             'remark' => ['sometimes', 'nullable', 'string', 'max:255'],
         ]);
 
-        $statement = SettlementStatement::query()->findOrFail((int) $payload['id']);
+        $statement = $this->scopedStatementQuery($request)->findOrFail((int) $payload['id']);
         if (array_key_exists('status', $payload)) {
             $statement->status = $payload['status'];
             if ($payload['status'] === 'confirmed') {
@@ -124,9 +136,9 @@ class SettlementStatementController extends Controller
         return response()->json($statement->fresh());
     }
 
-    private function querySettlementOrders(string $clientName, string $periodStart, string $periodEnd): Collection
+    private function querySettlementOrders(User $user, string $clientName, string $periodStart, string $periodEnd): Collection
     {
-        return PrePlanOrder::query()
+        return $this->dataScopeService->applyPrePlanOrderScope(PrePlanOrder::query(), $user)
             ->where('status', 'completed')
             ->where('audit_status', 'approved')
             ->where('client_name', $clientName)
@@ -147,5 +159,33 @@ class SettlementStatementController extends Controller
             'total_loss_deduct_amount' => round((float) $orders->sum(fn ($item) => (float) ($item->freight_loss_deduct_amount ?? 0)), 2),
             'total_freight_amount' => round((float) $orders->sum(fn ($item) => (float) ($item->freight_amount ?? 0)), 2),
         ];
+    }
+
+    private function scopedOrderQuery(Request $request): Builder
+    {
+        return $this->dataScopeService->applyPrePlanOrderScope(PrePlanOrder::query(), $request->user());
+    }
+
+    private function scopedStatementQuery(Request $request): Builder
+    {
+        $query = SettlementStatement::query();
+        $user = $request->user();
+        if (! $user || $user->hasRole('admin')) {
+            return $query;
+        }
+
+        $accessibleOrderIds = $this->scopedOrderQuery($request)
+            ->pluck('pre_plan_orders.id')
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all();
+
+        return $query->where(function (Builder $builder) use ($user, $accessibleOrderIds): void {
+            $builder->where('created_by', $user->id);
+
+            foreach ($accessibleOrderIds as $orderId) {
+                $builder->orWhereJsonContains('meta->order_ids', $orderId);
+            }
+        });
     }
 }
