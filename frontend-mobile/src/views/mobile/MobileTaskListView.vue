@@ -62,6 +62,8 @@ const recentTaskNotices = computed(() => tasks.value
     summary: task.route_meta?.exception?.handle_note
       || (task.route_meta?.exception?.handle_action === 'cancel' ? '调度已取消当前任务。' : '调度已将当前任务改派给其他司机。'),
   })))
+const pendingAcceptTask = computed(() => tasks.value.find((task) => task.status === 'assigned') || null)
+const activeTask = computed(() => tasks.value.find((task) => ['accepted', 'in_progress'].includes(task.status)) || null)
 
 const normalizeTaskStatusGroup = (status) => {
   if (status === 'assigned') return 'assigned'
@@ -142,6 +144,16 @@ const reportCurrentLocation = async (taskId = null) => {
 
 const openDetail = async (taskId) => {
   await router.push({ name: 'mobile-task-detail', params: { id: taskId } })
+}
+
+const jumpToAssignedTasks = async () => {
+  taskStatusFilter.value = 'assigned'
+  await searchTasks()
+}
+
+const jumpToActiveTask = async () => {
+  if (!activeTask.value?.id) return
+  await openDetail(activeTask.value.id)
 }
 
 const startTask = async (taskId) => {
@@ -225,6 +237,32 @@ watch(taskStatusFilter, () => {
               size="small"
               placeholder="搜索任务号/车牌/司机"
             />
+          </div>
+          <div v-if="pendingAcceptTask || activeTask" class="mobile-order-operation-tip">
+            <el-alert
+              v-if="pendingAcceptTask"
+              :closable="false"
+              show-icon
+              type="warning"
+              :title="`当前有待接单任务：${pendingAcceptTask.task_no}`"
+              description="可直接切换到待接单列表，尽快完成接单。"
+            />
+            <div v-if="pendingAcceptTask" class="mobile-task-tip-actions">
+              <el-button size="small" type="primary" plain @click="jumpToAssignedTasks">去待接单</el-button>
+              <el-button size="small" plain @click="openDetail(pendingAcceptTask.id)">查看任务</el-button>
+            </div>
+            <el-alert
+              v-if="activeTask"
+              class="mt-8"
+              :closable="false"
+              show-icon
+              type="info"
+              :title="`当前执行任务：${activeTask.task_no}`"
+              description="可直接进入任务详情，继续上传单据或上报异常。"
+            />
+            <div v-if="activeTask" class="mobile-task-tip-actions">
+              <el-button size="small" type="primary" @click="jumpToActiveTask">查看当前任务</el-button>
+            </div>
           </div>
           <el-alert
             v-for="notice in recentTaskNotices"
