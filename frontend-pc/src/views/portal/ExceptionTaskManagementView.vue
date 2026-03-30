@@ -113,6 +113,13 @@ const getPendingDurationTagType = (task) => {
   if (minutes >= overtimeThresholdMinutes) return 'warning'
   return 'info'
 }
+const getSlaLevel = (task) => {
+  const minutes = getPendingDurationMinutes(task)
+  if (minutes >= 120) return { label: '严重超时', type: 'danger' }
+  if (minutes >= 60) return { label: '高优先级', type: 'warning' }
+  if (minutes >= 30) return { label: '临近超时', type: 'primary' }
+  return { label: '正常', type: 'success' }
+}
 const isTaskMatchedOvertimeLevel = (task) => {
   const level = overtimeLevelOptions.find((item) => item.value === filterForm.value.overtime_level)
   if (!level) return true
@@ -147,6 +154,33 @@ const exceptionTypeStats = computed(() => Object.entries(exceptionTypeLabelMap).
   label,
   count: exceptionTasks.value.filter((task) => task.route_meta?.exception?.type === value).length,
 })).filter((item) => item.count > 0))
+const driverExceptionRanking = computed(() => {
+  const map = new Map()
+  exceptionTasks.value.forEach((task) => {
+    const key = task.driver?.account || String(task.driver_id || 'unknown')
+    const current = map.get(key) || {
+      key,
+      name: formatDriverDisplay(task.driver?.name, task.driver?.account, task.driver_id),
+      count: 0,
+    }
+    current.count += 1
+    map.set(key, current)
+  })
+  return [...map.values()].sort((a, b) => b.count - a.count).slice(0, 5)
+})
+const siteExceptionRanking = computed(() => {
+  const map = new Map()
+  exceptionTasks.value.forEach((task) => {
+    const orders = Array.isArray(task.orders) ? task.orders : []
+    orders.forEach((order) => {
+      const key = order.pickup_address || '未识别站点'
+      const current = map.get(key) || { key, name: key, count: 0 }
+      current.count += 1
+      map.set(key, current)
+    })
+  })
+  return [...map.values()].sort((a, b) => b.count - a.count).slice(0, 5)
+})
 
 watch(() => filterForm.value.status, (status) => {
   if (status !== 'handled') {
@@ -317,6 +351,36 @@ onMounted(async () => {
         </el-tag>
       </el-space>
     </el-card>
+    <el-row :gutter="12" class="mb-12" v-if="filterForm.status === 'pending'">
+      <el-col :span="12">
+        <el-card shadow="never">
+          <div class="table-header">
+            <div class="mobile-section-title">司机异常排行</div>
+            <div class="text-secondary">Top 5</div>
+          </div>
+          <el-empty v-if="!driverExceptionRanking.length" description="暂无异常数据" />
+          <div v-else>
+            <div v-for="item in driverExceptionRanking" :key="`driver-rank-${item.key}`" class="mobile-exception-result-line">
+              {{ item.name }}：{{ item.count }} 次
+            </div>
+          </div>
+        </el-card>
+      </el-col>
+      <el-col :span="12">
+        <el-card shadow="never">
+          <div class="table-header">
+            <div class="mobile-section-title">装货地异常排行</div>
+            <div class="text-secondary">Top 5</div>
+          </div>
+          <el-empty v-if="!siteExceptionRanking.length" description="暂无异常数据" />
+          <div v-else>
+            <div v-for="item in siteExceptionRanking" :key="`site-rank-${item.key}`" class="mobile-exception-result-line">
+              {{ item.name }}：{{ item.count }} 次
+            </div>
+          </div>
+        </el-card>
+      </el-col>
+    </el-row>
     <el-form inline class="mb-12">
       <el-form-item label="处理状态">
         <el-select v-model="filterForm.status" style="width: 140px">
@@ -428,6 +492,17 @@ onMounted(async () => {
             :type="getPendingDurationTagType(row)"
           >
             {{ formatPendingDuration(row) }}
+          </el-tag>
+          <span v-else>-</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="SLA 状态" min-width="120">
+        <template #default="{ row }">
+          <el-tag
+            v-if="row.route_meta?.exception?.status === 'pending'"
+            :type="getSlaLevel(row).type"
+          >
+            {{ getSlaLevel(row).label }}
           </el-tag>
           <span v-else>-</span>
         </template>

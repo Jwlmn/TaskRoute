@@ -47,6 +47,15 @@ const messageTypeLabelMap = {
   dispatch_notice: '调度通知',
 }
 
+const markReadSilently = async (id) => {
+  if (!id) return
+  try {
+    await api.post('/message/read', { id })
+  } catch {
+    // ignore
+  }
+}
+
 const loadMessages = async () => {
   loading.value = true
   try {
@@ -163,12 +172,18 @@ const goToAuditPendingOrders = async () => {
 }
 
 const handleNotificationAction = async (row) => {
+  if (row?.id && !row?.read_at) {
+    await markReadSilently(row.id)
+  }
+
   if (row?.message_type === 'audit_reminder') {
     await goToAuditPendingOrders()
+    await loadMessages()
     return
   }
   if (row?.message_type === 'dispatch_notice' && isDispatchNotificationUser.value) {
     await openDispatchTaskOrders(row)
+    await loadMessages()
     return
   }
 
@@ -187,6 +202,7 @@ const handleNotificationAction = async (row) => {
         open_detail: '1',
       },
     })
+    await loadMessages()
     return
   }
 
@@ -198,10 +214,12 @@ const handleNotificationAction = async (row) => {
         open_edit: '1',
       },
     })
+    await loadMessages()
     return
   }
 
   await openOrderDetail(row)
+  await loadMessages()
 }
 
 const getNotificationActionLabel = (row) => {
@@ -242,6 +260,7 @@ onMounted(loadMessages)
         <el-select v-model="filterForm.message_type" clearable style="width: 160px">
           <el-option label="审核通知" value="audit_notice" />
           <el-option label="审核催办" value="audit_reminder" />
+          <el-option label="调度通知" value="dispatch_notice" />
         </el-select>
       </el-form-item>
       <el-form-item>
@@ -267,9 +286,9 @@ onMounted(loadMessages)
       </el-table-column>
       <el-table-column prop="title" label="标题" min-width="160" />
       <el-table-column prop="content" label="内容" min-width="260" />
-      <el-table-column label="关联订单" min-width="160">
+      <el-table-column label="关联对象" min-width="160">
         <template #default="{ row }">
-          {{ getNotificationOrderNo(row) }}
+          {{ row?.meta?.task_no || getNotificationOrderNo(row) }}
         </template>
       </el-table-column>
       <el-table-column label="审核结果" min-width="110">

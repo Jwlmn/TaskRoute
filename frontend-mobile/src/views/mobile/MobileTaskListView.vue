@@ -43,6 +43,23 @@ const taskStatusLabelMap = {
 }
 
 const getLabel = (map, value) => map[value] || value || '-'
+const formatDateTime = (value) => {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return String(value)
+  return date.toLocaleString('zh-CN', { hour12: false })
+}
+const recentTaskNotices = computed(() => tasks.value
+  .filter((task) => ['cancel', 'reassign'].includes(task?.route_meta?.exception?.handle_action))
+  .sort((a, b) => String(b?.route_meta?.exception?.handled_at || '').localeCompare(String(a?.route_meta?.exception?.handled_at || '')))
+  .slice(0, 3)
+  .map((task) => ({
+    id: task.id,
+    task_no: task.task_no,
+    action: task.route_meta?.exception?.handle_action,
+    handled_at: task.route_meta?.exception?.handled_at,
+    note: task.route_meta?.exception?.handle_note || '',
+  })))
 
 const normalizeTaskStatusGroup = (status) => {
   if (status === 'assigned') return 'assigned'
@@ -207,6 +224,16 @@ watch(taskStatusFilter, () => {
               placeholder="搜索任务号/车牌/司机"
             />
           </div>
+          <el-alert
+            v-for="notice in recentTaskNotices"
+            :key="`task-notice-${notice.id}-${notice.action}`"
+            class="mobile-order-operation-tip"
+            :type="notice.action === 'cancel' ? 'error' : 'warning'"
+            :closable="false"
+            show-icon
+            :title="notice.action === 'cancel' ? `任务 ${notice.task_no} 已取消` : `任务 ${notice.task_no} 已改派`"
+            :description="`${notice.note || (notice.action === 'cancel' ? '该任务已停止执行。' : '请停止执行并关注新任务安排。')} 处理时间：${formatDateTime(notice.handled_at)}`"
+          />
           <el-empty v-if="tasks.length === 0" description="当前筛选条件下无任务" />
           <div v-for="task in tasks" :key="task.id" class="mobile-task-item">
             <div class="mobile-task-no">{{ task.task_no }}</div>
