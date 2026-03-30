@@ -12,10 +12,11 @@
     "@element-plus/icons-vue": "^2.3.2",
     "axios": "^1.13.6",
     "element-plus": "^2.13.6",
+    "exceljs": "^4.4.0",
+    "papaparse": "^5.5.3",
     "pinia": "^3.0.4",
     "vue": "^3.5.30",
-    "vue-router": "^4.6.4",
-    "xlsx": "^0.18.5"
+    "vue-router": "^4.6.4"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.5",

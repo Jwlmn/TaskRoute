@@ -1,13 +1,13 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import * as XLSX from 'xlsx'
 import api from '../../services/api'
 import {
   dispatchModeLabelMap,
   getLabel,
   taskStatusLabelMap,
 } from '../../utils/labels'
+import { exportRowsToXlsx } from '../../utils/spreadsheet'
 
 const prePlanOrders = ref([])
 const dispatchTasks = ref([])
@@ -134,7 +134,7 @@ const openTaskOrdersDialog = async (task) => {
   await loadTaskOrders()
 }
 
-const exportTaskOrders = () => {
+const exportTaskOrders = async () => {
   if (!taskOrders.value.length) {
     ElMessage.warning('暂无可导出数据')
     return
@@ -151,10 +151,11 @@ const exportTaskOrders = () => {
     重量kg: item.cargo_weight_kg ?? '',
     体积m3: item.cargo_volume_m3 ?? '',
   }))
-  const sheet = XLSX.utils.json_to_sheet(rows)
-  const workbook = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(workbook, sheet, '任务订单明细')
-  XLSX.writeFile(workbook, `${selectedTask.value?.task_no || '调度任务'}-订单明细.xlsx`)
+  await exportRowsToXlsx({
+    filename: `${selectedTask.value?.task_no || '调度任务'}-订单明细.xlsx`,
+    sheetName: '任务订单明细',
+    rows,
+  })
 }
 
 const moveOrder = (assignment, index, delta) => {

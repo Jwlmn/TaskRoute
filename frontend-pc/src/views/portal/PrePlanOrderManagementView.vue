@@ -2,9 +2,9 @@
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
-import * as XLSX from 'xlsx'
 import api from '../../services/api'
 import { getLabel, taskStatusLabelMap } from '../../utils/labels'
+import { exportAoaSheetsToXlsx, parseSpreadsheetFile } from '../../utils/spreadsheet'
 
 const tableRef = ref()
 const prePlanOrders = ref([])
@@ -411,7 +411,7 @@ const openImportDialog = () => {
   importDialogVisible.value = true
 }
 
-const downloadImportTemplate = () => {
+const downloadImportTemplate = async () => {
   const headers = [
     '货品分类编码',
     '客户名称',
@@ -462,19 +462,26 @@ const downloadImportTemplate = () => {
     ['4. 一次最多导入 200 条，请分批导入'],
   ]
 
-  const dataSheet = XLSX.utils.aoa_to_sheet([headers, exampleRow])
-  const tipsSheet = XLSX.utils.aoa_to_sheet(tips)
-  tipsSheet['!merges'] = [
-    { s: { r: 0, c: 0 }, e: { r: 0, c: 7 } },
-    { s: { r: 1, c: 0 }, e: { r: 1, c: 7 } },
-    { s: { r: 2, c: 0 }, e: { r: 2, c: 7 } },
-    { s: { r: 3, c: 0 }, e: { r: 3, c: 7 } },
-    { s: { r: 4, c: 0 }, e: { r: 4, c: 7 } },
-  ]
-  const workbook = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(workbook, dataSheet, '计划单导入模板')
-  XLSX.utils.book_append_sheet(workbook, tipsSheet, '填写说明')
-  XLSX.writeFile(workbook, '预计划单导入模板.xlsx')
+  await exportAoaSheetsToXlsx({
+    filename: '预计划单导入模板.xlsx',
+    sheets: [
+      {
+        name: '计划单导入模板',
+        rows: [headers, exampleRow],
+      },
+      {
+        name: '填写说明',
+        rows: tips,
+        merges: [
+          { startRow: 1, startCol: 1, endRow: 1, endCol: 8 },
+          { startRow: 2, startCol: 1, endRow: 2, endCol: 8 },
+          { startRow: 3, startCol: 1, endRow: 3, endCol: 8 },
+          { startRow: 4, startCol: 1, endRow: 4, endCol: 8 },
+          { startRow: 5, startCol: 1, endRow: 5, endCol: 8 },
+        ],
+      },
+    ],
+  })
 }
 
 const openEditDialog = (row) => {
@@ -718,12 +725,7 @@ const resolveCargoCategoryId = (row) => {
 }
 
 const parseImportFile = async (file) => {
-  const buffer = await file.arrayBuffer()
-  const workbook = XLSX.read(buffer, { type: 'array' })
-  const firstSheetName = workbook.SheetNames?.[0]
-  if (!firstSheetName) return []
-  const sheet = workbook.Sheets[firstSheetName]
-  const rawRows = XLSX.utils.sheet_to_json(sheet, { defval: '' })
+  const rawRows = await parseSpreadsheetFile(file)
 
   return rawRows.map((item, index) => {
     const normalized = {}

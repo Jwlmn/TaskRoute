@@ -37,6 +37,14 @@ export default defineConfig({
             return 'xlsx'
           }
 
+          if (id.includes('exceljs')) {
+            return 'exceljs'
+          }
+
+          if (id.includes('papaparse')) {
+            return 'papaparse'
+          }
+
           if (id.includes('element-plus') || id.includes('@element-plus')) {
             return 'element-plus'
           }

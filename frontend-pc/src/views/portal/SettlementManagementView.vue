@@ -1,8 +1,8 @@
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import * as XLSX from 'xlsx'
 import api from '../../services/api'
+import { exportRowsToXlsx } from '../../utils/spreadsheet'
 
 const loading = ref(false)
 const creating = ref(false)
@@ -99,7 +99,7 @@ const updateStatus = async (row, status) => {
   }
 }
 
-const exportCurrentList = () => {
+const exportCurrentList = async () => {
   const rows = statements.value.map((item) => ({
     结算单号: item.statement_no,
     客户: item.client_name,
@@ -111,13 +111,14 @@ const exportCurrentList = () => {
     应结运费: item.total_freight_amount,
     状态: item.status,
   }))
-  const sheet = XLSX.utils.json_to_sheet(rows)
-  const workbook = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(workbook, sheet, '结算单')
-  XLSX.writeFile(workbook, '结算单列表.xlsx')
+  await exportRowsToXlsx({
+    filename: '结算单列表.xlsx',
+    sheetName: '结算单',
+    rows,
+  })
 }
 
-const exportDetailOrders = () => {
+const exportDetailOrders = async () => {
   if (!detail.value?.orders?.length) {
     ElMessage.warning('当前结算单没有可导出的订单明细')
     return
@@ -134,10 +135,11 @@ const exportDetailOrders = () => {
     应结运费: item.freight_amount ?? 0,
     运费计算时间: item.freight_calculated_at || '',
   }))
-  const sheet = XLSX.utils.json_to_sheet(rows)
-  const workbook = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(workbook, sheet, '结算订单明细')
-  XLSX.writeFile(workbook, `${detail.value.statement_no || '结算单'}-订单明细.xlsx`)
+  await exportRowsToXlsx({
+    filename: `${detail.value.statement_no || '结算单'}-订单明细.xlsx`,
+    sheetName: '结算订单明细',
+    rows,
+  })
 }
 
 onMounted(loadStatements)
