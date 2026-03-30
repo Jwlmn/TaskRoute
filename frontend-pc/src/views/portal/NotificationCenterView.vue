@@ -3,8 +3,13 @@ import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../../services/api'
 import { hasPermission, readCurrentUser } from '../../utils/auth'
-import { getLabel, taskStatusLabelMap } from '../../utils/labels'
+import { getLabel } from '../../utils/labels'
 import PrePlanOrderDetailContent from '../../components/pre-plan-order/PrePlanOrderDetailContent.vue'
+import {
+  auditStatusLabelMap,
+  auditStatusTypeMap,
+  formatDateTime,
+} from '../../utils/prePlanOrder'
 
 const loading = ref(false)
 const pinningId = ref(null)
@@ -25,33 +30,9 @@ const filterForm = ref({
   pinned_only: false,
 })
 
-const auditStatusLabelMap = {
-  pending_approval: '待审核',
-  approved: '已审核',
-  rejected: '已驳回',
-}
-
-const auditStatusTypeMap = {
-  pending_approval: 'warning',
-  approved: 'success',
-  rejected: 'danger',
-}
-
 const messageTypeLabelMap = {
   audit_notice: '审核通知',
   audit_reminder: '审核催办',
-}
-
-const formatDateTime = (value) => {
-  if (!value) return '-'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  const yyyy = date.getFullYear()
-  const mm = String(date.getMonth() + 1).padStart(2, '0')
-  const dd = String(date.getDate()).padStart(2, '0')
-  const hh = String(date.getHours()).padStart(2, '0')
-  const mi = String(date.getMinutes()).padStart(2, '0')
-  return `${yyyy}-${mm}-${dd} ${hh}:${mi}`
 }
 
 const sortMessages = (rawMessages) => rawMessages.sort((a, b) => {

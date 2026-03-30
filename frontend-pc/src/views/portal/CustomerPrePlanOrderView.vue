@@ -4,6 +4,12 @@ import { ElMessage } from 'element-plus'
 import api from '../../services/api'
 import { getLabel } from '../../utils/labels'
 import PrePlanOrderDetailContent from '../../components/pre-plan-order/PrePlanOrderDetailContent.vue'
+import {
+  auditStatusLabelMap,
+  auditStatusTypeMap,
+  freightSchemeLabelMap,
+  getFreightTemplateMeta,
+} from '../../utils/prePlanOrder'
 
 const loading = ref(false)
 const loadingMessages = ref(false)
@@ -24,24 +30,6 @@ const templatePreview = ref(null)
 const previewingTemplate = ref(false)
 
 let templatePreviewTimer = null
-
-const freightSchemeLabelMap = {
-  by_weight: '按重量',
-  by_volume: '按体积',
-  by_trip: '按趟',
-}
-
-const auditStatusLabelMap = {
-  pending_approval: '待审核',
-  approved: '已审核',
-  rejected: '已驳回',
-}
-
-const auditStatusTypeMap = {
-  pending_approval: 'warning',
-  approved: 'success',
-  rejected: 'danger',
-}
 
 const form = reactive({
   id: null,
@@ -109,18 +97,6 @@ const formatTemplatePreviewText = (template) => {
     template.dropoff_site?.name ? `卸货站点:${template.dropoff_site.name}` : null,
   ].filter(Boolean)
   return siteTags.length ? `${template.name}（${siteTags.join(' / ')}）` : template.name
-}
-
-const getFreightTemplateMeta = (row) => {
-  const meta = row?.meta
-  if (!meta || typeof meta !== 'object') return null
-  const templateId = meta.freight_template_id
-  const templateName = meta.freight_template_name
-  if (!templateId && !templateName) return null
-  return {
-    id: templateId || null,
-    name: templateName || '未命名模板',
-  }
 }
 
 const requestTemplatePreview = async () => {

@@ -6,6 +6,14 @@ import api from '../../services/api'
 import { getLabel, taskStatusLabelMap } from '../../utils/labels'
 import { exportAoaSheetsToXlsx, parseSpreadsheetFile } from '../../utils/spreadsheet'
 import PrePlanOrderDetailContent from '../../components/pre-plan-order/PrePlanOrderDetailContent.vue'
+import {
+  auditStatusLabelMap,
+  auditStatusTypeMap,
+  formatDateTime,
+  formatFreightTemplateLabel,
+  getFreightTemplateMeta,
+  historyActionLabelMap,
+} from '../../utils/prePlanOrder'
 
 const tableRef = ref()
 const prePlanOrders = ref([])
@@ -133,18 +141,6 @@ const statusTypeMap = {
 
 const editableStatusSet = new Set(['pending', 'scheduled', 'in_progress'])
 const dispatchableStatusSet = new Set(['pending', 'scheduled'])
-const auditStatusLabelMap = {
-  pending_approval: '待审核',
-  approved: '已审核',
-  rejected: '已驳回',
-}
-
-const auditStatusTypeMap = {
-  pending_approval: 'warning',
-  approved: 'success',
-  rejected: 'danger',
-}
-
 const mergeCompareKeys = [
   { key: 'cargo_category_id', label: '货品分类' },
   { key: 'client_name', label: '客户' },
@@ -161,24 +157,6 @@ const freightSchemeLabelMap = {
   by_weight: '按重量',
   by_volume: '按体积',
   by_trip: '按趟',
-}
-
-const historyActionLabelMap = {
-  dispatcher_create: '调度创建',
-  dispatcher_batch_create: '批量创建',
-  dispatcher_update: '调度编辑',
-  dispatcher_lock: '锁单',
-  dispatcher_unlock: '解锁',
-  dispatcher_void: '作废',
-  dispatcher_split_create: '拆单生成子单',
-  dispatcher_split_source_voided: '拆单作废原单',
-  dispatcher_merge_create: '并单生成新单',
-  dispatcher_merge_source_voided: '并单作废来源单',
-  dispatcher_audit_approve: '审核通过',
-  dispatcher_audit_reject: '审核驳回',
-  customer_submit: '客户提报',
-  customer_update: '客户修改',
-  customer_resubmit: '客户重提',
 }
 
 const freightSchemeOptions = [
@@ -200,23 +178,6 @@ const splitWeightTotal = computed(() => splitParts.value.reduce((sum, part) => s
 const splitVolumeTotal = computed(() => splitParts.value.reduce((sum, part) => sum + Number(part.cargo_volume_m3 || 0), 0))
 let createTemplatePreviewTimer = null
 let editTemplatePreviewTimer = null
-
-const getFreightTemplateMeta = (row) => {
-  const meta = row?.meta
-  if (!meta || typeof meta !== 'object') return null
-  const templateId = meta.freight_template_id
-  const templateName = meta.freight_template_name
-  if (!templateId && !templateName) return null
-  return {
-    id: templateId || null,
-    name: templateName || '-',
-  }
-}
-
-const formatFreightTemplateLabel = (row) => {
-  const template = getFreightTemplateMeta(row)
-  return template?.name || '未命中模板'
-}
 
 const buildTemplatePreviewPayload = (form) => ({
   client_name: form.client_name?.trim() || null,
