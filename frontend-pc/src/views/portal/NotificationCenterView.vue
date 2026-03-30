@@ -47,6 +47,65 @@ const messageTypeLabelMap = {
   dispatch_notice: '调度通知',
 }
 
+const getMessageRowIds = (row) => {
+  if (Array.isArray(row?.aggregate_ids) && row.aggregate_ids.length) {
+    return row.aggregate_ids.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
+  }
+  return row?.id ? [Number(row.id)] : []
+}
+
+const displayMessages = computed(() => {
+  const grouped = new Map()
+
+  messages.value.forEach((message) => {
+    const taskId = Number(message?.meta?.task_id || 0)
+    if (message?.message_type !== 'dispatch_notice' || !taskId) {
+      grouped.set(`single-${message.id}`, {
+        ...message,
+        aggregate_count: 1,
+        aggregate_ids: [message.id],
+        unread_count: message?.read_at ? 0 : 1,
+      })
+      return
+    }
+
+    const key = `dispatch-${taskId}`
+    const current = grouped.get(key)
+    if (!current) {
+      grouped.set(key, {
+        ...message,
+        aggregate_count: 1,
+        aggregate_ids: [message.id],
+        unread_count: message?.read_at ? 0 : 1,
+      })
+      return
+    }
+
+    current.aggregate_count += 1
+    current.aggregate_ids.push(message.id)
+    current.unread_count += message?.read_at ? 0 : 1
+    current.is_pinned = current.is_pinned || message.is_pinned
+
+    if (!current.read_at || !message.read_at) {
+      current.read_at = null
+    }
+
+    if (String(message?.created_at || '') > String(current?.created_at || '')) {
+      Object.assign(current, {
+        ...current,
+        ...message,
+        aggregate_count: current.aggregate_count,
+        aggregate_ids: current.aggregate_ids,
+        unread_count: current.unread_count,
+        is_pinned: current.is_pinned,
+        read_at: current.unread_count > 0 ? null : message.read_at,
+      })
+    }
+  })
+
+  return [...grouped.values()]
+})
+
 const markReadSilently = async (id) => {
   if (!id) return
   try {
@@ -82,7 +141,7 @@ const loadMessages = async () => {
 }
 
 const onSelectionChange = (rows) => {
-  selectedIds.value = rows.map((item) => item.id)
+  selectedIds.value = [...new Set(rows.flatMap((item) => getMessageRowIds(item)))]
 }
 
 const markRead = async (id) => {
@@ -91,6 +150,25 @@ const markRead = async (id) => {
     await loadMessages()
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '标记已读失败')
+  }
+}
+
+const markMessageRowRead = async (row) => {
+  const ids = getMessageRowIds(row).filter((id) => {
+    const message = messages.value.find((item) => Number(item.id) === Number(id))
+    return message && !message.read_at
+  })
+  if (!ids.length) return
+  if (ids.length === 1) {
+    await markRead(ids[0])
+    return
+  }
+  try {
+    await api.post('/message/read-batch', { ids })
+    ElMessage.success('批量已读成功')
+    await loadMessages()
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '批量已读失败')
   }
 }
 
@@ -111,10 +189,11 @@ const markReadBatch = async () => {
 const togglePin = async (row) => {
   pinningId.value = row.id
   try {
-    await api.post('/message/pin', {
-      id: row.id,
+    const ids = getMessageRowIds(row)
+    await Promise.all(ids.map((id) => api.post('/message/pin', {
+      id,
       is_pinned: !row.is_pinned,
-    })
+    })))
     await loadMessages()
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '置顶操作失败')
@@ -244,6 +323,12 @@ const getNotificationActionLabel = (row) => {
   return '查看订单'
 }
 
+const isNotificationActionDisabled = (row) => {
+  if (row?.message_type === 'audit_reminder') return false
+  if (row?.message_type === 'dispatch_notice') return !isDispatchNotificationUser.value || !row?.meta?.task_id
+  return !row?.meta?.order_id || !resolveOrderDetailEndpoint()
+}
+
 onMounted(loadMessages)
 </script>
 
@@ -285,7 +370,7 @@ onMounted(loadMessages)
       </el-form-item>
     </el-form>
 
-    <el-table :data="messages" stripe v-loading="loading" @selection-change="onSelectionChange">
+    <el-table :data="displayMessages" stripe v-loading="loading" @selection-change="onSelectionChange">
       <el-table-column type="selection" width="50" />
       <el-table-column label="置顶" width="70">
         <template #default="{ row }">
@@ -298,8 +383,27 @@ onMounted(loadMessages)
           {{ getLabel(messageTypeLabelMap, row.message_type) }}
         </template>
       </el-table-column>
-      <el-table-column prop="title" label="标题" min-width="160" />
-      <el-table-column prop="content" label="内容" min-width="260" />
+      <el-table-column label="标题" min-width="200">
+        <template #default="{ row }">
+          <el-space wrap size="small">
+            <span>{{ row.title || '-' }}</span>
+            <el-tag v-if="row.message_type === 'dispatch_notice' && row.aggregate_count > 1" size="small" type="primary">
+              同任务 {{ row.aggregate_count }} 条
+            </el-tag>
+            <el-tag v-if="row.message_type === 'dispatch_notice' && row.unread_count > 1" size="small" type="danger">
+              未读 {{ row.unread_count }} 条
+            </el-tag>
+          </el-space>
+        </template>
+      </el-table-column>
+      <el-table-column label="内容" min-width="320">
+        <template #default="{ row }">
+          <div>{{ row.content || '-' }}</div>
+          <div v-if="row.message_type === 'dispatch_notice' && row.aggregate_count > 1" class="text-secondary">
+            已合并展示同一任务的调度通知，点击后统一跳转并批量处理已读。
+          </div>
+        </template>
+      </el-table-column>
       <el-table-column label="关联对象" min-width="160">
         <template #default="{ row }">
           {{ row?.meta?.task_no || getNotificationOrderNo(row) }}
@@ -331,12 +435,14 @@ onMounted(loadMessages)
           <el-button
             link
             :type="row.message_type === 'audit_reminder' ? 'primary' : 'info'"
-            :disabled="row.message_type !== 'audit_reminder' && (!row?.meta?.order_id || !resolveOrderDetailEndpoint())"
+            :disabled="isNotificationActionDisabled(row)"
             @click="handleNotificationAction(row)"
           >
             {{ getNotificationActionLabel(row) }}
           </el-button>
-          <el-button link type="primary" :disabled="!!row.read_at" @click="markRead(row.id)">已读</el-button>
+          <el-button link type="primary" :disabled="!!row.read_at" @click="markMessageRowRead(row)">
+            {{ row.aggregate_count > 1 ? '本组已读' : '已读' }}
+          </el-button>
           <el-button link type="warning" :loading="pinningId === row.id" @click="togglePin(row)">
             {{ row.is_pinned ? '取消置顶' : '置顶' }}
           </el-button>

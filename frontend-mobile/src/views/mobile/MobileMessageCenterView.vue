@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '../../services/api'
@@ -47,6 +47,12 @@ const getLabel = (map, value) => map[value] || value || '-'
 const getNotificationOrderNo = (message) => message?.meta?.order_no || '-'
 const getNotificationAuditStatus = (message) => message?.meta?.audit_status || ''
 const getNotificationTaskNo = (message) => message?.meta?.task_no || '-'
+const getMessageRowIds = (row) => {
+  if (Array.isArray(row?.aggregate_ids) && row.aggregate_ids.length) {
+    return row.aggregate_ids.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
+  }
+  return row?.id ? [Number(row.id)] : []
+}
 const formatNotificationTime = (message) => {
   const value = message?.created_at
   if (!value) return '-'
@@ -54,6 +60,57 @@ const formatNotificationTime = (message) => {
   if (Number.isNaN(date.getTime())) return String(value)
   return date.toLocaleString('zh-CN', { hour12: false })
 }
+const displayMessages = computed(() => {
+  const grouped = new Map()
+
+  messages.value.forEach((message) => {
+    const taskId = Number(message?.meta?.task_id || 0)
+    if (message?.message_type !== 'dispatch_notice' || !taskId) {
+      grouped.set(`single-${message.id}`, {
+        ...message,
+        aggregate_count: 1,
+        aggregate_ids: [message.id],
+        unread_count: message?.read_at ? 0 : 1,
+      })
+      return
+    }
+
+    const key = `dispatch-${taskId}`
+    const current = grouped.get(key)
+    if (!current) {
+      grouped.set(key, {
+        ...message,
+        aggregate_count: 1,
+        aggregate_ids: [message.id],
+        unread_count: message?.read_at ? 0 : 1,
+      })
+      return
+    }
+
+    current.aggregate_count += 1
+    current.aggregate_ids.push(message.id)
+    current.unread_count += message?.read_at ? 0 : 1
+    current.is_pinned = current.is_pinned || message.is_pinned
+
+    if (!current.read_at || !message.read_at) {
+      current.read_at = null
+    }
+
+    if (String(message?.created_at || '') > String(current?.created_at || '')) {
+      Object.assign(current, {
+        ...current,
+        ...message,
+        aggregate_count: current.aggregate_count,
+        aggregate_ids: current.aggregate_ids,
+        unread_count: current.unread_count,
+        is_pinned: current.is_pinned,
+        read_at: current.unread_count > 0 ? null : message.read_at,
+      })
+    }
+  })
+
+  return [...grouped.values()]
+})
 
 const openTaskDetail = async (row) => {
   const taskId = Number(row?.meta?.task_id || 0)
@@ -102,7 +159,7 @@ const changePage = async (nextPage) => {
 }
 
 const onSelectionChange = (rows) => {
-  selectedIds.value = rows.map((item) => item.id)
+  selectedIds.value = [...new Set(rows.flatMap((item) => getMessageRowIds(item)))]
 }
 
 const markRead = async (id) => {
@@ -111,6 +168,25 @@ const markRead = async (id) => {
     await loadMessages(pagination.page)
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '标记已读失败')
+  }
+}
+
+const markMessageRowRead = async (row) => {
+  const ids = getMessageRowIds(row).filter((id) => {
+    const message = messages.value.find((item) => Number(item.id) === Number(id))
+    return message && !message.read_at
+  })
+  if (!ids.length) return
+  if (ids.length === 1) {
+    await markRead(ids[0])
+    return
+  }
+  try {
+    await api.post('/message/read-batch', { ids })
+    ElMessage.success('批量已读成功')
+    await loadMessages(pagination.page)
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '批量已读失败')
   }
 }
 
@@ -131,21 +207,17 @@ const markReadBatch = async () => {
 const togglePin = async (row) => {
   pinningId.value = row.id
   try {
-    await api.post('/message/pin', {
-      id: row.id,
+    const ids = getMessageRowIds(row)
+    await Promise.all(ids.map((id) => api.post('/message/pin', {
+      id,
       is_pinned: !row.is_pinned,
-    })
+    })))
     await loadMessages(pagination.page)
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '置顶操作失败')
   } finally {
     pinningId.value = null
   }
-}
-
-const markDispatchNoticeRead = async (row) => {
-  if (!row?.id || row?.read_at) return
-  await markRead(row.id)
 }
 
 const markRelatedTaskMessagesRead = async (taskId) => {
@@ -221,7 +293,7 @@ watch(
     </div>
 
     <el-table
-      :data="messages"
+      :data="displayMessages"
       stripe
       v-loading="loading"
       class="mobile-message-table"
@@ -233,6 +305,9 @@ watch(
           <div class="mobile-message-title">
             <el-tag v-if="row.is_pinned" size="small" type="warning">置顶</el-tag>
             <el-tag v-if="!row.read_at" size="small" type="danger">未读</el-tag>
+            <el-tag v-if="row.message_type === 'dispatch_notice' && row.aggregate_count > 1" size="small" type="primary">
+              同任务 {{ row.aggregate_count }} 条
+            </el-tag>
             <span>{{ row.title || '-' }}</span>
           </div>
           <div class="mobile-message-meta">
@@ -247,6 +322,12 @@ watch(
             </el-tag>
           </div>
           <div class="mobile-message-content">{{ row.content || '-' }}</div>
+          <div
+            v-if="row.message_type === 'dispatch_notice' && row.aggregate_count > 1"
+            class="mobile-message-content text-secondary"
+          >
+            已合并同任务调度通知，进入任务时会统一批量已读。
+          </div>
           <div class="mobile-message-extra">
             <span v-if="row.meta?.task_id">关联任务：{{ getNotificationTaskNo(row) }}</span>
             <span v-else>关联订单：{{ getNotificationOrderNo(row) }}</span>
@@ -269,11 +350,11 @@ watch(
               v-if="row.message_type === 'dispatch_notice' && !row.read_at"
               link
               type="primary"
-              @click="markDispatchNoticeRead(row)"
+              @click="markMessageRowRead(row)"
             >
-              已读本条
+              {{ row.aggregate_count > 1 ? '本组已读' : '已读本条' }}
             </el-button>
-            <el-button link type="primary" :disabled="!!row.read_at" @click="markRead(row.id)">已读</el-button>
+            <el-button link type="primary" :disabled="!!row.read_at" @click="markMessageRowRead(row)">已读</el-button>
             <el-button link type="warning" :loading="pinningId === row.id" @click="togglePin(row)">
               {{ row.is_pinned ? '取消置顶' : '置顶' }}
             </el-button>
