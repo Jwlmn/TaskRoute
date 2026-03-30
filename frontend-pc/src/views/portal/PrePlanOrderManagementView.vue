@@ -5,6 +5,7 @@ import { UploadFilled } from '@element-plus/icons-vue'
 import api from '../../services/api'
 import { getLabel, taskStatusLabelMap } from '../../utils/labels'
 import { exportAoaSheetsToXlsx, parseSpreadsheetFile } from '../../utils/spreadsheet'
+import PrePlanOrderDetailContent from '../../components/pre-plan-order/PrePlanOrderDetailContent.vue'
 
 const tableRef = ref()
 const prePlanOrders = ref([])
@@ -197,25 +198,8 @@ const cargoCategoryMap = computed(() => {
 const selectedOrderIds = computed(() => selectedOrders.value.map((item) => item.id))
 const splitWeightTotal = computed(() => splitParts.value.reduce((sum, part) => sum + Number(part.cargo_weight_kg || 0), 0))
 const splitVolumeTotal = computed(() => splitParts.value.reduce((sum, part) => sum + Number(part.cargo_volume_m3 || 0), 0))
-const detailHistory = computed(() => {
-  const list = detailOrder.value?.meta?.history
-  return Array.isArray(list) ? [...list].reverse() : []
-})
-
 let createTemplatePreviewTimer = null
 let editTemplatePreviewTimer = null
-
-const formatDateTime = (value) => {
-  if (!value) return '-'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  const yyyy = date.getFullYear()
-  const mm = String(date.getMonth() + 1).padStart(2, '0')
-  const dd = String(date.getDate()).padStart(2, '0')
-  const hh = String(date.getHours()).padStart(2, '0')
-  const mi = String(date.getMinutes()).padStart(2, '0')
-  return `${yyyy}-${mm}-${dd} ${hh}:${mi}`
-}
 
 const getFreightTemplateMeta = (row) => {
   const meta = row?.meta
@@ -1546,53 +1530,11 @@ onUnmounted(() => {
   </el-dialog>
 
   <el-dialog v-model="detailDialogVisible" title="预计划单详情" width="860px" destroy-on-close>
-    <el-skeleton :loading="detailLoading" animated :rows="6">
-      <template #default>
-        <el-descriptions v-if="detailOrder" :column="2" border size="small">
-          <el-descriptions-item label="预计划单号">{{ detailOrder.order_no || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="客户">{{ detailOrder.client_name || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="装货地">{{ detailOrder.pickup_address || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="卸货地">{{ detailOrder.dropoff_address || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="状态">{{ getLabel(taskStatusLabelMap, detailOrder.status) }}</el-descriptions-item>
-          <el-descriptions-item label="审核">{{ getLabel(auditStatusLabelMap, detailOrder.audit_status) }}</el-descriptions-item>
-          <el-descriptions-item label="提报人">
-            {{ detailOrder.submitter?.name || detailOrder.submitter?.account || (detailOrder.submitter_id ? `#${detailOrder.submitter_id}` : '-') }}
-          </el-descriptions-item>
-          <el-descriptions-item label="审核人">
-            {{ detailOrder.auditor?.name || detailOrder.auditor?.account || (detailOrder.audited_by ? `#${detailOrder.audited_by}` : '-') }}
-          </el-descriptions-item>
-          <el-descriptions-item label="命中模板">
-            {{ formatFreightTemplateLabel(detailOrder) }}
-          </el-descriptions-item>
-          <el-descriptions-item label="模板ID">
-            {{ getFreightTemplateMeta(detailOrder)?.id || '-' }}
-          </el-descriptions-item>
-        </el-descriptions>
-        <el-divider content-position="left">操作日志</el-divider>
-        <el-table :data="detailHistory" size="small" stripe>
-          <el-table-column label="时间" min-width="160">
-            <template #default="{ row }">
-              {{ formatDateTime(row.at) }}
-            </template>
-          </el-table-column>
-          <el-table-column label="动作" min-width="140">
-            <template #default="{ row }">
-              {{ historyActionLabelMap[row.action] || row.action || '-' }}
-            </template>
-          </el-table-column>
-          <el-table-column label="操作人" min-width="140">
-            <template #default="{ row }">
-              {{ row.operator_name || row.operator_account || (row.operator_id ? `#${row.operator_id}` : '-') }}
-            </template>
-          </el-table-column>
-          <el-table-column label="附加信息" min-width="260">
-            <template #default="{ row }">
-              {{ row.extra && Object.keys(row.extra).length ? JSON.stringify(row.extra) : '-' }}
-            </template>
-          </el-table-column>
-        </el-table>
-      </template>
-    </el-skeleton>
+    <PrePlanOrderDetailContent
+      :order="detailOrder"
+      :loading="detailLoading"
+      show-template-id
+    />
     <template #footer>
       <el-button @click="detailDialogVisible = false">关闭</el-button>
     </template>

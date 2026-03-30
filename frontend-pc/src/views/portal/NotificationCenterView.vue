@@ -4,6 +4,7 @@ import { ElMessage } from 'element-plus'
 import api from '../../services/api'
 import { hasPermission, readCurrentUser } from '../../utils/auth'
 import { getLabel, taskStatusLabelMap } from '../../utils/labels'
+import PrePlanOrderDetailContent from '../../components/pre-plan-order/PrePlanOrderDetailContent.vue'
 
 const loading = ref(false)
 const pinningId = ref(null)
@@ -41,18 +42,6 @@ const messageTypeLabelMap = {
   audit_reminder: '审核催办',
 }
 
-const getFreightTemplateMeta = (row) => {
-  const meta = row?.meta
-  if (!meta || typeof meta !== 'object') return null
-  const templateId = meta.freight_template_id
-  const templateName = meta.freight_template_name
-  if (!templateId && !templateName) return null
-  return {
-    id: templateId || null,
-    name: templateName || '未命名模板',
-  }
-}
-
 const formatDateTime = (value) => {
   if (!value) return '-'
   const date = new Date(value)
@@ -63,29 +52,6 @@ const formatDateTime = (value) => {
   const hh = String(date.getHours()).padStart(2, '0')
   const mi = String(date.getMinutes()).padStart(2, '0')
   return `${yyyy}-${mm}-${dd} ${hh}:${mi}`
-}
-
-const detailHistory = computed(() => {
-  const list = detailOrder.value?.meta?.history
-  return Array.isArray(list) ? [...list].reverse() : []
-})
-
-const historyActionLabelMap = {
-  dispatcher_create: '调度创建',
-  dispatcher_batch_create: '批量创建',
-  dispatcher_update: '调度编辑',
-  dispatcher_lock: '锁单',
-  dispatcher_unlock: '解锁',
-  dispatcher_void: '作废',
-  dispatcher_split_create: '拆单生成子单',
-  dispatcher_split_source_voided: '拆单作废原单',
-  dispatcher_merge_create: '并单生成新单',
-  dispatcher_merge_source_voided: '并单作废来源单',
-  dispatcher_audit_approve: '审核通过',
-  dispatcher_audit_reject: '审核驳回',
-  customer_submit: '客户提报',
-  customer_update: '客户修改',
-  customer_resubmit: '客户重提',
 }
 
 const sortMessages = (rawMessages) => rawMessages.sort((a, b) => {
@@ -300,63 +266,13 @@ onMounted(loadMessages)
   </el-card>
 
   <el-dialog v-model="detailDialogVisible" title="关联订单详情" width="860px" destroy-on-close>
-    <el-skeleton :loading="detailLoading" animated :rows="6">
-      <template #default>
-        <el-descriptions v-if="detailOrder" :column="2" border size="small">
-          <el-descriptions-item label="预计划单号">{{ detailOrder.order_no || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="客户">{{ detailOrder.client_name || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="装货地">{{ detailOrder.pickup_address || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="卸货地">{{ detailOrder.dropoff_address || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="状态">{{ getLabel(taskStatusLabelMap, detailOrder.status) }}</el-descriptions-item>
-          <el-descriptions-item label="审核状态">{{ getLabel(auditStatusLabelMap, detailOrder.audit_status) }}</el-descriptions-item>
-          <el-descriptions-item label="提报人">
-            {{ detailOrder.submitter?.name || detailOrder.submitter?.account || (detailOrder.submitter_id ? `#${detailOrder.submitter_id}` : '-') }}
-          </el-descriptions-item>
-          <el-descriptions-item label="审核人">
-            {{ detailOrder.auditor?.name || detailOrder.auditor?.account || (detailOrder.audited_by ? `#${detailOrder.audited_by}` : '-') }}
-          </el-descriptions-item>
-          <el-descriptions-item label="命中模板">
-            {{ getFreightTemplateMeta(detailOrder)?.name || '未命中模板' }}
-          </el-descriptions-item>
-          <el-descriptions-item label="审核备注">{{ detailOrder.audit_remark || '-' }}</el-descriptions-item>
-        </el-descriptions>
-        <template v-if="detailOrder?.audit_status === 'rejected'">
-          <el-divider content-position="left">驳回后版本对比</el-divider>
-          <el-table :data="detailCompareRows" size="small" stripe v-loading="detailCompareLoading">
-            <el-table-column prop="field" label="字段" min-width="180" />
-            <el-table-column prop="before" label="驳回时值" min-width="220" />
-            <el-table-column prop="after" label="当前值" min-width="220" />
-          </el-table>
-          <el-empty
-            v-if="!detailCompareLoading && detailCompareRows.length === 0"
-            description="暂无差异（可能尚未修改关键字段）"
-          />
-        </template>
-        <el-divider content-position="left">操作轨迹</el-divider>
-        <el-table :data="detailHistory" size="small" stripe>
-          <el-table-column label="时间" min-width="160">
-            <template #default="{ row }">
-              {{ formatDateTime(row.at) }}
-            </template>
-          </el-table-column>
-          <el-table-column label="动作" min-width="140">
-            <template #default="{ row }">
-              {{ historyActionLabelMap[row.action] || row.action || '-' }}
-            </template>
-          </el-table-column>
-          <el-table-column label="操作人" min-width="140">
-            <template #default="{ row }">
-              {{ row.operator_name || row.operator_account || (row.operator_id ? `#${row.operator_id}` : '-') }}
-            </template>
-          </el-table-column>
-          <el-table-column label="附加信息" min-width="260">
-            <template #default="{ row }">
-              {{ row.extra && Object.keys(row.extra).length ? JSON.stringify(row.extra) : '-' }}
-            </template>
-          </el-table-column>
-        </el-table>
-      </template>
-    </el-skeleton>
+    <PrePlanOrderDetailContent
+      :order="detailOrder"
+      :loading="detailLoading"
+      :compare-rows="detailCompareRows"
+      :compare-loading="detailCompareLoading"
+      show-compare
+    />
     <template #footer>
       <el-button @click="detailDialogVisible = false">关闭</el-button>
     </template>
