@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 import api from '../../services/api'
@@ -15,6 +16,7 @@ import {
   historyActionLabelMap,
 } from '../../utils/prePlanOrder'
 
+const route = useRoute()
 const tableRef = ref()
 const prePlanOrders = ref([])
 const selectedOrders = ref([])
@@ -553,6 +555,19 @@ const openDetailDialog = async (row) => {
   } finally {
     detailLoading.value = false
   }
+}
+
+const applyRouteFilters = () => {
+  filterForm.keyword = typeof route.query.keyword === 'string' ? route.query.keyword : ''
+}
+
+const openDetailFromRoute = async () => {
+  if (route.query.open_detail !== '1') return
+  const focusOrderId = Number(route.query.focus_order_id || 0)
+  if (!focusOrderId) return
+  const matchedOrder = prePlanOrders.value.find((item) => item.id === focusOrderId)
+  if (!matchedOrder) return
+  await openDetailDialog(matchedOrder)
 }
 
 const closeSplitDialog = () => {
@@ -1182,8 +1197,10 @@ const submitManualDispatch = async () => {
   }
 }
 
-onMounted(() => {
-  loadPrePlanOrders()
+onMounted(async () => {
+  applyRouteFilters()
+  await loadPrePlanOrders()
+  await openDetailFromRoute()
   loadMeta()
   loadSites()
 })

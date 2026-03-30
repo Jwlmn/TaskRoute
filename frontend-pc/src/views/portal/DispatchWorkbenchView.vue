@@ -1,5 +1,6 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '../../services/api'
 import {
@@ -8,6 +9,8 @@ import {
   taskStatusLabelMap,
 } from '../../utils/labels'
 import { exportRowsToXlsx } from '../../utils/spreadsheet'
+
+const route = useRoute()
 
 const prePlanOrders = ref([])
 const dispatchTasks = ref([])
@@ -30,6 +33,9 @@ const taskOrderFilter = ref({
   keyword: '',
   status: '',
 })
+const taskFilter = reactive({
+  keyword: '',
+})
 
 const orderMap = computed(() => {
   const map = {}
@@ -47,7 +53,9 @@ const loadPrePlanOrders = async () => {
 const loadDispatchTasks = async () => {
   loadingTasks.value = true
   try {
-    const { data } = await api.post('/dispatch-task/list', {})
+    const payload = {}
+    if (taskFilter.keyword.trim()) payload.keyword = taskFilter.keyword.trim()
+    const { data } = await api.post('/dispatch-task/list', payload)
     dispatchTasks.value = Array.isArray(data?.data) ? data.data : []
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '获取调度任务失败')
@@ -132,6 +140,24 @@ const openTaskOrdersDialog = async (task) => {
   taskOrderFilter.value.status = ''
   taskOrdersDialogVisible.value = true
   await loadTaskOrders()
+}
+
+const resetTaskFilters = async () => {
+  taskFilter.keyword = ''
+  await loadDispatchTasks()
+}
+
+const applyRouteFilters = () => {
+  taskFilter.keyword = typeof route.query.task_no === 'string' ? route.query.task_no : ''
+}
+
+const openTaskOrdersFromRoute = async () => {
+  if (route.query.open_orders !== '1') return
+  const focusTaskId = Number(route.query.focus_task_id || 0)
+  if (!focusTaskId) return
+  const matchedTask = dispatchTasks.value.find((item) => item.id === focusTaskId)
+  if (!matchedTask) return
+  await openTaskOrdersDialog(matchedTask)
 }
 
 const exportTaskOrders = async () => {
@@ -228,7 +254,9 @@ const submitManualAdjustedTasks = async () => {
 }
 
 onMounted(async () => {
+  applyRouteFilters()
   await loadDispatchTasks()
+  await openTaskOrdersFromRoute()
 })
 </script>
 
@@ -240,6 +268,15 @@ onMounted(async () => {
         <el-button type="primary" @click="openManualAdjustDialog">智能预览并手工下发</el-button>
       </div>
     </template>
+    <el-form inline class="mb-12">
+      <el-form-item label="任务检索">
+        <el-input v-model="taskFilter.keyword" clearable placeholder="任务号/车辆/司机" style="width: 240px" />
+      </el-form-item>
+      <el-form-item>
+        <el-button type="primary" @click="loadDispatchTasks">查询</el-button>
+        <el-button @click="resetTaskFilters">重置</el-button>
+      </el-form-item>
+    </el-form>
     <el-table :data="dispatchTasks" stripe v-loading="loadingTasks">
       <el-table-column prop="task_no" label="任务编号" min-width="180" />
       <el-table-column label="派单模式" min-width="180">

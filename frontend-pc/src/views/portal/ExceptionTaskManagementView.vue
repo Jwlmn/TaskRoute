@@ -1,10 +1,12 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '../../services/api'
 import { readCurrentUser } from '../../utils/auth'
 import { getLabel, taskStatusLabelMap } from '../../utils/labels'
 
+const router = useRouter()
 const loadingExceptions = ref(false)
 const handlingException = ref(false)
 const exceptionTasks = ref([])
@@ -88,6 +90,7 @@ const currentExceptionHistory = computed(() => {
   return Array.isArray(history) ? [...history].reverse() : []
 })
 const selectedTaskOrders = computed(() => Array.isArray(selectedExceptionTask.value?.orders) ? selectedExceptionTask.value.orders : [])
+const primaryTaskOrder = computed(() => selectedTaskOrders.value[0] || null)
 
 watch(() => filterForm.value.status, (status) => {
   if (status !== 'handled') {
@@ -172,6 +175,35 @@ const submitHandleException = async () => {
   } finally {
     handlingException.value = false
   }
+}
+
+const jumpToDispatchTask = async () => {
+  if (!selectedExceptionTask.value?.id) return
+  exceptionDetailDialogVisible.value = false
+  await router.push({
+    name: 'dispatch-workbench',
+    query: {
+      task_no: selectedExceptionTask.value.task_no || '',
+      focus_task_id: String(selectedExceptionTask.value.id),
+      open_orders: '1',
+    },
+  })
+}
+
+const jumpToPrePlanOrder = async () => {
+  if (!primaryTaskOrder.value?.id) {
+    ElMessage.warning('当前异常暂无关联订单')
+    return
+  }
+  exceptionDetailDialogVisible.value = false
+  await router.push({
+    name: 'pre-plan-order-management',
+    query: {
+      keyword: primaryTaskOrder.value.order_no || '',
+      focus_order_id: String(primaryTaskOrder.value.id),
+      open_detail: '1',
+    },
+  })
 }
 
 onMounted(async () => {
@@ -392,6 +424,12 @@ onMounted(async () => {
         <el-descriptions-item label="异常说明" :span="2">{{ currentException.description || '-' }}</el-descriptions-item>
         <el-descriptions-item label="处理备注" :span="2">{{ currentException.handle_note || '-' }}</el-descriptions-item>
       </el-descriptions>
+
+      <el-divider content-position="left">快捷联动</el-divider>
+      <el-space wrap class="mb-12">
+        <el-button type="primary" @click="jumpToDispatchTask">查看调度任务订单明细</el-button>
+        <el-button @click="jumpToPrePlanOrder" :disabled="!primaryTaskOrder?.id">查看关联预计划单</el-button>
+      </el-space>
 
       <el-divider content-position="left">处理前后变化</el-divider>
       <el-descriptions :column="1" border size="small">
