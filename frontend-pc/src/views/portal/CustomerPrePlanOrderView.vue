@@ -108,6 +108,18 @@ const formatTemplatePreviewText = (template) => {
   return siteTags.length ? `${template.name}（${siteTags.join(' / ')}）` : template.name
 }
 
+const getFreightTemplateMeta = (row) => {
+  const meta = row?.meta
+  if (!meta || typeof meta !== 'object') return null
+  const templateId = meta.freight_template_id
+  const templateName = meta.freight_template_name
+  if (!templateId && !templateName) return null
+  return {
+    id: templateId || null,
+    name: templateName || '未命名模板',
+  }
+}
+
 const requestTemplatePreview = async () => {
   const payload = buildTemplatePreviewPayload()
   if (!canPreviewTemplate(payload)) {
@@ -328,6 +340,14 @@ onUnmounted(() => {
         </template>
       </el-table-column>
       <el-table-column prop="dropoff_address" label="卸货地" min-width="170" />
+      <el-table-column label="命中模板" min-width="180">
+        <template #default="{ row }">
+          <el-tag v-if="getFreightTemplateMeta(row)" type="info">
+            {{ getFreightTemplateMeta(row).name }}
+          </el-tag>
+          <span v-else class="text-secondary">未命中模板</span>
+        </template>
+      </el-table-column>
       <el-table-column label="收货联系人" min-width="150">
         <template #default="{ row }">
           {{ row.dropoff_contact_name || '-' }} / {{ row.dropoff_contact_phone || '-' }}
