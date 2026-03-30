@@ -221,10 +221,16 @@ const togglePin = async (row) => {
   pinningId.value = row.id
   try {
     const ids = getMessageRowIds(row)
+    const nextPinned = !row.is_pinned
     await Promise.all(ids.map((id) => api.post('/message/pin', {
       id,
-      is_pinned: !row.is_pinned,
+      is_pinned: nextPinned,
     })))
+    ElMessage.success(
+      ids.length > 1
+        ? `${nextPinned ? '已置顶' : '已取消置顶'} ${ids.length} 条同任务通知`
+        : (nextPinned ? '置顶成功' : '取消置顶成功'),
+    )
     await loadMessages()
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '置顶操作失败')
@@ -498,7 +504,7 @@ onMounted(loadMessages)
             {{ row.aggregate_count > 1 ? '本组已读' : '已读' }}
           </el-button>
           <el-button link type="warning" :loading="pinningId === row.id" @click="togglePin(row)">
-            {{ row.is_pinned ? '取消置顶' : '置顶' }}
+            {{ row.aggregate_count > 1 ? (row.is_pinned ? '本组取消置顶' : '本组置顶') : (row.is_pinned ? '取消置顶' : '置顶') }}
           </el-button>
         </template>
       </el-table-column>
