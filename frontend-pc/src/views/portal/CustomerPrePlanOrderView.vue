@@ -10,9 +10,6 @@ const creating = ref(false)
 const markingMessageId = ref(null)
 const dialogVisible = ref(false)
 const dialogMode = ref('create')
-const compareDialogVisible = ref(false)
-const compareLoading = ref(false)
-const compareRows = ref([])
 const detailDialogVisible = ref(false)
 const detailLoading = ref(false)
 const detailOrder = ref(null)
@@ -316,21 +313,6 @@ const markMessageRead = async (row) => {
   }
 }
 
-const openRevisionCompare = async (row) => {
-  compareDialogVisible.value = true
-  compareLoading.value = true
-  compareRows.value = []
-  try {
-    const { data } = await api.post('/pre-plan-order/revision-compare', { id: row.id })
-    compareRows.value = Array.isArray(data?.diffs) ? data.diffs : []
-  } catch (error) {
-    compareDialogVisible.value = false
-    ElMessage.error(error?.response?.data?.message || '加载版本差异失败')
-  } finally {
-    compareLoading.value = false
-  }
-}
-
 const openDetail = async (row) => {
   detailDialogVisible.value = true
   detailLoading.value = true
@@ -433,7 +415,7 @@ onUnmounted(() => {
         </template>
       </el-table-column>
       <el-table-column prop="audit_remark" label="审核备注" min-width="180" />
-      <el-table-column label="操作" min-width="180" fixed="right">
+      <el-table-column label="操作" min-width="150" fixed="right">
         <template #default="{ row }">
           <el-button
             link
@@ -457,14 +439,6 @@ onUnmounted(() => {
             @click="resubmitOrder(row)"
           >
             重新提报
-          </el-button>
-          <el-button
-            link
-            type="info"
-            :disabled="row.audit_status !== 'rejected'"
-            @click="openRevisionCompare(row)"
-          >
-            版本对比
           </el-button>
         </template>
       </el-table-column>
@@ -738,18 +712,6 @@ onUnmounted(() => {
     </el-skeleton>
     <template #footer>
       <el-button @click="detailDialogVisible = false">关闭</el-button>
-    </template>
-  </el-dialog>
-
-  <el-dialog v-model="compareDialogVisible" title="驳回后版本对比" width="760px" destroy-on-close>
-    <el-table :data="compareRows" v-loading="compareLoading" size="small" stripe>
-      <el-table-column prop="field" label="字段" min-width="180" />
-      <el-table-column prop="before" label="驳回时值" min-width="220" />
-      <el-table-column prop="after" label="当前值" min-width="220" />
-    </el-table>
-    <el-empty v-if="!compareLoading && compareRows.length === 0" description="暂无差异（可能未修改关键字段）" />
-    <template #footer>
-      <el-button @click="compareDialogVisible = false">关闭</el-button>
     </template>
   </el-dialog>
 </template>
