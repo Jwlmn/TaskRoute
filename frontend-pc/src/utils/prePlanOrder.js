@@ -81,11 +81,50 @@ export const sortNotificationMessages = (rawMessages, options = {}) => {
   })
 }
 
+export const buildNotificationListPayload = ({
+  keyword = '',
+  read_status = 'all',
+  message_type = '',
+  pinned_only = false,
+  unread_only = false,
+  page,
+} = {}) => ({
+  keyword: keyword || undefined,
+  read_status: read_status || 'all',
+  message_type: message_type || undefined,
+  pinned_only: pinned_only || false,
+  unread_only: unread_only || false,
+  page,
+})
+
 export const loadRevisionCompareDiffs = async (httpClient, orderId) => {
   if (!httpClient || !orderId) return []
 
   const response = await httpClient.post('/pre-plan-order/revision-compare', { id: orderId })
   return Array.isArray(response?.data?.diffs) ? response.data.diffs : []
+}
+
+export const loadNotificationOrderDetail = async ({
+  httpClient,
+  orderId,
+  detailEndpoint,
+}) => {
+  if (!httpClient || !orderId || !detailEndpoint) {
+    return {
+      order: null,
+      compareRows: [],
+    }
+  }
+
+  const { data } = await httpClient.post(detailEndpoint, { id: orderId })
+  const compareRows = data?.audit_status === 'rejected'
+    ? await loadRevisionCompareDiffs(httpClient, orderId)
+    : []
+
+  return {
+    order: data || null,
+    compareRows,
+  }
 }
 
 export const getNotificationOrderNo = (message) => message?.meta?.order_no || '-'

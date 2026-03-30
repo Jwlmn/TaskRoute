@@ -7,6 +7,7 @@ import PrePlanOrderDetailContent from '../../components/pre-plan-order/PrePlanOr
 import {
   auditStatusLabelMap,
   auditStatusTypeMap,
+  buildNotificationListPayload,
   formatNotificationTime,
   freightSchemeLabelMap,
   getFreightTemplateMeta,
@@ -14,7 +15,7 @@ import {
   getNotificationOrderNo,
   getNotificationReadLabel,
   getNotificationReadTagType,
-  loadRevisionCompareDiffs,
+  loadNotificationOrderDetail,
   sortNotificationMessages,
 } from '../../utils/prePlanOrder'
 
@@ -22,6 +23,7 @@ const loading = ref(false)
 const loadingMessages = ref(false)
 const creating = ref(false)
 const markingMessageId = ref(null)
+const pinningMessageId = ref(null)
 const dialogVisible = ref(false)
 const dialogMode = ref('create')
 const detailDialogVisible = ref(false)
@@ -31,10 +33,15 @@ const detailCompareLoading = ref(false)
 const detailCompareRows = ref([])
 const orders = ref([])
 const messages = ref([])
-const unreadOnly = ref(true)
 const cargoCategories = ref([])
 const templatePreview = ref(null)
 const previewingTemplate = ref(false)
+const messageFilterForm = reactive({
+  keyword: '',
+  read_status: 'unread',
+  message_type: '',
+  pinned_only: false,
+})
 
 let templatePreviewTimer = null
 
@@ -210,9 +217,7 @@ const loadOrders = async () => {
 const loadMessages = async () => {
   loadingMessages.value = true
   try {
-    const { data } = await api.post('/message/list', {
-      unread_only: unreadOnly.value,
-    })
+    const { data } = await api.post('/message/list', buildNotificationListPayload(messageFilterForm))
     messages.value = sortNotificationMessages(Array.isArray(data?.data) ? data.data : [], {
       pinnedFirst: false,
     })
@@ -268,6 +273,21 @@ const markMessageRead = async (row) => {
   }
 }
 
+const toggleMessagePin = async (row) => {
+  pinningMessageId.value = row.id
+  try {
+    await api.post('/message/pin', {
+      id: row.id,
+      is_pinned: !row.is_pinned,
+    })
+    await loadMessages()
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '置顶操作失败')
+  } finally {
+    pinningMessageId.value = null
+  }
+}
+
 const openDetail = async (row) => {
   detailDialogVisible.value = true
   detailLoading.value = true
@@ -275,21 +295,20 @@ const openDetail = async (row) => {
   detailCompareRows.value = []
   detailCompareLoading.value = false
   try {
-    const { data } = await api.post('/pre-plan-order/customer-detail', { id: row.id })
-    detailOrder.value = data || null
-    if (data?.audit_status === 'rejected') {
-      detailCompareLoading.value = true
-      try {
-        detailCompareRows.value = await loadRevisionCompareDiffs(api, row.id)
-      } finally {
-        detailCompareLoading.value = false
-      }
-    }
+    detailCompareLoading.value = true
+    const result = await loadNotificationOrderDetail({
+      httpClient: api,
+      orderId: row.id,
+      detailEndpoint: '/pre-plan-order/customer-detail',
+    })
+    detailOrder.value = result.order
+    detailCompareRows.value = result.compareRows
   } catch (error) {
     detailDialogVisible.value = false
     ElMessage.error(error?.response?.data?.message || '加载计划单详情失败')
   } finally {
     detailLoading.value = false
+    detailCompareLoading.value = false
   }
 }
 
@@ -404,18 +423,48 @@ onUnmounted(() => {
       <div class="table-header">
         <div class="card-title">审核通知</div>
         <div>
-          <el-switch
-            v-model="unreadOnly"
-            active-text="仅看未读"
-            class="mr-8"
-            @change="loadMessages"
-          />
           <el-button plain @click="loadMessages">刷新通知</el-button>
         </div>
       </div>
     </template>
 
+    <el-form inline class="mb-12">
+      <el-form-item label="关键词">
+        <el-input v-model="messageFilterForm.keyword" clearable placeholder="标题/内容" style="width: 220px" />
+      </el-form-item>
+      <el-form-item label="已读状态">
+        <el-select v-model="messageFilterForm.read_status" style="width: 130px">
+          <el-option label="全部" value="all" />
+          <el-option label="未读" value="unread" />
+          <el-option label="已读" value="read" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="类型">
+        <el-select v-model="messageFilterForm.message_type" clearable style="width: 160px">
+          <el-option label="审核通知" value="audit_notice" />
+          <el-option label="审核催办" value="audit_reminder" />
+        </el-select>
+      </el-form-item>
+      <el-form-item>
+        <el-checkbox v-model="messageFilterForm.pinned_only">仅看置顶</el-checkbox>
+      </el-form-item>
+      <el-form-item>
+        <el-button type="primary" @click="loadMessages">查询</el-button>
+      </el-form-item>
+    </el-form>
+
     <el-table :data="messages" stripe v-loading="loadingMessages">
+      <el-table-column label="置顶" width="70">
+        <template #default="{ row }">
+          <el-tag v-if="row.is_pinned" type="warning">置顶</el-tag>
+          <span v-else>-</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="类型" min-width="120">
+        <template #default="{ row }">
+          {{ row.message_type === 'audit_reminder' ? '审核催办' : '审核通知' }}
+        </template>
+      </el-table-column>
       <el-table-column prop="title" label="标题" min-width="140" />
       <el-table-column prop="content" label="内容" min-width="260" show-overflow-tooltip />
       <el-table-column label="关联订单" min-width="160">
@@ -446,7 +495,7 @@ onUnmounted(() => {
           {{ formatNotificationTime(row) }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" min-width="180" fixed="right">
+      <el-table-column label="操作" min-width="220" fixed="right">
         <template #default="{ row }">
           <el-button
             link
@@ -464,6 +513,14 @@ onUnmounted(() => {
             @click="markMessageRead(row)"
           >
             标记已读
+          </el-button>
+          <el-button
+            link
+            type="warning"
+            :loading="pinningMessageId === row.id"
+            @click="toggleMessagePin(row)"
+          >
+            {{ row.is_pinned ? '取消置顶' : '置顶' }}
           </el-button>
         </template>
       </el-table-column>

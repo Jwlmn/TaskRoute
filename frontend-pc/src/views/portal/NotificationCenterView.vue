@@ -8,12 +8,13 @@ import PrePlanOrderDetailContent from '../../components/pre-plan-order/PrePlanOr
 import {
   auditStatusLabelMap,
   auditStatusTypeMap,
+  buildNotificationListPayload,
   formatNotificationTime,
   getNotificationAuditStatus,
   getNotificationOrderNo,
   getNotificationReadLabel,
   getNotificationReadTagType,
-  loadRevisionCompareDiffs,
+  loadNotificationOrderDetail,
   sortNotificationMessages,
 } from '../../utils/prePlanOrder'
 
@@ -44,12 +45,7 @@ const messageTypeLabelMap = {
 const loadMessages = async () => {
   loading.value = true
   try {
-    const { data } = await api.post('/message/list', {
-      keyword: filterForm.value.keyword || undefined,
-      read_status: filterForm.value.read_status || 'all',
-      message_type: filterForm.value.message_type || undefined,
-      pinned_only: filterForm.value.pinned_only || false,
-    })
+    const { data } = await api.post('/message/list', buildNotificationListPayload(filterForm.value))
     messages.value = sortNotificationMessages(Array.isArray(data?.data) ? data.data : [])
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '加载通知失败')
@@ -121,21 +117,20 @@ const openOrderDetail = async (row) => {
   detailCompareRows.value = []
   detailCompareLoading.value = false
   try {
-    const { data } = await api.post(endpoint, { id: orderId })
-    detailOrder.value = data || null
-    if (data?.audit_status === 'rejected') {
-      detailCompareLoading.value = true
-      try {
-        detailCompareRows.value = await loadRevisionCompareDiffs(api, orderId)
-      } finally {
-        detailCompareLoading.value = false
-      }
-    }
+    detailCompareLoading.value = true
+    const result = await loadNotificationOrderDetail({
+      httpClient: api,
+      orderId,
+      detailEndpoint: endpoint,
+    })
+    detailOrder.value = result.order
+    detailCompareRows.value = result.compareRows
   } catch (error) {
     detailDialogVisible.value = false
     ElMessage.error(error?.response?.data?.message || '加载订单详情失败')
   } finally {
     detailLoading.value = false
+    detailCompareLoading.value = false
   }
 }
 
