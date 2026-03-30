@@ -232,16 +232,20 @@ class DispatchTaskController extends Controller
         $payload = $request->validate([
             'status' => ['nullable', 'in:pending,handled'],
             'task_no' => ['nullable', 'string', 'max:100'],
+            'exception_type' => ['nullable', 'in:vehicle_breakdown,traffic_jam,customer_reject,address_change,goods_damage,other'],
+            'handle_action' => ['nullable', 'in:continue,cancel,reassign'],
         ]);
 
         $targetStatus = $payload['status'] ?? 'pending';
         $keyword = trim((string) ($payload['task_no'] ?? ''));
+        $exceptionType = $payload['exception_type'] ?? null;
+        $handleAction = $payload['handle_action'] ?? null;
 
         $tasks = $this->dataScopeService->applyDispatchTaskScope(DispatchTask::query(), $request->user())
             ->with(['vehicle:id,plate_number,name,site_id', 'driver:id,account,name'])
             ->latest()
             ->get()
-            ->filter(function (DispatchTask $task) use ($targetStatus, $keyword): bool {
+            ->filter(function (DispatchTask $task) use ($targetStatus, $keyword, $exceptionType, $handleAction): bool {
                 if ($keyword !== '' && ! str_contains((string) $task->task_no, $keyword)) {
                     return false;
                 }
@@ -249,7 +253,17 @@ class DispatchTaskController extends Controller
                 if (! is_array($exception)) {
                     return false;
                 }
-                return ($exception['status'] ?? null) === $targetStatus;
+                if (($exception['status'] ?? null) !== $targetStatus) {
+                    return false;
+                }
+                if ($exceptionType && ($exception['type'] ?? null) !== $exceptionType) {
+                    return false;
+                }
+                if ($handleAction && ($exception['handle_action'] ?? null) !== $handleAction) {
+                    return false;
+                }
+
+                return true;
             })
             ->values();
 
