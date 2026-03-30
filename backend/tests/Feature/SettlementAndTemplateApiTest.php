@@ -49,6 +49,45 @@ class SettlementAndTemplateApiTest extends TestCase
             ->assertJsonPath('is_active', false);
     }
 
+    public function test_dispatcher_cannot_create_invalid_freight_template_scheme_payload(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        Sanctum::actingAs($dispatcher);
+
+        $this->postJson('/api/v1/freight-template/create', [
+            'name' => '按趟缺少趟数',
+            'freight_calc_scheme' => 'by_trip',
+            'freight_unit_price' => 300,
+        ])->assertStatus(422)
+            ->assertJsonValidationErrors(['freight_trip_count']);
+
+        $this->postJson('/api/v1/freight-template/create', [
+            'name' => '按重量缺少单价',
+            'freight_calc_scheme' => 'by_weight',
+        ])->assertStatus(422)
+            ->assertJsonValidationErrors(['freight_unit_price']);
+    }
+
+    public function test_dispatcher_switching_template_to_trip_scheme_requires_trip_count(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        Sanctum::actingAs($dispatcher);
+
+        $template = $this->postJson('/api/v1/freight-template/create', [
+            'name' => '切换运价模板',
+            'freight_calc_scheme' => 'by_weight',
+            'freight_unit_price' => 20,
+        ])->assertCreated();
+
+        $this->postJson('/api/v1/freight-template/update', [
+            'id' => (int) $template->json('id'),
+            'freight_calc_scheme' => 'by_trip',
+        ])->assertStatus(422)
+            ->assertJsonValidationErrors(['freight_trip_count']);
+    }
+
     public function test_dispatcher_can_create_settlement_statement_from_completed_orders(): void
     {
         $this->seed(DatabaseSeeder::class);
