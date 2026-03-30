@@ -5,11 +5,16 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\DispatchTask;
 use App\Models\DriverLocation;
+use App\Services\Auth\DataScopeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class DriverLocationController extends Controller
 {
+    public function __construct(private readonly DataScopeService $dataScopeService)
+    {
+    }
+
     public function report(Request $request): JsonResponse
     {
         $payload = $request->validate([
@@ -48,7 +53,13 @@ class DriverLocationController extends Controller
 
         $locations = DriverLocation::query()
             ->with(['driver:id,account,name', 'task:id,task_no,status'])
-            ->when($payload['dispatch_task_id'] ?? null, fn ($query, $taskId) => $query->where('dispatch_task_id', $taskId))
+            ->whereHas('driver.vehicle', fn ($query) => $this->dataScopeService->applyVehicleScope($query, $request->user()))
+            ->when(
+                $payload['dispatch_task_id'] ?? null,
+                fn ($query, $taskId) => $query
+                    ->where('dispatch_task_id', $taskId)
+                    ->whereHas('task', fn ($taskQuery) => $this->dataScopeService->applyDispatchTaskScope($taskQuery, $request->user()))
+            )
             ->orderByDesc('located_at')
             ->limit(1000)
             ->get()
@@ -74,6 +85,7 @@ class DriverLocationController extends Controller
         $limit = (int) ($payload['limit'] ?? 200);
         $rows = DriverLocation::query()
             ->where('driver_id', (int) $payload['driver_id'])
+            ->whereHas('driver.vehicle', fn ($query) => $this->dataScopeService->applyVehicleScope($query, $user))
             ->when($payload['dispatch_task_id'] ?? null, fn ($query, $taskId) => $query->where('dispatch_task_id', $taskId))
             ->orderByDesc('located_at')
             ->limit($limit)

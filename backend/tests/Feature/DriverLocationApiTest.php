@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\DispatchTask;
 use App\Models\DriverLocation;
+use App\Models\LogisticsSite;
 use App\Models\User;
 use App\Models\Vehicle;
 use Database\Seeders\DatabaseSeeder;
@@ -87,5 +88,75 @@ class DriverLocationApiTest extends TestCase
 
         $response->assertForbidden();
         $this->assertSame(0, DriverLocation::query()->count());
+    }
+
+    public function test_dispatcher_location_queries_respect_site_scope(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $driverInScope = User::query()->where('account', 'driver')->firstOrFail();
+        $driverOutScope = User::query()->where('account', 'driver2')->firstOrFail();
+        $siteInScope = LogisticsSite::query()->orderBy('id')->firstOrFail();
+        $siteOutScope = LogisticsSite::query()
+            ->where('id', '!=', $siteInScope->id)
+            ->orderBy('id')
+            ->firstOrFail();
+
+        $dispatcher->forceFill([
+            'data_scope_type' => 'site',
+            'data_scope' => ['site_ids' => [(int) $siteInScope->id]],
+        ])->save();
+
+        $vehicleInScope = Vehicle::query()->where('driver_id', $driverInScope->id)->firstOrFail();
+        $vehicleInScope->forceFill(['site_id' => $siteInScope->id])->save();
+
+        $vehicleOutScope = Vehicle::query()->where('driver_id', $driverOutScope->id)->firstOrFail();
+        $vehicleOutScope->forceFill(['site_id' => $siteOutScope->id])->save();
+
+        $taskInScope = DispatchTask::query()->create([
+            'task_no' => 'DT-LOC-SCOPE-IN',
+            'driver_id' => $driverInScope->id,
+            'vehicle_id' => $vehicleInScope->id,
+            'dispatcher_id' => $dispatcher->id,
+            'dispatch_mode' => 'single_vehicle_single_order',
+            'status' => 'in_progress',
+        ]);
+        $taskOutScope = DispatchTask::query()->create([
+            'task_no' => 'DT-LOC-SCOPE-OUT',
+            'driver_id' => $driverOutScope->id,
+            'vehicle_id' => $vehicleOutScope->id,
+            'dispatcher_id' => $dispatcher->id,
+            'dispatch_mode' => 'single_vehicle_single_order',
+            'status' => 'in_progress',
+        ]);
+
+        DriverLocation::query()->create([
+            'driver_id' => $driverInScope->id,
+            'dispatch_task_id' => $taskInScope->id,
+            'lng' => 121.470001,
+            'lat' => 31.230002,
+            'located_at' => now()->subMinute(),
+        ]);
+        DriverLocation::query()->create([
+            'driver_id' => $driverOutScope->id,
+            'dispatch_task_id' => $taskOutScope->id,
+            'lng' => 121.580001,
+            'lat' => 31.330002,
+            'located_at' => now()->subMinute(),
+        ]);
+
+        Sanctum::actingAs($dispatcher);
+
+        $latestResponse = $this->postJson('/api/v1/driver-location/latest', [])->assertOk();
+        $latestDriverIds = collect($latestResponse->json())->pluck('driver_id')->values()->all();
+        $this->assertSame([$driverInScope->id], $latestDriverIds);
+
+        $trajectoryResponse = $this->postJson('/api/v1/driver-location/trajectory', [
+            'driver_id' => $driverOutScope->id,
+            'dispatch_task_id' => $taskOutScope->id,
+            'limit' => 50,
+        ])->assertOk();
+        $this->assertCount(0, $trajectoryResponse->json());
     }
 }
