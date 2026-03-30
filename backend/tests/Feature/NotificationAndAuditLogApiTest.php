@@ -336,4 +336,44 @@ class NotificationAndAuditLogApiTest extends TestCase
         ])->assertOk();
         $batchResponse->assertJsonPath('updated_count', 0);
     }
+
+    public function test_customer_audit_messages_include_order_context_meta(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $customer = User::query()->where('account', 'customer')->firstOrFail();
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $cargo = CargoCategory::query()->firstOrFail();
+
+        Sanctum::actingAs($customer);
+        $submitResponse = $this->postJson('/api/v1/pre-plan-order/customer-submit', [
+            'cargo_category_id' => $cargo->id,
+            'client_name' => '通知上下文客户',
+            'pickup_address' => '通知装货地',
+            'dropoff_address' => '通知卸货地',
+        ])->assertCreated();
+
+        $orderId = (int) $submitResponse->json('id');
+        $orderNo = (string) $submitResponse->json('order_no');
+
+        Sanctum::actingAs($dispatcher);
+        $this->postJson('/api/v1/pre-plan-order/audit-reject', [
+            'id' => $orderId,
+            'audit_remark' => '请补充卸货联系人',
+        ])->assertOk();
+
+        Sanctum::actingAs($customer);
+        $listResponse = $this->postJson('/api/v1/message/list', [
+            'unread_only' => true,
+            'message_type' => 'audit_notice',
+        ])->assertOk();
+
+        $message = collect($listResponse->json('data'))
+            ->first(fn (array $item): bool => (int) data_get($item, 'meta.order_id') === $orderId);
+
+        $this->assertNotNull($message, '客户应能收到关联当前订单的审核通知');
+        $this->assertSame($orderNo, data_get($message, 'meta.order_no'));
+        $this->assertSame('rejected', data_get($message, 'meta.audit_status'));
+        $this->assertSame($orderId, (int) data_get($message, 'meta.order_id'));
+    }
 }
