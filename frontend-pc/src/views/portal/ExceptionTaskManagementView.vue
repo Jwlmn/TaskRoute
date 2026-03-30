@@ -123,6 +123,80 @@ const getSlaLevel = (task) => {
   if (minutes >= 30) return { label: '临近超时', type: 'primary' }
   return { label: '正常', type: 'success' }
 }
+const getExceptionRecommendation = (task) => {
+  const exception = task?.route_meta?.exception || {}
+  const taskStatus = task?.status || ''
+  const slaLevel = getSlaLevel(task)
+  const type = exception.type || 'other'
+
+  if (type === 'vehicle_breakdown') {
+    if (['accepted', 'in_progress'].includes(taskStatus)) {
+      return {
+        action: 'reassign',
+        type: 'warning',
+        label: '建议改派车辆',
+        reason: '车辆故障会直接阻断履约，优先改派可减少订单延误。',
+      }
+    }
+    return {
+      action: 'cancel',
+      type: 'danger',
+      label: '建议取消任务',
+      reason: '任务尚未实质执行，车辆故障下取消并重排更稳妥。',
+    }
+  }
+
+  if (type === 'customer_reject' || type === 'goods_damage') {
+    return {
+      action: 'cancel',
+      type: 'danger',
+      label: '建议取消任务',
+      reason: '客户拒收或货损通常无法在原任务内继续履约，建议先止损。',
+    }
+  }
+
+  if (type === 'traffic_jam') {
+    if (slaLevel.label === '严重超时') {
+      return {
+        action: 'reassign',
+        type: 'warning',
+        label: '建议改派或人工干预',
+        reason: '交通拥堵且已严重超时，建议评估改派或调整履约路径。',
+      }
+    }
+    return {
+      action: 'continue',
+      type: 'success',
+      label: '建议继续执行',
+      reason: '交通拥堵具备恢复可能，优先观察并保持当前任务推进。',
+    }
+  }
+
+  if (type === 'address_change') {
+    return {
+      action: slaLevel.label === '严重超时' ? 'reassign' : 'continue',
+      type: slaLevel.label === '严重超时' ? 'warning' : 'primary',
+      label: slaLevel.label === '严重超时' ? '建议改派跟进' : '建议继续执行',
+      reason: '地址变更需先确认新线路；若已严重超时，建议调度重新分配资源。',
+    }
+  }
+
+  if (slaLevel.label === '严重超时' || slaLevel.label === '高优先级') {
+    return {
+      action: 'reassign',
+      type: 'warning',
+      label: '建议优先改派',
+      reason: '异常影响已扩散到时效目标，建议优先调度替代资源。',
+    }
+  }
+
+  return {
+    action: 'continue',
+    type: 'info',
+    label: '建议继续执行',
+    reason: '当前异常影响相对可控，可先保留任务并持续观察。',
+  }
+}
 const isTaskMatchedOvertimeLevel = (task) => {
   const level = overtimeLevelOptions.find((item) => item.value === filterForm.value.overtime_level)
   if (!level) return true
@@ -136,6 +210,14 @@ const currentExceptionHistory = computed(() => {
 })
 const selectedTaskOrders = computed(() => Array.isArray(selectedExceptionTask.value?.orders) ? selectedExceptionTask.value.orders : [])
 const primaryTaskOrder = computed(() => selectedTaskOrders.value[0] || null)
+const currentExceptionRecommendation = computed(() => {
+  if (!selectedExceptionTask.value) return null
+  return getExceptionRecommendation(selectedExceptionTask.value)
+})
+const currentHandlingRecommendation = computed(() => {
+  if (!handlingTask.value) return null
+  return getExceptionRecommendation(handlingTask.value)
+})
 const displayedExceptionTasks = computed(() => {
   if (filterForm.value.status !== 'pending') return exceptionTasks.value
 
@@ -272,8 +354,9 @@ const loadVehicles = async () => {
 
 const openHandleDialog = async (task) => {
   handlingTask.value = task
+  const recommendation = getExceptionRecommendation(task)
   exceptionHandleForm.value = {
-    action: 'continue',
+    action: recommendation.action || 'continue',
     handle_note: '',
     reassign_vehicle_id: null,
   }
@@ -284,6 +367,10 @@ const openHandleDialog = async (task) => {
 const openDetailDialog = (task) => {
   selectedExceptionTask.value = task
   exceptionDetailDialogVisible.value = true
+}
+const applyRecommendedHandleAction = () => {
+  if (!currentHandlingRecommendation.value?.action) return
+  exceptionHandleForm.value.action = currentHandlingRecommendation.value.action
 }
 
 const submitHandleException = async () => {
@@ -578,6 +665,14 @@ onMounted(async () => {
           <span v-else>-</span>
         </template>
       </el-table-column>
+      <el-table-column label="处理建议" min-width="220">
+        <template #default="{ row }">
+          <el-tag :type="getExceptionRecommendation(row).type">
+            {{ getExceptionRecommendation(row).label }}
+          </el-tag>
+          <div class="text-secondary">{{ getExceptionRecommendation(row).reason }}</div>
+        </template>
+      </el-table-column>
       <el-table-column label="处理动作" min-width="120">
         <template #default="{ row }">
           <el-tag
@@ -616,6 +711,20 @@ onMounted(async () => {
     destroy-on-close
   >
     <el-form label-width="90px">
+      <el-form-item v-if="currentHandlingRecommendation" label="推荐方案">
+        <div style="width: 100%">
+          <el-alert
+            :closable="false"
+            show-icon
+            :type="currentHandlingRecommendation.type"
+            :title="currentHandlingRecommendation.label"
+            :description="currentHandlingRecommendation.reason"
+          />
+          <el-button class="mt-8" size="small" type="primary" plain @click="applyRecommendedHandleAction">
+            套用推荐动作
+          </el-button>
+        </div>
+      </el-form-item>
       <el-form-item label="任务编号">
         <span>{{ handlingTask?.task_no || '-' }}</span>
       </el-form-item>
@@ -700,6 +809,17 @@ onMounted(async () => {
         <el-button type="primary" @click="jumpToDispatchTask">查看调度任务订单明细</el-button>
         <el-button @click="jumpToPrePlanOrder" :disabled="!primaryTaskOrder?.id">查看关联预计划单</el-button>
       </el-space>
+
+      <el-divider content-position="left">处理建议</el-divider>
+      <el-alert
+        v-if="currentExceptionRecommendation"
+        class="mb-12"
+        :closable="false"
+        show-icon
+        :type="currentExceptionRecommendation.type"
+        :title="currentExceptionRecommendation.label"
+        :description="currentExceptionRecommendation.reason"
+      />
 
       <el-divider content-position="left">处理前后变化</el-divider>
       <el-descriptions :column="1" border size="small">
