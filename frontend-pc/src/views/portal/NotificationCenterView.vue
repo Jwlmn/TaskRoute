@@ -24,6 +24,7 @@ const loading = ref(false)
 const pinningId = ref(null)
 const messages = ref([])
 const selectedIds = ref([])
+const expandedMessageKeys = ref([])
 const detailDialogVisible = ref(false)
 const detailLoading = ref(false)
 const detailOrder = ref(null)
@@ -62,9 +63,11 @@ const displayMessages = computed(() => {
     if (message?.message_type !== 'dispatch_notice' || !taskId) {
       grouped.set(`single-${message.id}`, {
         ...message,
+        aggregate_key: `single-${message.id}`,
         aggregate_count: 1,
         aggregate_ids: [message.id],
         unread_count: message?.read_at ? 0 : 1,
+        aggregate_items: [message],
       })
       return
     }
@@ -74,15 +77,18 @@ const displayMessages = computed(() => {
     if (!current) {
       grouped.set(key, {
         ...message,
+        aggregate_key: key,
         aggregate_count: 1,
         aggregate_ids: [message.id],
         unread_count: message?.read_at ? 0 : 1,
+        aggregate_items: [message],
       })
       return
     }
 
     current.aggregate_count += 1
     current.aggregate_ids.push(message.id)
+    current.aggregate_items.push(message)
     current.unread_count += message?.read_at ? 0 : 1
     current.is_pinned = current.is_pinned || message.is_pinned
 
@@ -99,12 +105,26 @@ const displayMessages = computed(() => {
         unread_count: current.unread_count,
         is_pinned: current.is_pinned,
         read_at: current.unread_count > 0 ? null : message.read_at,
+        aggregate_items: current.aggregate_items,
       })
     }
   })
 
   return [...grouped.values()]
 })
+const isExpandedMessageRow = (row) => expandedMessageKeys.value.includes(row?.aggregate_key)
+const toggleExpandedMessageRow = (row) => {
+  if (!row?.aggregate_key || row.aggregate_count <= 1) return
+  if (isExpandedMessageRow(row)) {
+    expandedMessageKeys.value = expandedMessageKeys.value.filter((key) => key !== row.aggregate_key)
+    return
+  }
+  expandedMessageKeys.value = [...expandedMessageKeys.value, row.aggregate_key]
+}
+const getAggregateItems = (row) => {
+  const items = Array.isArray(row?.aggregate_items) ? row.aggregate_items : []
+  return [...items].sort((a, b) => String(b?.created_at || '').localeCompare(String(a?.created_at || '')))
+}
 
 const markReadSilently = async (id) => {
   if (!id) return
@@ -401,6 +421,20 @@ onMounted(loadMessages)
           <div>{{ row.content || '-' }}</div>
           <div v-if="row.message_type === 'dispatch_notice' && row.aggregate_count > 1" class="text-secondary">
             已合并展示同一任务的调度通知，点击后统一跳转并批量处理已读。
+          </div>
+          <div v-if="row.message_type === 'dispatch_notice' && row.aggregate_count > 1" class="mt-8">
+            <el-button link type="primary" @click="toggleExpandedMessageRow(row)">
+              {{ isExpandedMessageRow(row) ? '收起本组明细' : '展开本组明细' }}
+            </el-button>
+            <div v-if="isExpandedMessageRow(row)" class="text-secondary">
+              <div
+                v-for="item in getAggregateItems(row)"
+                :key="`message-detail-${item.id}`"
+                class="mobile-exception-result-line"
+              >
+                {{ formatNotificationTime(item) }}｜{{ item.title || '-' }}｜{{ item.content || '-' }}
+              </div>
+            </div>
           </div>
         </template>
       </el-table-column>
