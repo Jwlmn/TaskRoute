@@ -153,6 +153,11 @@ const displayedExceptionTasks = computed(() => {
     return isTaskMatchedOvertimeLevel(task)
   })
 })
+const hasAggregationFilter = computed(() => Boolean(filterForm.value.driver_focus || filterForm.value.site_focus))
+const aggregationMatchedCount = computed(() => {
+  if (filterForm.value.status !== 'pending' || !hasAggregationFilter.value) return 0
+  return displayedExceptionTasks.value.length
+})
 const pendingExceptionCount = computed(() => exceptionTasks.value.filter((task) => task.route_meta?.exception?.status === 'pending').length)
 const overtimeExceptionCount = computed(() => exceptionTasks.value.filter((task) => getPendingDurationMinutes(task) >= overtimeThresholdMinutes).length)
 const longestPendingMinutes = computed(() => {
@@ -192,27 +197,34 @@ const siteExceptionRanking = computed(() => {
   })
   return [...map.values()].sort((a, b) => b.count - a.count).slice(0, 5)
 })
+const focusMatchedTask = (matcher) => {
+  const matchedTask = displayedExceptionTasks.value.find(matcher)
+  if (matchedTask) {
+    selectedExceptionTask.value = matchedTask
+    exceptionDetailDialogVisible.value = true
+    return
+  }
+  selectedExceptionTask.value = null
+  exceptionDetailDialogVisible.value = false
+  ElMessage.info('当前筛选条件下暂无命中的异常任务')
+}
+const clearAggregationFilter = () => {
+  filterForm.value.driver_focus = ''
+  filterForm.value.site_focus = ''
+}
 const applyDriverRankingFilter = (item) => {
   filterForm.value.driver_focus = filterForm.value.driver_focus === item.account ? '' : (item.account || '')
   if (filterForm.value.driver_focus) {
-    const matchedTask = displayedExceptionTasks.value.find((task) => (task.driver?.account || '') === filterForm.value.driver_focus)
-    if (matchedTask) {
-      selectedExceptionTask.value = matchedTask
-      exceptionDetailDialogVisible.value = true
-    }
+    focusMatchedTask((task) => (task.driver?.account || '') === filterForm.value.driver_focus)
   }
 }
 const applySiteRankingFilter = (item) => {
   filterForm.value.site_focus = filterForm.value.site_focus === item.name ? '' : (item.name || '')
   if (filterForm.value.site_focus) {
-    const matchedTask = displayedExceptionTasks.value.find((task) => {
+    focusMatchedTask((task) => {
       const orders = Array.isArray(task.orders) ? task.orders : []
       return orders.some((order) => (order.pickup_address || '') === filterForm.value.site_focus)
     })
-    if (matchedTask) {
-      selectedExceptionTask.value = matchedTask
-      exceptionDetailDialogVisible.value = true
-    }
   }
 }
 
@@ -479,11 +491,13 @@ onMounted(async () => {
       <el-form-item v-if="filterForm.status === 'pending' && (filterForm.driver_focus || filterForm.site_focus)" label="聚合筛选">
         <el-space wrap>
           <el-tag v-if="filterForm.driver_focus" closable @close="filterForm.driver_focus = ''">
-            司机：{{ filterForm.driver_focus }}
+            司机：{{ filterForm.driver_focus }}（命中 {{ aggregationMatchedCount }} 条）
           </el-tag>
           <el-tag v-if="filterForm.site_focus" closable @close="filterForm.site_focus = ''">
-            装货地：{{ filterForm.site_focus }}
+            装货地：{{ filterForm.site_focus }}（命中 {{ aggregationMatchedCount }} 条）
           </el-tag>
+          <span class="text-secondary">当前列表命中 {{ aggregationMatchedCount }} 条异常</span>
+          <el-button link type="primary" @click="clearAggregationFilter">清空聚合筛选</el-button>
         </el-space>
       </el-form-item>
       <el-form-item>
