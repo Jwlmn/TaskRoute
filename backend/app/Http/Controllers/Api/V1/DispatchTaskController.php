@@ -242,7 +242,11 @@ class DispatchTaskController extends Controller
         $handleAction = $payload['handle_action'] ?? null;
 
         $tasks = $this->dataScopeService->applyDispatchTaskScope(DispatchTask::query(), $request->user())
-            ->with(['vehicle:id,plate_number,name,site_id', 'driver:id,account,name'])
+            ->with([
+                'vehicle:id,plate_number,name,site_id',
+                'driver:id,account,name',
+                'orders:id,order_no,client_name,pickup_address,dropoff_address,status,audit_status',
+            ])
             ->latest()
             ->get()
             ->filter(function (DispatchTask $task) use ($targetStatus, $keyword, $exceptionType, $handleAction): bool {

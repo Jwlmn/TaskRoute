@@ -55,6 +55,12 @@ const exceptionActionTagTypeMap = {
   reassign: 'warning',
 }
 
+const auditStatusLabelMap = {
+  pending_approval: '待审核',
+  approved: '已审核',
+  rejected: '已驳回',
+}
+
 const formatDateTime = (value) => {
   if (!value) return '-'
   const date = new Date(value)
@@ -69,6 +75,7 @@ const currentExceptionHistory = computed(() => {
   const history = currentException.value?.history
   return Array.isArray(history) ? [...history].reverse() : []
 })
+const selectedTaskOrders = computed(() => Array.isArray(selectedExceptionTask.value?.orders) ? selectedExceptionTask.value.orders : [])
 
 const loadExceptionTasks = async () => {
   loadingExceptions.value = true
@@ -339,6 +346,24 @@ onMounted(async () => {
           {{ formatEntityChange('司机', currentException.previous_driver_id ? `#${currentException.previous_driver_id}` : '-', currentException.current_driver_id ? `#${currentException.current_driver_id}` : '-') }}
         </el-descriptions-item>
       </el-descriptions>
+
+      <el-divider content-position="left">关联订单明细</el-divider>
+      <el-table :data="selectedTaskOrders" size="small" stripe>
+        <el-table-column prop="order_no" label="订单号" min-width="160" />
+        <el-table-column prop="client_name" label="客户" min-width="140" />
+        <el-table-column prop="pickup_address" label="装货地" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="dropoff_address" label="卸货地" min-width="180" show-overflow-tooltip />
+        <el-table-column label="审核状态" min-width="100">
+          <template #default="{ row }">
+            {{ getLabel(auditStatusLabelMap, row.audit_status) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="订单状态" min-width="100">
+          <template #default="{ row }">
+            {{ getLabel(taskStatusLabelMap, row.status) }}
+          </template>
+        </el-table-column>
+      </el-table>
 
       <el-divider content-position="left">异常处理轨迹</el-divider>
       <el-timeline>
