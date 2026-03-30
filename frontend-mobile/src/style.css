@@ -426,6 +426,35 @@ body {
   border: 1px solid #deebff;
 }
 
+.mobile-exception-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mobile-exception-history-item {
+  border: 1px solid #deebff;
+  border-radius: 10px;
+  padding: 10px;
+  background: #f9fbff;
+}
+
+.mobile-exception-history-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 8px;
+  color: #2c3d62;
+  font-size: 13px;
+}
+
+.mobile-exception-history-line {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #5a6a82;
+}
+
 .mb-12 {
   margin-bottom: 12px;
 }

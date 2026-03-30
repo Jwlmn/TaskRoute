@@ -63,6 +63,10 @@ const exceptionTypeOptions = [
   { label: '货损异常', value: 'goods_damage' },
   { label: '其他异常', value: 'other' },
 ]
+const exceptionTypeLabelMap = exceptionTypeOptions.reduce((map, option) => {
+  map[option.value] = option.label
+  return map
+}, {})
 
 const getLabel = (map, value) => map[value] || value || '-'
 const getDocumentTypeLabel = (value) => documentTypeOptions.find((option) => option.value === value)?.label || value || '-'
@@ -164,6 +168,43 @@ const handledExceptionSummaryLines = () => {
 
   if (exception.handle_action === 'reassign') {
     lines.push(`改派车辆：${exception.reassign_vehicle_id ? `#${exception.reassign_vehicle_id}` : '-'}`)
+  }
+
+  return lines
+}
+
+const handledExceptionHistory = () => {
+  const history = handledException()?.history
+  return Array.isArray(history) ? [...history].reverse() : []
+}
+
+const getExceptionHistoryTitle = (item) => {
+  if (item?.event === 'reported') return '司机上报异常'
+  if (item?.event === 'handled') return '调度处理异常'
+  return '异常事件'
+}
+
+const getExceptionHistoryDetailLines = (item) => {
+  if (!item || typeof item !== 'object') return []
+
+  const lines = []
+  if (item.type) {
+    lines.push(`异常类型：${getLabel(exceptionTypeLabelMap, item.type)}`)
+  }
+  if (item.description) {
+    lines.push(`异常说明：${item.description}`)
+  }
+  if (item.action) {
+    lines.push(`处理动作：${getLabel(exceptionActionLabelMap, item.action)}`)
+  }
+  if (item.handle_note) {
+    lines.push(`处理备注：${item.handle_note}`)
+  }
+  if (item.previous_task_status || item.current_task_status) {
+    lines.push(`状态变化：${formatExceptionStatusChange(item.previous_task_status, item.current_task_status)}`)
+  }
+  if (item.previous_vehicle_id || item.current_vehicle_id) {
+    lines.push(`车辆变化：${item.previous_vehicle_id ? `#${item.previous_vehicle_id}` : '-'} -> ${item.current_vehicle_id ? `#${item.current_vehicle_id}` : '-'}`)
   }
 
   return lines
@@ -549,6 +590,34 @@ onUnmounted(() => {
             class="mobile-exception-result-line"
           >
             {{ line }}
+          </div>
+        </div>
+      </el-card>
+      <el-card
+        v-if="handledExceptionHistory().length"
+        shadow="never"
+        class="mb-12"
+      >
+        <template #header>
+          <div class="mobile-section-title">异常处理轨迹</div>
+        </template>
+        <div class="mobile-exception-history-list">
+          <div
+            v-for="(item, index) in handledExceptionHistory()"
+            :key="`exception-history-${index}`"
+            class="mobile-exception-history-item"
+          >
+            <div class="mobile-exception-history-head">
+              <strong>{{ getExceptionHistoryTitle(item) }}</strong>
+              <span>{{ formatDateTime(item.occurred_at) }}</span>
+            </div>
+            <div
+              v-for="(line, lineIndex) in getExceptionHistoryDetailLines(item)"
+              :key="`exception-history-line-${index}-${lineIndex}`"
+              class="mobile-exception-history-line"
+            >
+              {{ line }}
+            </div>
           </div>
         </div>
       </el-card>
