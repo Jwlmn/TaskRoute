@@ -197,6 +197,29 @@ const getExceptionRecommendation = (task) => {
     reason: '当前异常影响相对可控，可先保留任务并持续观察。',
   }
 }
+const buildRecommendationNoteTemplate = (task, recommendation) => {
+  const exception = task?.route_meta?.exception || {}
+  const lines = []
+  const exceptionTypeLabel = getLabel(exceptionTypeLabelMap, exception.type)
+  const taskNo = task?.task_no || '-'
+  const slaLabel = getSlaLevel(task).label
+
+  lines.push(`任务 ${taskNo} 出现${exceptionTypeLabel}，当前判定为${slaLabel}。`)
+
+  if (recommendation?.action === 'reassign') {
+    lines.push('建议尽快协调可用车辆或司机资源改派，避免继续扩大履约延误。')
+  } else if (recommendation?.action === 'cancel') {
+    lines.push('建议先停止当前任务并通知相关方，待资源或订单信息明确后再重新安排。')
+  } else {
+    lines.push('建议保留当前任务继续执行，同时持续关注现场反馈与时效变化。')
+  }
+
+  if (exception.description) {
+    lines.push(`现场说明：${exception.description}`)
+  }
+
+  return lines.join(' ')
+}
 const isTaskMatchedOvertimeLevel = (task) => {
   const level = overtimeLevelOptions.find((item) => item.value === filterForm.value.overtime_level)
   if (!level) return true
@@ -217,6 +240,10 @@ const currentExceptionRecommendation = computed(() => {
 const currentHandlingRecommendation = computed(() => {
   if (!handlingTask.value) return null
   return getExceptionRecommendation(handlingTask.value)
+})
+const currentHandlingRecommendationNote = computed(() => {
+  if (!handlingTask.value || !currentHandlingRecommendation.value) return ''
+  return buildRecommendationNoteTemplate(handlingTask.value, currentHandlingRecommendation.value)
 })
 const displayedExceptionTasks = computed(() => {
   if (filterForm.value.status !== 'pending') return exceptionTasks.value
@@ -357,7 +384,7 @@ const openHandleDialog = async (task) => {
   const recommendation = getExceptionRecommendation(task)
   exceptionHandleForm.value = {
     action: recommendation.action || 'continue',
-    handle_note: '',
+    handle_note: buildRecommendationNoteTemplate(task, recommendation),
     reassign_vehicle_id: null,
   }
   exceptionHandleDialogVisible.value = true
@@ -371,7 +398,18 @@ const openDetailDialog = (task) => {
 const applyRecommendedHandleAction = () => {
   if (!currentHandlingRecommendation.value?.action) return
   exceptionHandleForm.value.action = currentHandlingRecommendation.value.action
+  if (!exceptionHandleForm.value.handle_note.trim()) {
+    exceptionHandleForm.value.handle_note = currentHandlingRecommendationNote.value
+  }
 }
+watch(() => exceptionHandleForm.value.action, (action) => {
+  if (!handlingTask.value) return
+  const recommendation = getExceptionRecommendation(handlingTask.value)
+  if (action !== recommendation.action) return
+  if (!exceptionHandleForm.value.handle_note.trim()) {
+    exceptionHandleForm.value.handle_note = buildRecommendationNoteTemplate(handlingTask.value, recommendation)
+  }
+})
 
 const submitHandleException = async () => {
   if (!handlingTask.value?.id) return
@@ -723,6 +761,9 @@ onMounted(async () => {
           <el-button class="mt-8" size="small" type="primary" plain @click="applyRecommendedHandleAction">
             套用推荐动作
           </el-button>
+          <div class="text-secondary mt-8">
+            推荐备注：{{ currentHandlingRecommendationNote || '-' }}
+          </div>
         </div>
       </el-form-item>
       <el-form-item label="任务编号">
