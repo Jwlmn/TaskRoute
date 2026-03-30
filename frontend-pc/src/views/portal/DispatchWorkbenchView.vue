@@ -36,6 +36,7 @@ const taskOrderFilter = ref({
 const taskFilter = reactive({
   keyword: '',
 })
+const focusedTaskId = ref(0)
 
 const orderMap = computed(() => {
   const map = {}
@@ -149,16 +150,29 @@ const resetTaskFilters = async () => {
 
 const applyRouteFilters = () => {
   taskFilter.keyword = typeof route.query.task_no === 'string' ? route.query.task_no : ''
+  focusedTaskId.value = Number(route.query.focus_task_id || 0)
 }
 
 const openTaskOrdersFromRoute = async () => {
   if (route.query.open_orders !== '1') return
-  const focusTaskId = Number(route.query.focus_task_id || 0)
-  if (!focusTaskId) return
-  const matchedTask = dispatchTasks.value.find((item) => item.id === focusTaskId)
+  if (!focusedTaskId.value) return
+  const matchedTask = dispatchTasks.value.find((item) => item.id === focusedTaskId.value)
   if (!matchedTask) return
   await openTaskOrdersDialog(matchedTask)
 }
+const isFocusedTask = (task) => Number(task?.id || 0) === Number(focusedTaskId.value || 0)
+const getTaskExceptionSummary = (task) => {
+  const exception = task?.route_meta?.exception
+  if (!exception) return ''
+  if (exception.status === 'pending') {
+    return `异常待处理：${exception.description || '请尽快处理'}`
+  }
+  if (exception.status === 'handled') {
+    return `异常已处理：${exception.handle_note || '请按处理结果跟进'}`
+  }
+  return ''
+}
+const getTaskRowClassName = ({ row }) => (isFocusedTask(row) ? 'dispatch-task-focused-row' : '')
 
 const exportTaskOrders = async () => {
   if (!taskOrders.value.length) {
@@ -277,7 +291,16 @@ onMounted(async () => {
         <el-button @click="resetTaskFilters">重置</el-button>
       </el-form-item>
     </el-form>
-    <el-table :data="dispatchTasks" stripe v-loading="loadingTasks">
+    <el-alert
+      v-if="focusedTaskId"
+      class="mb-12"
+      type="info"
+      :closable="false"
+      show-icon
+      :title="`已按联动任务定位：#${focusedTaskId}`"
+      description="列表中的高亮行是当前通知或异常跳转过来的目标任务。"
+    />
+    <el-table :data="dispatchTasks" stripe v-loading="loadingTasks" :row-class-name="getTaskRowClassName">
       <el-table-column prop="task_no" label="任务编号" min-width="180" />
       <el-table-column label="派单模式" min-width="180">
         <template #default="{ row }">
@@ -316,7 +339,27 @@ onMounted(async () => {
       </el-table-column>
       <el-table-column label="状态" min-width="100">
         <template #default="{ row }">
-          {{ getLabel(taskStatusLabelMap, row.status) }}
+          <el-space wrap size="small">
+            <span>{{ getLabel(taskStatusLabelMap, row.status) }}</span>
+            <el-tag v-if="isFocusedTask(row)" size="small" type="primary">当前定位</el-tag>
+            <el-tag
+              v-if="row.route_meta?.exception?.status === 'pending'"
+              size="small"
+              type="danger"
+            >
+              异常待处理
+            </el-tag>
+            <el-tag
+              v-else-if="row.route_meta?.exception?.status === 'handled'"
+              size="small"
+              type="warning"
+            >
+              异常已处理
+            </el-tag>
+          </el-space>
+          <div v-if="getTaskExceptionSummary(row)" class="text-secondary">
+            {{ getTaskExceptionSummary(row) }}
+          </div>
         </template>
       </el-table-column>
       <el-table-column label="操作" min-width="90" fixed="right">
