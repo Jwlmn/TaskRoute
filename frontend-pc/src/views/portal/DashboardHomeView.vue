@@ -1,8 +1,10 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import api from '../../services/api'
 
+const router = useRouter()
 const loading = ref(false)
 const errorMessage = ref('')
 let refreshTimer = null
@@ -31,11 +33,28 @@ const overview = ref({
     receipt_upload_rate: 0,
     driver_fulfillment_rate: 0,
   },
+  site_stats: [],
+  pending_exceptions: [],
   generated_at: '',
 })
 
 const formatRate = (value) => `${Number(value || 0).toFixed(2)}%`
 const formatCurrency = (value) => `¥${Number(value || 0).toFixed(2)}`
+const formatReportedAt = (value) => {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return String(value)
+  return date.toLocaleString('zh-CN', { hour12: false })
+}
+
+const exceptionTypeLabelMap = {
+  vehicle_breakdown: '车辆故障',
+  traffic_jam: '交通拥堵',
+  customer_reject: '客户拒收',
+  address_change: '地址变更',
+  goods_damage: '货损异常',
+  other: '其他异常',
+}
 
 const summaryCards = computed(() => [
   {
@@ -105,6 +124,13 @@ const rateCards = computed(() => [
     description: '今日已分配司机的有效任务中已完成的占比',
   },
 ])
+
+const siteStats = computed(() => Array.isArray(overview.value.site_stats) ? overview.value.site_stats : [])
+const pendingExceptions = computed(() => Array.isArray(overview.value.pending_exceptions) ? overview.value.pending_exceptions : [])
+
+const openExceptionPage = async () => {
+  await router.push({ name: 'exception-task-management' })
+}
 
 const fetchOverview = async () => {
   loading.value = true
@@ -188,5 +214,54 @@ onUnmounted(() => {
       </div>
       <div class="text-secondary mt-16">数据更新时间：{{ overview.generated_at || '-' }}</div>
     </el-card>
+
+    <el-row :gutter="16" class="mt-16">
+      <el-col :xs="24" :xl="14">
+        <el-card shadow="never" v-loading="loading">
+          <div class="table-header">
+            <div class="card-title">站点维度概览</div>
+            <div class="text-secondary">聚合待调度、任务执行与车辆占用</div>
+          </div>
+          <el-empty v-if="siteStats.length === 0" description="暂无站点统计数据" />
+          <el-table v-else :data="siteStats" size="small" stripe>
+            <el-table-column prop="site_name" label="站点" min-width="160" />
+            <el-table-column prop="region_code" label="区域" min-width="100" />
+            <el-table-column prop="pending_pre_plan_orders" label="待调度计划单" min-width="110" />
+            <el-table-column prop="assigned_tasks" label="待接单任务" min-width="100" />
+            <el-table-column prop="in_progress_tasks" label="执行中任务" min-width="100" />
+            <el-table-column prop="busy_vehicles" label="忙碌车辆" min-width="90" />
+          </el-table>
+        </el-card>
+      </el-col>
+      <el-col :xs="24" :xl="10">
+        <el-card shadow="never" v-loading="loading">
+          <div class="table-header">
+            <div class="card-title">待处理异常</div>
+            <el-button plain size="small" @click="openExceptionPage">进入异常任务管理</el-button>
+          </div>
+          <el-empty v-if="pendingExceptions.length === 0" description="当前没有待处理异常" />
+          <div v-else class="dashboard-rate-grid">
+            <div v-for="item in pendingExceptions" :key="item.task_id" class="dashboard-rate-item">
+              <div class="dashboard-rate-header">
+                <span class="dashboard-rate-label">{{ item.task_no }}</span>
+                <span class="dashboard-rate-value">{{ exceptionTypeLabelMap[item.exception_type] || item.exception_type || '-' }}</span>
+              </div>
+              <div class="text-secondary mt-8">
+                司机：{{ item.driver_name || '-' }}（{{ item.driver_account || '-' }}）
+              </div>
+              <div class="text-secondary mt-8">
+                车辆：{{ item.vehicle_plate_number || '-' }} {{ item.vehicle_name || '' }}
+              </div>
+              <div class="text-secondary mt-8">
+                说明：{{ item.exception_description || '-' }}
+              </div>
+              <div class="text-secondary mt-8">
+                上报时间：{{ formatReportedAt(item.reported_at) }}
+              </div>
+            </div>
+          </div>
+        </el-card>
+      </el-col>
+    </el-row>
   </div>
 </template>

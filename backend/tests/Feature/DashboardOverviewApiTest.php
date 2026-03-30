@@ -298,6 +298,8 @@ class DashboardOverviewApiTest extends TestCase
                     'receipt_upload_rate',
                     'driver_fulfillment_rate',
                 ],
+                'site_stats',
+                'pending_exceptions',
                 'generated_at',
             ])
             ->assertJsonPath('metrics.pending_pre_plan_orders', 2)
@@ -317,7 +319,16 @@ class DashboardOverviewApiTest extends TestCase
             ->assertJsonPath('rates.vehicle_utilization_rate', 33.33)
             ->assertJsonPath('rates.on_time_order_rate', 50)
             ->assertJsonPath('rates.receipt_upload_rate', 50)
-            ->assertJsonPath('rates.driver_fulfillment_rate', 50);
+            ->assertJsonPath('rates.driver_fulfillment_rate', 50)
+            ->assertJsonPath('site_stats.0.site_name', '看板站点A')
+            ->assertJsonPath('site_stats.0.pending_pre_plan_orders', 2)
+            ->assertJsonPath('site_stats.0.assigned_tasks', 1)
+            ->assertJsonPath('site_stats.0.in_progress_tasks', 1)
+            ->assertJsonPath('site_stats.0.busy_vehicles', 1)
+            ->assertJsonPath('pending_exceptions.0.task_no', 'DT-DASH-002')
+            ->assertJsonPath('pending_exceptions.0.exception_type', 'traffic_jam')
+            ->assertJsonPath('pending_exceptions.0.driver_name', $driverA->name)
+            ->assertJsonPath('pending_exceptions.0.vehicle_plate_number', $vehicleA->plate_number);
     }
 
     public function test_region_scoped_dispatcher_only_sees_scoped_dashboard_metrics(): void

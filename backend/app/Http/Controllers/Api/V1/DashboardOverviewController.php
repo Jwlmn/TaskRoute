@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\DispatchTask;
 use App\Models\DriverLocation;
+use App\Models\LogisticsSite;
 use App\Models\PrePlanOrder;
 use App\Models\Vehicle;
 use App\Services\Auth\DataScopeService;
@@ -105,6 +106,68 @@ class DashboardOverviewController extends Controller
             ->where('status', 'completed')
             ->count();
 
+        $siteStats = $this->dataScopeService->applySiteScope(LogisticsSite::query(), request()->user())
+            ->where('status', 'active')
+            ->orderBy('name')
+            ->get()
+            ->map(function (LogisticsSite $site) use ($scopedTaskQuery): array {
+                return [
+                    'site_id' => $site->id,
+                    'site_name' => $site->name,
+                    'region_code' => $site->region_code,
+                    'pending_pre_plan_orders' => PrePlanOrder::query()
+                        ->where('status', 'pending')
+                        ->where(function ($query): void {
+                            $query->whereNull('audit_status')
+                                ->orWhere('audit_status', 'approved');
+                        })
+                        ->where(function ($query) use ($site): void {
+                            $query->where('pickup_site_id', $site->id)
+                                ->orWhere('dropoff_site_id', $site->id);
+                        })
+                        ->count(),
+                    'assigned_tasks' => (clone $scopedTaskQuery)
+                        ->where('status', 'assigned')
+                        ->whereHas('vehicle', fn ($query) => $query->where('site_id', $site->id))
+                        ->count(),
+                    'in_progress_tasks' => (clone $scopedTaskQuery)
+                        ->whereIn('status', ['accepted', 'in_progress'])
+                        ->whereHas('vehicle', fn ($query) => $query->where('site_id', $site->id))
+                        ->count(),
+                    'busy_vehicles' => Vehicle::query()
+                        ->where('site_id', $site->id)
+                        ->where('status', 'busy')
+                        ->count(),
+                ];
+            })
+            ->values()
+            ->all();
+
+        $pendingExceptions = (clone $scopedTaskQuery)
+            ->with(['driver:id,account,name', 'vehicle:id,plate_number,name,site_id'])
+            ->where('route_meta->exception->status', 'pending')
+            ->latest()
+            ->limit(5)
+            ->get()
+            ->map(function (DispatchTask $task): array {
+                $exception = is_array($task->route_meta) ? ($task->route_meta['exception'] ?? []) : [];
+
+                return [
+                    'task_id' => $task->id,
+                    'task_no' => $task->task_no,
+                    'status' => $task->status,
+                    'driver_name' => $task->driver?->name,
+                    'driver_account' => $task->driver?->account,
+                    'vehicle_plate_number' => $task->vehicle?->plate_number,
+                    'vehicle_name' => $task->vehicle?->name,
+                    'exception_type' => $exception['type'] ?? null,
+                    'exception_description' => $exception['description'] ?? null,
+                    'reported_at' => $exception['reported_at'] ?? null,
+                ];
+            })
+            ->values()
+            ->all();
+
         return response()->json([
             'metrics' => [
                 'pending_pre_plan_orders' => $pendingPrePlanOrders,
@@ -130,6 +193,8 @@ class DashboardOverviewController extends Controller
                 'receipt_upload_rate' => $this->percentage($todayReceiptUploadedTasks, $todayCompletedTasks),
                 'driver_fulfillment_rate' => $this->percentage($todayCompletedDriverTasks, $todayDriverTaskBase),
             ],
+            'site_stats' => $siteStats,
+            'pending_exceptions' => $pendingExceptions,
             'generated_at' => $now->toDateTimeString(),
         ]);
     }
