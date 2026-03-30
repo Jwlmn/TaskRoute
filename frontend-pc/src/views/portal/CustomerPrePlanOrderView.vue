@@ -338,6 +338,11 @@ const openDetail = async (row) => {
   }
 }
 
+const openDetailById = async (id) => {
+  if (!id) return
+  await openDetail({ id })
+}
+
 onMounted(async () => {
   await Promise.all([loadMeta(), loadOrders(), loadMessages()])
 })
@@ -483,8 +488,16 @@ onUnmounted(() => {
           {{ row.created_at || '-' }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" min-width="120" fixed="right">
+      <el-table-column label="操作" min-width="180" fixed="right">
         <template #default="{ row }">
+          <el-button
+            link
+            type="info"
+            :disabled="!row?.meta?.order_id"
+            @click="openDetailById(row?.meta?.order_id)"
+          >
+            查看订单
+          </el-button>
           <el-button
             link
             type="primary"
