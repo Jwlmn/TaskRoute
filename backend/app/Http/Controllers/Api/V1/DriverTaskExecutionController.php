@@ -83,6 +83,7 @@ class DriverTaskExecutionController extends Controller
         ]);
 
         return DB::transaction(function () use ($payload, $request): JsonResponse {
+            $user = $request->user();
             $task = $this->scopedTaskQuery($request)->lockForUpdate()->findOrFail($payload['task_id']);
             if (! in_array($task->status, ['accepted', 'in_progress'], true)) {
                 return response()->json(['message' => '请先接单后再上报异常'], 422);
@@ -116,10 +117,14 @@ class DriverTaskExecutionController extends Controller
                 'type' => $payload['exception_type'],
                 'description' => $payload['description'],
                 'waypoint_id' => $payload['waypoint_id'] ?? null,
-                'reported_by' => (int) $request->user()->id,
+                'reported_by' => (int) $user->id,
+                'reported_by_account' => $user->account,
+                'reported_by_name' => $user->name,
                 'reported_at' => now()->toDateTimeString(),
                 'handled_at' => null,
                 'handled_by' => null,
+                'handled_by_account' => null,
+                'handled_by_name' => null,
                 'handle_action' => null,
                 'handle_note' => null,
                 'history' => array_values(array_merge(
@@ -128,7 +133,9 @@ class DriverTaskExecutionController extends Controller
                         'event' => 'reported',
                         'type' => $payload['exception_type'],
                         'description' => $payload['description'],
-                        'operator_id' => (int) $request->user()->id,
+                        'operator_id' => (int) $user->id,
+                        'operator_account' => $user->account,
+                        'operator_name' => $user->name,
                         'occurred_at' => now()->toDateTimeString(),
                     ]]
                 )),

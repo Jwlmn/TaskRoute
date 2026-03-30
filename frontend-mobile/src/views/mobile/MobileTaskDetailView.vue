@@ -144,6 +144,7 @@ const exceptionStatusChangeLabelMap = {
   completed: '已完成',
   cancelled: '已取消',
 }
+const formatOperator = (name, account, id) => name || account || (id ? `#${id}` : '-')
 
 const formatExceptionStatusChange = (fromStatus, toStatus) => (
   `${getLabel(exceptionStatusChangeLabelMap, fromStatus)} -> ${getLabel(exceptionStatusChangeLabelMap, toStatus)}`
@@ -160,6 +161,12 @@ const handledExceptionSummaryLines = () => {
 
   if (exception.handle_note) {
     lines.push(`处理备注：${exception.handle_note}`)
+  }
+  if (exception.reported_by || exception.reported_by_name || exception.reported_by_account) {
+    lines.push(`上报人：${formatOperator(exception.reported_by_name, exception.reported_by_account, exception.reported_by)}`)
+  }
+  if (exception.handled_by || exception.handled_by_name || exception.handled_by_account) {
+    lines.push(`处理人：${formatOperator(exception.handled_by_name, exception.handled_by_account, exception.handled_by)}`)
   }
 
   if (exception.previous_task_status || exception.current_task_status) {
@@ -199,6 +206,9 @@ const getExceptionHistoryDetailLines = (item) => {
   }
   if (item.handle_note) {
     lines.push(`处理备注：${item.handle_note}`)
+  }
+  if (item.operator_id || item.operator_name || item.operator_account) {
+    lines.push(`操作人：${formatOperator(item.operator_name, item.operator_account, item.operator_id)}`)
   }
   if (item.previous_task_status || item.current_task_status) {
     lines.push(`状态变化：${formatExceptionStatusChange(item.previous_task_status, item.current_task_status)}`)

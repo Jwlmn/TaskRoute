@@ -69,6 +69,7 @@ const formatDateTime = (value) => {
 }
 
 const formatEntityChange = (label, beforeValue, afterValue) => `${label}：${beforeValue || '-'} -> ${afterValue || '-'}`
+const formatOperator = (name, account, id) => name || account || (id ? `#${id}` : '-')
 
 const currentException = computed(() => selectedExceptionTask.value?.route_meta?.exception || null)
 const currentExceptionHistory = computed(() => {
@@ -329,6 +330,12 @@ onMounted(async () => {
         <el-descriptions-item label="处理动作">
           {{ getLabel(exceptionActionLabelMap, currentException.handle_action) }}
         </el-descriptions-item>
+        <el-descriptions-item label="上报人">
+          {{ formatOperator(currentException.reported_by_name, currentException.reported_by_account, currentException.reported_by) }}
+        </el-descriptions-item>
+        <el-descriptions-item label="处理人">
+          {{ formatOperator(currentException.handled_by_name, currentException.handled_by_account, currentException.handled_by) }}
+        </el-descriptions-item>
         <el-descriptions-item label="关联节点">{{ currentException.waypoint_id || '-' }}</el-descriptions-item>
         <el-descriptions-item label="异常说明" :span="2">{{ currentException.description || '-' }}</el-descriptions-item>
         <el-descriptions-item label="处理备注" :span="2">{{ currentException.handle_note || '-' }}</el-descriptions-item>
@@ -381,7 +388,7 @@ onMounted(async () => {
             <div v-if="item.description">异常说明：{{ item.description }}</div>
             <div v-if="item.action">处理动作：{{ getLabel(exceptionActionLabelMap, item.action) }}</div>
             <div v-if="item.handle_note">处理备注：{{ item.handle_note }}</div>
-            <div>操作人ID：{{ item.operator_id || '-' }}</div>
+            <div>操作人：{{ formatOperator(item.operator_name, item.operator_account, item.operator_id) }}</div>
             <div v-if="item.previous_task_status || item.current_task_status">
               任务状态：{{ getLabel(taskStatusLabelMap, item.previous_task_status) }} -> {{ getLabel(taskStatusLabelMap, item.current_task_status) }}
             </div>

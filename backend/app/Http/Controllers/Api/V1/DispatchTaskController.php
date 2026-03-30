@@ -355,6 +355,7 @@ class DispatchTaskController extends Controller
         }
 
         return DB::transaction(function () use ($payload, $request): JsonResponse {
+            $user = $request->user();
             $task = $this->dataScopeService->applyDispatchTaskScope(DispatchTask::query(), $request->user())
                 ->lockForUpdate()
                 ->findOrFail($payload['task_id']);
@@ -426,7 +427,9 @@ class DispatchTaskController extends Controller
                 'event' => 'handled',
                 'action' => $payload['action'],
                 'handle_note' => $payload['handle_note'] ?? null,
-                'operator_id' => (int) $request->user()->id,
+                'operator_id' => (int) $user->id,
+                'operator_account' => $user->account,
+                'operator_name' => $user->name,
                 'occurred_at' => now()->toDateTimeString(),
                 'previous_task_status' => $oldTaskStatus,
                 'previous_vehicle_id' => $oldVehicleId > 0 ? $oldVehicleId : null,
@@ -440,7 +443,9 @@ class DispatchTaskController extends Controller
             $routeMeta['exception'] = array_merge($exception, [
                 'status' => 'handled',
                 'handled_at' => now()->toDateTimeString(),
-                'handled_by' => (int) $request->user()->id,
+                'handled_by' => (int) $user->id,
+                'handled_by_account' => $user->account,
+                'handled_by_name' => $user->name,
                 'handle_action' => $payload['action'],
                 'handle_note' => $payload['handle_note'] ?? null,
                 'reassign_vehicle_id' => $payload['reassign_vehicle_id'] ?? null,
