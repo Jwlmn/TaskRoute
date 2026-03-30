@@ -9,10 +9,13 @@ const dialogVisible = ref(false)
 const dialogMode = ref('create')
 const templates = ref([])
 const cargoCategories = ref([])
+const sites = ref([])
 
 const filterForm = reactive({
   keyword: '',
   is_active: '',
+  pickup_site_id: null,
+  dropoff_site_id: null,
 })
 
 const form = reactive({
@@ -20,7 +23,9 @@ const form = reactive({
   name: '',
   client_name: '',
   cargo_category_id: null,
+  pickup_site_id: null,
   pickup_address: '',
+  dropoff_site_id: null,
   dropoff_address: '',
   freight_calc_scheme: 'by_weight',
   freight_unit_price: null,
@@ -43,7 +48,9 @@ const resetForm = () => {
   form.name = ''
   form.client_name = ''
   form.cargo_category_id = null
+  form.pickup_site_id = null
   form.pickup_address = ''
+  form.dropoff_site_id = null
   form.dropoff_address = ''
   form.freight_calc_scheme = 'by_weight'
   form.freight_unit_price = null
@@ -60,16 +67,38 @@ const loadMeta = async () => {
   cargoCategories.value = Array.isArray(data?.cargo_categories) ? data.cargo_categories : []
 }
 
+const loadSites = async () => {
+  try {
+    const { data } = await api.post('/resource/site/list', { status: 'active' })
+    sites.value = Array.isArray(data?.data) ? data.data : []
+  } catch {
+    sites.value = []
+  }
+}
+
+const getErrorMessage = (error, fallback) => {
+  const validationErrors = error?.response?.data?.errors
+  if (validationErrors && typeof validationErrors === 'object') {
+    const firstMessage = Object.values(validationErrors).flat().find(Boolean)
+    if (typeof firstMessage === 'string' && firstMessage.trim()) {
+      return firstMessage
+    }
+  }
+  return error?.response?.data?.message || fallback
+}
+
 const loadTemplates = async () => {
   loading.value = true
   try {
     const payload = {}
     if (filterForm.keyword.trim()) payload.keyword = filterForm.keyword.trim()
     if (filterForm.is_active !== '') payload.is_active = filterForm.is_active
+    if (filterForm.pickup_site_id) payload.pickup_site_id = filterForm.pickup_site_id
+    if (filterForm.dropoff_site_id) payload.dropoff_site_id = filterForm.dropoff_site_id
     const { data } = await api.post('/freight-template/list', payload)
     templates.value = Array.isArray(data?.data) ? data.data : []
   } catch (error) {
-    ElMessage.error(error?.response?.data?.message || '加载运费模板失败')
+    ElMessage.error(getErrorMessage(error, '加载运费模板失败'))
   } finally {
     loading.value = false
   }
@@ -87,7 +116,9 @@ const openEdit = (row) => {
   form.name = row.name || ''
   form.client_name = row.client_name || ''
   form.cargo_category_id = row.cargo_category_id
+  form.pickup_site_id = row.pickup_site_id || null
   form.pickup_address = row.pickup_address || ''
+  form.dropoff_site_id = row.dropoff_site_id || null
   form.dropoff_address = row.dropoff_address || ''
   form.freight_calc_scheme = row.freight_calc_scheme || 'by_weight'
   form.freight_unit_price = row.freight_unit_price != null ? Number(row.freight_unit_price) : null
@@ -112,7 +143,9 @@ const saveTemplate = async () => {
       name: form.name.trim(),
       client_name: form.client_name.trim() || null,
       cargo_category_id: form.cargo_category_id || null,
+      pickup_site_id: form.pickup_site_id || null,
       pickup_address: form.pickup_address.trim() || null,
+      dropoff_site_id: form.dropoff_site_id || null,
       dropoff_address: form.dropoff_address.trim() || null,
       freight_calc_scheme: form.freight_calc_scheme,
       freight_unit_price: form.freight_unit_price,
@@ -133,14 +166,14 @@ const saveTemplate = async () => {
     dialogVisible.value = false
     await loadTemplates()
   } catch (error) {
-    ElMessage.error(error?.response?.data?.message || '保存模板失败')
+    ElMessage.error(getErrorMessage(error, '保存模板失败'))
   } finally {
     saving.value = false
   }
 }
 
 onMounted(async () => {
-  await Promise.all([loadMeta(), loadTemplates()])
+  await Promise.all([loadMeta(), loadSites(), loadTemplates()])
 })
 </script>
 
@@ -166,6 +199,16 @@ onMounted(async () => {
           <el-option label="停用" :value="false" />
         </el-select>
       </el-form-item>
+      <el-form-item label="装货站点">
+        <el-select v-model="filterForm.pickup_site_id" clearable placeholder="全部站点" style="width: 180px">
+          <el-option v-for="item in sites" :key="item.id" :label="item.name" :value="item.id" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="卸货站点">
+        <el-select v-model="filterForm.dropoff_site_id" clearable placeholder="全部站点" style="width: 180px">
+          <el-option v-for="item in sites" :key="item.id" :label="item.name" :value="item.id" />
+        </el-select>
+      </el-form-item>
       <el-form-item>
         <el-button type="primary" @click="loadTemplates">查询</el-button>
       </el-form-item>
@@ -177,6 +220,16 @@ onMounted(async () => {
       <el-table-column label="货品分类" min-width="140">
         <template #default="{ row }">
           {{ cargoCategories.find((item) => item.id === row.cargo_category_id)?.name || '-' }}
+        </template>
+      </el-table-column>
+      <el-table-column label="装货站点" min-width="140">
+        <template #default="{ row }">
+          {{ row.pickup_site?.name || '-' }}
+        </template>
+      </el-table-column>
+      <el-table-column label="卸货站点" min-width="140">
+        <template #default="{ row }">
+          {{ row.dropoff_site?.name || '-' }}
         </template>
       </el-table-column>
       <el-table-column prop="freight_calc_scheme" label="运价方式" min-width="100" />
@@ -222,6 +275,22 @@ onMounted(async () => {
         <el-col :span="12">
           <el-form-item label="优先级">
             <el-input-number v-model="form.priority" :min="0" :max="9999" style="width: 100%" />
+          </el-form-item>
+        </el-col>
+      </el-row>
+      <el-row :gutter="12">
+        <el-col :span="12">
+          <el-form-item label="装货站点">
+            <el-select v-model="form.pickup_site_id" clearable placeholder="空表示通用" style="width: 100%">
+              <el-option v-for="item in sites" :key="item.id" :label="item.name" :value="item.id" />
+            </el-select>
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="卸货站点">
+            <el-select v-model="form.dropoff_site_id" clearable placeholder="空表示通用" style="width: 100%">
+              <el-option v-for="item in sites" :key="item.id" :label="item.name" :value="item.id" />
+            </el-select>
           </el-form-item>
         </el-col>
       </el-row>

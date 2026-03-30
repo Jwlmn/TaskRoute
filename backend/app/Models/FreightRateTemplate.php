@@ -14,7 +14,9 @@ class FreightRateTemplate extends Model
         'name',
         'client_name',
         'cargo_category_id',
+        'pickup_site_id',
         'pickup_address',
+        'dropoff_site_id',
         'dropoff_address',
         'freight_calc_scheme',
         'freight_unit_price',
@@ -36,5 +38,15 @@ class FreightRateTemplate extends Model
     public function cargoCategory(): BelongsTo
     {
         return $this->belongsTo(CargoCategory::class);
+    }
+
+    public function pickupSite(): BelongsTo
+    {
+        return $this->belongsTo(LogisticsSite::class, 'pickup_site_id');
+    }
+
+    public function dropoffSite(): BelongsTo
+    {
+        return $this->belongsTo(LogisticsSite::class, 'dropoff_site_id');
     }
 }

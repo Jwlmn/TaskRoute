@@ -245,10 +245,10 @@ class PrePlanOrderController extends Controller
                 if (! in_array($orderPayload['freight_calc_scheme'], ['by_weight', 'by_volume', 'by_trip'], true)) {
                     $orderPayload['freight_calc_scheme'] = null;
                     $orderPayload['freight_unit_price'] = null;
-                    $orderPayload['freight_trip_count'] = null;
+                    $orderPayload['freight_trip_count'] = 1;
                 }
                 if ($orderPayload['freight_calc_scheme'] !== 'by_trip') {
-                    $orderPayload['freight_trip_count'] = null;
+                    $orderPayload['freight_trip_count'] = 1;
                 }
                 $orderPayload = $this->prepareOrderPayload($orderPayload);
                 if (! $this->dataScopeService->canAccessSites($request->user(), [$orderPayload['pickup_site_id'] ?? null, $orderPayload['dropoff_site_id'] ?? null])) {
@@ -1358,7 +1358,7 @@ class PrePlanOrderController extends Controller
                 $payload['freight_trip_count'] = $template->freight_trip_count ?: 1;
             }
         } else {
-            $payload['freight_trip_count'] = null;
+            $payload['freight_trip_count'] = 1;
         }
         if (! array_key_exists('loss_allowance_kg', $payload) || $payload['loss_allowance_kg'] === null || $payload['loss_allowance_kg'] === '') {
             $payload['loss_allowance_kg'] = $template->loss_allowance_kg ?? 0;
@@ -1388,12 +1388,20 @@ class PrePlanOrderController extends Controller
             ->when(! empty($payload['cargo_category_id']), fn ($q) => $q->where(function ($sub) use ($payload): void {
                 $sub->whereNull('cargo_category_id')->orWhere('cargo_category_id', (int) $payload['cargo_category_id']);
             }))
+            ->when(array_key_exists('pickup_site_id', $payload), fn ($q) => $q->where(function ($sub) use ($payload): void {
+                $sub->whereNull('pickup_site_id')->orWhere('pickup_site_id', $payload['pickup_site_id']);
+            }))
             ->when(! empty($payload['pickup_address']), fn ($q) => $q->where(function ($sub) use ($payload): void {
                 $sub->whereNull('pickup_address')->orWhere('pickup_address', (string) $payload['pickup_address']);
+            }))
+            ->when(array_key_exists('dropoff_site_id', $payload), fn ($q) => $q->where(function ($sub) use ($payload): void {
+                $sub->whereNull('dropoff_site_id')->orWhere('dropoff_site_id', $payload['dropoff_site_id']);
             }))
             ->when(! empty($payload['dropoff_address']), fn ($q) => $q->where(function ($sub) use ($payload): void {
                 $sub->whereNull('dropoff_address')->orWhere('dropoff_address', (string) $payload['dropoff_address']);
             }))
+            ->orderByRaw('case when pickup_site_id is null then 0 else 1 end desc')
+            ->orderByRaw('case when dropoff_site_id is null then 0 else 1 end desc')
             ->orderByDesc('priority')
             ->orderByDesc('id');
 

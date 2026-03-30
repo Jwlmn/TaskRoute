@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\CargoCategory;
+use App\Models\FreightRateTemplate;
 use App\Models\LogisticsSite;
 use App\Models\PrePlanOrder;
 use App\Models\SettlementStatement;
@@ -22,12 +23,14 @@ class SettlementAndTemplateApiTest extends TestCase
         $this->seed(DatabaseSeeder::class);
         $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
         $cargo = CargoCategory::query()->firstOrFail();
+        $site = LogisticsSite::query()->firstOrFail();
         Sanctum::actingAs($dispatcher);
 
         $create = $this->postJson('/api/v1/freight-template/create', [
             'name' => '测试模板A',
             'client_name' => '测试客户',
             'cargo_category_id' => $cargo->id,
+            'pickup_site_id' => $site->id,
             'freight_calc_scheme' => 'by_weight',
             'freight_unit_price' => 9.5,
             'loss_allowance_kg' => 120,
@@ -47,7 +50,8 @@ class SettlementAndTemplateApiTest extends TestCase
             'is_active' => false,
         ])->assertOk()
             ->assertJsonPath('freight_unit_price', 10.2)
-            ->assertJsonPath('is_active', false);
+            ->assertJsonPath('is_active', false)
+            ->assertJsonPath('pickup_site.id', $site->id);
     }
 
     public function test_dispatcher_cannot_create_invalid_freight_template_scheme_payload(): void
@@ -87,6 +91,107 @@ class SettlementAndTemplateApiTest extends TestCase
             'freight_calc_scheme' => 'by_trip',
         ])->assertStatus(422)
             ->assertJsonValidationErrors(['freight_trip_count']);
+    }
+
+    public function test_site_scoped_dispatcher_can_only_manage_in_scope_freight_templates(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $dispatcher = User::factory()->create([
+            'account' => 'template-scope-dispatcher',
+            'name' => '模板范围调度员',
+            'role' => 'dispatcher',
+            'status' => 'active',
+            'data_scope_type' => 'site',
+            'data_scope' => ['site_ids' => [1]],
+            'password' => bcrypt('password'),
+        ]);
+        $dispatcher->syncRoleAndPermissions();
+
+        $cargo = CargoCategory::query()->firstOrFail();
+        $siteIn = LogisticsSite::query()->findOrFail(1);
+        $siteOut = LogisticsSite::query()->where('id', '!=', $siteIn->id)->orderBy('id')->firstOrFail();
+
+        $inScopeTemplate = FreightRateTemplate::query()->create([
+            'name' => '范围内模板',
+            'cargo_category_id' => $cargo->id,
+            'pickup_site_id' => $siteIn->id,
+            'freight_calc_scheme' => 'by_weight',
+            'freight_unit_price' => 12,
+            'priority' => 200,
+            'is_active' => true,
+        ]);
+        $outScopeTemplate = FreightRateTemplate::query()->create([
+            'name' => '范围外模板',
+            'cargo_category_id' => $cargo->id,
+            'pickup_site_id' => $siteOut->id,
+            'freight_calc_scheme' => 'by_weight',
+            'freight_unit_price' => 15,
+            'priority' => 200,
+            'is_active' => true,
+        ]);
+
+        Sanctum::actingAs($dispatcher);
+
+        $listResponse = $this->postJson('/api/v1/freight-template/list', [])->assertOk();
+        $templateIds = collect($listResponse->json('data'))->pluck('id')->all();
+        $this->assertContains($inScopeTemplate->id, $templateIds);
+        $this->assertNotContains($outScopeTemplate->id, $templateIds);
+
+        $this->postJson('/api/v1/freight-template/detail', [
+            'id' => $outScopeTemplate->id,
+        ])->assertNotFound();
+
+        $this->postJson('/api/v1/freight-template/create', [
+            'name' => '越权模板',
+            'cargo_category_id' => $cargo->id,
+            'pickup_site_id' => $siteOut->id,
+            'freight_calc_scheme' => 'by_weight',
+            'freight_unit_price' => 20,
+        ])->assertStatus(403);
+    }
+
+    public function test_pre_plan_order_prefers_site_specific_freight_template(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $cargo = CargoCategory::query()->firstOrFail();
+        $site = LogisticsSite::query()->findOrFail(1);
+        Sanctum::actingAs($dispatcher);
+
+        $globalTemplate = FreightRateTemplate::query()->create([
+            'name' => '全局模板',
+            'client_name' => '站点匹配客户',
+            'cargo_category_id' => $cargo->id,
+            'freight_calc_scheme' => 'by_weight',
+            'freight_unit_price' => 11,
+            'priority' => 100,
+            'is_active' => true,
+        ]);
+        $siteTemplate = FreightRateTemplate::query()->create([
+            'name' => '站点模板',
+            'client_name' => '站点匹配客户',
+            'cargo_category_id' => $cargo->id,
+            'pickup_site_id' => $site->id,
+            'freight_calc_scheme' => 'by_weight',
+            'freight_unit_price' => 18,
+            'priority' => 100,
+            'is_active' => true,
+        ]);
+
+        $response = $this->postJson('/api/v1/pre-plan-order/create', [
+            'cargo_category_id' => $cargo->id,
+            'client_name' => '站点匹配客户',
+            'pickup_site_id' => $site->id,
+            'pickup_address' => $site->address,
+            'dropoff_site_id' => $site->id,
+            'dropoff_address' => '测试卸货地',
+        ])->assertCreated();
+
+        $this->assertSame(18.0, (float) $response->json('freight_unit_price'));
+        $this->assertSame('by_weight', $response->json('freight_calc_scheme'));
+        $this->assertSame($siteTemplate->id, (int) $response->json('meta.freight_template_id'));
+        $this->assertNotSame($globalTemplate->id, (int) $response->json('meta.freight_template_id'));
     }
 
     public function test_dispatcher_can_create_settlement_statement_from_completed_orders(): void

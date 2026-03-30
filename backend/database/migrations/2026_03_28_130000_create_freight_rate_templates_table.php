@@ -13,7 +13,9 @@ return new class extends Migration
             $table->string('name', 100);
             $table->string('client_name', 255)->nullable();
             $table->foreignId('cargo_category_id')->nullable()->constrained('cargo_categories')->nullOnDelete();
+            $table->foreignId('pickup_site_id')->nullable()->constrained('logistics_sites')->nullOnDelete();
             $table->string('pickup_address', 255)->nullable();
+            $table->foreignId('dropoff_site_id')->nullable()->constrained('logistics_sites')->nullOnDelete();
             $table->string('dropoff_address', 255)->nullable();
             $table->enum('freight_calc_scheme', ['by_weight', 'by_volume', 'by_trip']);
             $table->decimal('freight_unit_price', 12, 2)->nullable();
@@ -27,6 +29,7 @@ return new class extends Migration
 
             $table->index(['is_active', 'priority']);
             $table->index(['client_name', 'cargo_category_id']);
+            $table->index(['pickup_site_id', 'dropoff_site_id']);
         });
     }
 

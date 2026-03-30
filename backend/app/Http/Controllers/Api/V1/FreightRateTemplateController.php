@@ -4,23 +4,32 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\FreightRateTemplate;
+use App\Services\Auth\DataScopeService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 
 class FreightRateTemplateController extends Controller
 {
+    public function __construct(private readonly DataScopeService $dataScopeService)
+    {
+    }
+
     public function list(Request $request): JsonResponse
     {
         $payload = $request->validate([
             'keyword' => ['nullable', 'string', 'max:100'],
             'is_active' => ['nullable', 'boolean'],
             'cargo_category_id' => ['nullable', 'integer', 'exists:cargo_categories,id'],
+            'pickup_site_id' => ['nullable', 'integer', 'exists:logistics_sites,id'],
+            'dropoff_site_id' => ['nullable', 'integer', 'exists:logistics_sites,id'],
         ]);
 
         $keyword = trim((string) ($payload['keyword'] ?? ''));
 
-        $data = FreightRateTemplate::query()
+        $data = $this->scopedTemplateQuery($request)
+            ->with(['pickupSite:id,name', 'dropoffSite:id,name'])
             ->when($keyword !== '', function ($query) use ($keyword): void {
                 $query->where(function ($sub) use ($keyword): void {
                     $sub->where('name', 'like', "%{$keyword}%")
@@ -31,6 +40,8 @@ class FreightRateTemplateController extends Controller
             })
             ->when(array_key_exists('is_active', $payload), fn ($query) => $query->where('is_active', (bool) $payload['is_active']))
             ->when($payload['cargo_category_id'] ?? null, fn ($query, $id) => $query->where('cargo_category_id', (int) $id))
+            ->when(array_key_exists('pickup_site_id', $payload), fn ($query) => $query->where('pickup_site_id', $payload['pickup_site_id']))
+            ->when(array_key_exists('dropoff_site_id', $payload), fn ($query) => $query->where('dropoff_site_id', $payload['dropoff_site_id']))
             ->orderByDesc('priority')
             ->orderByDesc('id')
             ->paginate(20);
@@ -41,6 +52,9 @@ class FreightRateTemplateController extends Controller
     public function create(Request $request): JsonResponse
     {
         $payload = $this->validatePayload($request);
+        if (! $this->dataScopeService->canAccessSites($request->user(), [$payload['pickup_site_id'] ?? null, $payload['dropoff_site_id'] ?? null])) {
+            return response()->json(['message' => '当前账号不可配置该范围内的运价模板'], 403);
+        }
         $template = FreightRateTemplate::query()->create($payload);
 
         return response()->json($template, 201);
@@ -52,17 +66,26 @@ class FreightRateTemplateController extends Controller
             'id' => ['required', 'integer', 'exists:freight_rate_templates,id'],
         ]);
 
-        return response()->json(FreightRateTemplate::query()->findOrFail($payload['id']));
+        return response()->json(
+            $this->scopedTemplateQuery($request)
+                ->with(['pickupSite:id,name', 'dropoffSite:id,name'])
+                ->findOrFail($payload['id'])
+        );
     }
 
     public function update(Request $request): JsonResponse
     {
         $payload = $this->validatePayload($request, true);
-        $template = FreightRateTemplate::query()->findOrFail((int) $payload['id']);
+        $template = $this->scopedTemplateQuery($request)->findOrFail((int) $payload['id']);
+        $targetPickupSiteId = array_key_exists('pickup_site_id', $payload) ? $payload['pickup_site_id'] : $template->pickup_site_id;
+        $targetDropoffSiteId = array_key_exists('dropoff_site_id', $payload) ? $payload['dropoff_site_id'] : $template->dropoff_site_id;
+        if (! $this->dataScopeService->canAccessSites($request->user(), [$targetPickupSiteId, $targetDropoffSiteId])) {
+            return response()->json(['message' => '当前账号不可配置该范围内的运价模板'], 403);
+        }
         unset($payload['id']);
         $template->update($payload);
 
-        return response()->json($template->fresh());
+        return response()->json($template->fresh()->loadMissing(['pickupSite:id,name', 'dropoffSite:id,name']));
     }
 
     private function validatePayload(Request $request, bool $forUpdate = false): array
@@ -71,7 +94,9 @@ class FreightRateTemplateController extends Controller
             'name' => $forUpdate ? ['sometimes', 'required', 'string', 'max:100'] : ['required', 'string', 'max:100'],
             'client_name' => ['sometimes', 'nullable', 'string', 'max:255'],
             'cargo_category_id' => ['sometimes', 'nullable', 'integer', 'exists:cargo_categories,id'],
+            'pickup_site_id' => ['sometimes', 'nullable', 'integer', 'exists:logistics_sites,id'],
             'pickup_address' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'dropoff_site_id' => ['sometimes', 'nullable', 'integer', 'exists:logistics_sites,id'],
             'dropoff_address' => ['sometimes', 'nullable', 'string', 'max:255'],
             'freight_calc_scheme' => $forUpdate ? ['sometimes', 'required', 'in:by_weight,by_volume,by_trip'] : ['required', 'in:by_weight,by_volume,by_trip'],
             'freight_unit_price' => ['sometimes', 'nullable', 'numeric', 'min:0'],
@@ -115,5 +140,24 @@ class FreightRateTemplateController extends Controller
         }
 
         return $payload;
+    }
+
+    private function scopedTemplateQuery(Request $request): Builder
+    {
+        $query = FreightRateTemplate::query();
+        $siteIds = $this->dataScopeService->resolveAccessibleSiteIds($request->user());
+        if ($siteIds === null) {
+            return $query;
+        }
+
+        return $query
+            ->where(function (Builder $builder) use ($siteIds): void {
+                $builder->whereNull('pickup_site_id')
+                    ->orWhereIn('pickup_site_id', $siteIds);
+            })
+            ->where(function (Builder $builder) use ($siteIds): void {
+                $builder->whereNull('dropoff_site_id')
+                    ->orWhereIn('dropoff_site_id', $siteIds);
+            });
     }
 }
