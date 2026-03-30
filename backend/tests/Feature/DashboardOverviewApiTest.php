@@ -411,6 +411,21 @@ class DashboardOverviewApiTest extends TestCase
             'updated_at' => now(),
         ]);
 
+        DriverLocation::query()->create([
+            'driver_id' => $driverA->id,
+            'dispatch_task_id' => null,
+            'lng' => 121.4737010,
+            'lat' => 31.2304160,
+            'located_at' => now()->subMinutes(3),
+        ]);
+        DriverLocation::query()->create([
+            'driver_id' => $driverB->id,
+            'dispatch_task_id' => null,
+            'lng' => 121.4737010,
+            'lat' => 31.2304160,
+            'located_at' => now()->subMinutes(3),
+        ]);
+
         Sanctum::actingAs($dispatcher);
 
         $response = $this->postJson('/api/v1/dashboard/overview', []);
@@ -418,6 +433,7 @@ class DashboardOverviewApiTest extends TestCase
         $response->assertOk()
             ->assertJsonPath('metrics.pending_pre_plan_orders', 1)
             ->assertJsonPath('metrics.assigned_tasks', 1)
+            ->assertJsonPath('metrics.online_drivers', 1)
             ->assertJsonPath('metrics.busy_vehicles', 1)
             ->assertJsonPath('metrics.total_vehicles', 1);
     }

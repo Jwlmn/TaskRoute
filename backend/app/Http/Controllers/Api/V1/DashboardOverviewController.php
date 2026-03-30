@@ -47,6 +47,8 @@ class DashboardOverviewController extends Controller
 
         $onlineDrivers = DriverLocation::query()
             ->where('located_at', '>=', $onlineThreshold)
+            ->whereHas('driver.vehicle', fn ($query) => $this->dataScopeService
+                ->applyVehicleScope($query, request()->user()))
             ->distinct('driver_id')
             ->count('driver_id');
 
