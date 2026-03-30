@@ -24,6 +24,36 @@ const createForm = reactive({
   remark: '',
 })
 
+const statusLabelMap = {
+  draft: '草稿',
+  confirmed: '已确认',
+  invoiced: '已开票',
+  paid: '已回款',
+}
+
+const statusTagTypeMap = {
+  draft: 'info',
+  confirmed: 'success',
+  invoiced: 'warning',
+  paid: 'primary',
+}
+
+const transitionMap = {
+  draft: 'confirmed',
+  confirmed: 'invoiced',
+  invoiced: 'paid',
+  paid: '',
+}
+
+const formatStatusLabel = (status) => statusLabelMap[status] || status || '-'
+
+const formatOperator = (operator) => {
+  if (!operator) return '-'
+  return operator.name || operator.account || `#${operator.id}`
+}
+
+const canTransitionTo = (row, targetStatus) => transitionMap[row?.status] === targetStatus
+
 const loadStatements = async () => {
   loading.value = true
   try {
@@ -109,7 +139,13 @@ const exportCurrentList = async () => {
     基础运费: item.total_base_amount,
     亏吨扣减: item.total_loss_deduct_amount,
     应结运费: item.total_freight_amount,
-    状态: item.status,
+    状态: formatStatusLabel(item.status),
+    确认人: formatOperator(item.confirmer),
+    确认时间: item.confirmed_at || '',
+    开票人: formatOperator(item.invoicer),
+    开票时间: item.invoiced_at || '',
+    回款人: formatOperator(item.payer),
+    回款时间: item.paid_at || '',
   }))
   await exportRowsToXlsx({
     filename: '结算单列表.xlsx',
@@ -184,13 +220,26 @@ onMounted(loadStatements)
       <el-table-column prop="total_base_amount" label="基础运费" min-width="100" />
       <el-table-column prop="total_loss_deduct_amount" label="亏吨扣减" min-width="100" />
       <el-table-column prop="total_freight_amount" label="应结运费" min-width="100" />
-      <el-table-column prop="status" label="状态" min-width="100" />
+      <el-table-column label="状态" min-width="100">
+        <template #default="{ row }">
+          <el-tag :type="statusTagTypeMap[row.status] || 'info'" effect="light">
+            {{ formatStatusLabel(row.status) }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="审计进度" min-width="260">
+        <template #default="{ row }">
+          <div>确认：{{ formatOperator(row.confirmer) }} {{ row.confirmed_at || '' }}</div>
+          <div>开票：{{ formatOperator(row.invoicer) }} {{ row.invoiced_at || '' }}</div>
+          <div>回款：{{ formatOperator(row.payer) }} {{ row.paid_at || '' }}</div>
+        </template>
+      </el-table-column>
       <el-table-column label="操作" min-width="260" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openDetail(row)">详情</el-button>
-          <el-button link type="success" :loading="updating" @click="updateStatus(row, 'confirmed')">确认</el-button>
-          <el-button link type="warning" :loading="updating" @click="updateStatus(row, 'invoiced')">开票</el-button>
-          <el-button link type="info" :loading="updating" @click="updateStatus(row, 'paid')">回款</el-button>
+          <el-button link type="success" :loading="updating" :disabled="!canTransitionTo(row, 'confirmed')" @click="updateStatus(row, 'confirmed')">确认</el-button>
+          <el-button link type="warning" :loading="updating" :disabled="!canTransitionTo(row, 'invoiced')" @click="updateStatus(row, 'invoiced')">开票</el-button>
+          <el-button link type="info" :loading="updating" :disabled="!canTransitionTo(row, 'paid')" @click="updateStatus(row, 'paid')">回款</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -225,9 +274,16 @@ onMounted(loadStatements)
       <el-descriptions-item label="结算单号">{{ detail.statement_no }}</el-descriptions-item>
       <el-descriptions-item label="客户">{{ detail.client_name }}</el-descriptions-item>
       <el-descriptions-item label="周期">{{ detail.period_start }} ~ {{ detail.period_end }}</el-descriptions-item>
-      <el-descriptions-item label="状态">{{ detail.status }}</el-descriptions-item>
+      <el-descriptions-item label="状态">{{ formatStatusLabel(detail.status) }}</el-descriptions-item>
       <el-descriptions-item label="订单数">{{ detail.order_count }}</el-descriptions-item>
       <el-descriptions-item label="应结运费">{{ detail.total_freight_amount }}</el-descriptions-item>
+      <el-descriptions-item label="创建人">{{ formatOperator(detail.creator) }}</el-descriptions-item>
+      <el-descriptions-item label="确认人">{{ formatOperator(detail.confirmer) }}</el-descriptions-item>
+      <el-descriptions-item label="确认时间">{{ detail.confirmed_at || '-' }}</el-descriptions-item>
+      <el-descriptions-item label="开票人">{{ formatOperator(detail.invoicer) }}</el-descriptions-item>
+      <el-descriptions-item label="开票时间">{{ detail.invoiced_at || '-' }}</el-descriptions-item>
+      <el-descriptions-item label="回款人">{{ formatOperator(detail.payer) }}</el-descriptions-item>
+      <el-descriptions-item label="回款时间">{{ detail.paid_at || '-' }}</el-descriptions-item>
       <el-descriptions-item label="备注" :span="2">{{ detail.remark || '-' }}</el-descriptions-item>
     </el-descriptions>
     <el-table
