@@ -3,6 +3,23 @@ import { onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../../services/api'
 
+const messageTypeLabelMap = {
+  audit_notice: '审核通知',
+  audit_reminder: '审核催办',
+}
+
+const auditStatusLabelMap = {
+  pending_approval: '待审核',
+  approved: '已审核',
+  rejected: '已驳回',
+}
+
+const auditStatusTypeMap = {
+  pending_approval: 'warning',
+  approved: 'success',
+  rejected: 'danger',
+}
+
 const loading = ref(false)
 const messages = ref([])
 const selectedIds = ref([])
@@ -22,6 +39,17 @@ const filterForm = reactive({
 })
 let filterDebounceTimer = null
 let loadAbortController = null
+
+const getLabel = (map, value) => map[value] || value || '-'
+const getNotificationOrderNo = (message) => message?.meta?.order_no || '-'
+const getNotificationAuditStatus = (message) => message?.meta?.audit_status || ''
+const formatNotificationTime = (message) => {
+  const value = message?.created_at
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return String(value)
+  return date.toLocaleString('zh-CN', { hour12: false })
+}
 
 const loadMessages = async (page = pagination.page) => {
   loadAbortController?.abort()
@@ -141,6 +169,10 @@ watch(
         size="small"
         placeholder="搜索标题或内容"
       />
+      <el-select v-model="filterForm.message_type" clearable size="small" placeholder="消息类型">
+        <el-option label="审核通知" value="audit_notice" />
+        <el-option label="审核催办" value="audit_reminder" />
+      </el-select>
       <el-select v-model="filterForm.read_status" size="small">
         <el-option label="全部" value="all" />
         <el-option label="未读" value="unread" />
@@ -169,7 +201,22 @@ watch(
             <el-tag v-if="!row.read_at" size="small" type="danger">未读</el-tag>
             <span>{{ row.title || '-' }}</span>
           </div>
+          <div class="mobile-message-meta">
+            <el-tag size="small" effect="plain">{{ getLabel(messageTypeLabelMap, row.message_type) }}</el-tag>
+            <el-tag
+              v-if="getNotificationAuditStatus(row)"
+              size="small"
+              :type="auditStatusTypeMap[getNotificationAuditStatus(row)] || 'info'"
+              effect="plain"
+            >
+              {{ getLabel(auditStatusLabelMap, getNotificationAuditStatus(row)) }}
+            </el-tag>
+          </div>
           <div class="mobile-message-content">{{ row.content || '-' }}</div>
+          <div class="mobile-message-extra">
+            <span>关联订单：{{ getNotificationOrderNo(row) }}</span>
+            <span>通知时间：{{ formatNotificationTime(row) }}</span>
+          </div>
         </template>
       </el-table-column>
       <el-table-column label="操作" width="130" fixed="right">
