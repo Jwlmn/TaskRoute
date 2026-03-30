@@ -11,6 +11,7 @@ const user = computed(() => readCurrentUser())
 const loading = ref(false)
 const generatedAt = ref('')
 const driverTasks = ref([])
+const driverMessages = ref([])
 const stats = ref([
   { label: '待接单', value: 0 },
   { label: '执行中', value: 0 },
@@ -45,6 +46,11 @@ const activeTask = computed(() => driverTasks.value.find((task) => ['accepted', 
 const recentHandledExceptionTask = computed(() => driverTasks.value
   .filter((task) => task?.route_meta?.exception?.status === 'handled')
   .sort((a, b) => String(b?.route_meta?.exception?.handled_at || '').localeCompare(String(a?.route_meta?.exception?.handled_at || '')))
+  [0] || null)
+const unreadMessageCount = computed(() => driverMessages.value.filter((item) => !item?.read_at).length)
+const recentUnreadDispatchMessage = computed(() => driverMessages.value
+  .filter((item) => item?.message_type === 'dispatch_notice' && !item?.read_at)
+  .sort((a, b) => String(b?.created_at || '').localeCompare(String(a?.created_at || '')))
   [0] || null)
 const driverHomeShortcuts = computed(() => {
   if (user.value?.role !== 'driver') return []
@@ -90,6 +96,18 @@ const driverHomeShortcuts = computed(() => {
         ? router.push({ name: 'mobile-task-detail', params: { id: recentHandledExceptionTask.value.id } })
         : router.push({ name: 'mobile-tasks' })),
     },
+    {
+      key: 'messages',
+      title: '消息提醒',
+      description: recentUnreadDispatchMessage.value
+        ? `最新未读：${recentUnreadDispatchMessage.value.title || '调度通知'}`
+        : '当前没有新的未读通知',
+      count: unreadMessageCount.value,
+      type: unreadMessageCount.value > 0 ? 'warning' : 'info',
+      actionLabel: unreadMessageCount.value > 0 ? '查看消息' : '打开消息中心',
+      disabled: false,
+      action: () => router.push({ name: 'mobile-messages' }),
+    },
   ]
 
   return items
@@ -111,11 +129,19 @@ const fetchHomeStats = async () => {
   loading.value = true
   try {
     if (user.value?.role === 'driver') {
-      const { data } = await api.post('/dispatch-task/list', {})
+      const [{ data }, messageResponse] = await Promise.all([
+        api.post('/dispatch-task/list', {}),
+        api.post('/message/list', {
+          page: 1,
+          per_page: 20,
+          read_status: 'all',
+        }),
+      ])
       const tasks = filterTasksByDataScope(
         user.value,
         Array.isArray(data?.data) ? data.data : [],
       )
+      driverMessages.value = Array.isArray(messageResponse?.data?.data) ? messageResponse.data.data : []
       driverTasks.value = tasks
       stats.value = buildDriverStats(tasks)
       generatedAt.value = new Date().toLocaleString('zh-CN', { hour12: false })
@@ -134,6 +160,7 @@ const fetchHomeStats = async () => {
         const key = item?.audit_status || 'pending_approval'
         if (counters[key] !== undefined) counters[key] += 1
       }
+      driverMessages.value = []
       stats.value = [
         { label: '待审核', value: counters.pending_approval },
         { label: '已通过', value: counters.approved },
@@ -145,6 +172,7 @@ const fetchHomeStats = async () => {
 
     const { data } = await api.post('/dashboard/overview', {})
     driverTasks.value = []
+    driverMessages.value = []
     stats.value = [
       { label: '待调度', value: data?.metrics?.pending_pre_plan_orders || 0 },
       { label: '待接单', value: data?.metrics?.assigned_tasks || 0 },
