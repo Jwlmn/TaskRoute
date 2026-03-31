@@ -77,6 +77,17 @@ const openRecentDispatchMessageTask = async () => {
     ElMessage.error(error?.response?.data?.message || '处理消息失败')
   }
 }
+const openHandledExceptionResult = async () => {
+  if (!recentHandledExceptionTask.value?.id) {
+    await router.push({ name: 'mobile-tasks' })
+    return
+  }
+  await router.push({
+    name: 'mobile-task-detail',
+    params: { id: recentHandledExceptionTask.value.id },
+    query: { focus_section: 'handled_exception' },
+  })
+}
 const driverHomeShortcuts = computed(() => {
   if (user.value?.role !== 'driver') return []
 
@@ -115,10 +126,10 @@ const driverHomeShortcuts = computed(() => {
         : '当前没有新的异常处理结果',
       count: recentHandledExceptionTask.value ? 1 : 0,
       type: recentHandledExceptionTask.value ? 'success' : 'info',
-      actionLabel: recentHandledExceptionTask.value ? '查看处理结果' : '查看任务列表',
+      actionLabel: recentHandledExceptionTask.value ? '直达处理结果' : '查看任务列表',
       disabled: false,
       action: () => (recentHandledExceptionTask.value
-        ? router.push({ name: 'mobile-task-detail', params: { id: recentHandledExceptionTask.value.id } })
+        ? openHandledExceptionResult()
         : router.push({ name: 'mobile-tasks' })),
     },
     {

@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '../../services/api'
@@ -18,6 +18,7 @@ const router = useRouter()
 const detailLoading = ref(false)
 const actionLoading = ref(false)
 const detail = ref(null)
+const handledExceptionResultRef = ref(null)
 const uploadForms = reactive({})
 const exceptionDialogVisible = ref(false)
 let exceptionPollingTimer = null
@@ -204,6 +205,12 @@ const goHandledExceptionNextStep = async () => {
   if (detail.value?.id) {
     await loadDetail()
   }
+}
+const shouldFocusHandledExceptionSection = () => route.query.focus_section === 'handled_exception'
+const focusHandledExceptionSection = async () => {
+  if (!shouldFocusHandledExceptionSection()) return
+  await nextTick()
+  handledExceptionResultRef.value?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
 }
 
 const handledExceptionSummaryLines = () => {
@@ -431,6 +438,7 @@ const loadDetail = async ({ silent = false } = {}) => {
     detail.value = data
     syncUploadForms()
     setupExceptionPolling()
+    await focusHandledExceptionSection()
   } catch (error) {
     if (!silent) {
       ElMessage.error(error?.response?.data?.message || '加载任务详情失败')
@@ -704,8 +712,9 @@ onUnmounted(() => {
       </el-descriptions>
       <el-card
         v-if="handledExceptionSummaryLines().length"
+        ref="handledExceptionResultRef"
         shadow="never"
-        class="mb-12"
+        :class="['mb-12', shouldFocusHandledExceptionSection() ? 'mobile-focus-card' : '']"
       >
         <template #header>
           <div class="mobile-section-title">异常处理结果</div>
@@ -948,3 +957,10 @@ onUnmounted(() => {
     </template>
   </el-dialog>
 </template>
+
+<style scoped>
+.mobile-focus-card {
+  border: 1px solid var(--el-color-warning);
+  box-shadow: 0 0 0 2px rgba(230, 162, 60, 0.12);
+}
+</style>
