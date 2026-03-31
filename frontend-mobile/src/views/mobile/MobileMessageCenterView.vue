@@ -1,10 +1,11 @@
 <script setup>
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '../../services/api'
 
 const router = useRouter()
+const route = useRoute()
 const messageTypeLabelMap = {
   audit_notice: '审核通知',
   audit_reminder: '审核催办',
@@ -142,6 +143,15 @@ const focusTaskMessages = (row) => {
 const clearTaskFocus = () => {
   filterForm.task_focus = ''
 }
+const syncTaskFocusToRoute = async () => {
+  const nextQuery = { ...route.query }
+  if (filterForm.task_focus) {
+    nextQuery.task_focus = String(filterForm.task_focus)
+  } else {
+    delete nextQuery.task_focus
+  }
+  await router.replace({ query: nextQuery })
+}
 
 const openTaskDetail = async (row) => {
   const taskId = Number(row?.meta?.task_id || 0)
@@ -274,7 +284,10 @@ const markRelatedTaskMessagesRead = async (taskId) => {
   }
 }
 
-onMounted(loadMessages)
+onMounted(async () => {
+  filterForm.task_focus = typeof route.query.task_focus === 'string' ? route.query.task_focus : ''
+  await loadMessages()
+})
 
 onUnmounted(() => {
   loadAbortController?.abort()
@@ -296,6 +309,10 @@ watch(
     }, 300)
   }
 )
+
+watch(() => filterForm.task_focus, () => {
+  syncTaskFocusToRoute()
+})
 </script>
 
 <template>

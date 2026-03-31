@@ -1,6 +1,6 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '../../services/api'
 import { hasPermission, readCurrentUser } from '../../utils/auth'
@@ -20,6 +20,7 @@ import {
 } from '../../utils/prePlanOrder'
 
 const router = useRouter()
+const route = useRoute()
 const loading = ref(false)
 const pinningId = ref(null)
 const messages = ref([])
@@ -135,6 +136,15 @@ const focusTaskMessages = (row) => {
 }
 const clearTaskFocus = () => {
   filterForm.value.task_focus = ''
+}
+const syncTaskFocusToRoute = async () => {
+  const nextQuery = { ...route.query }
+  if (filterForm.value.task_focus) {
+    nextQuery.task_focus = String(filterForm.value.task_focus)
+  } else {
+    delete nextQuery.task_focus
+  }
+  await router.replace({ query: nextQuery })
 }
 
 const markReadSilently = async (id) => {
@@ -366,7 +376,14 @@ const isNotificationActionDisabled = (row) => {
   return !row?.meta?.order_id || !resolveOrderDetailEndpoint()
 }
 
-onMounted(loadMessages)
+onMounted(async () => {
+  filterForm.value.task_focus = typeof route.query.task_focus === 'string' ? route.query.task_focus : ''
+  await loadMessages()
+})
+
+watch(() => filterForm.value.task_focus, () => {
+  syncTaskFocusToRoute()
+})
 </script>
 
 <template>
