@@ -77,6 +77,13 @@ const openRecentDispatchMessageTask = async () => {
     ElMessage.error(error?.response?.data?.message || '处理消息失败')
   }
 }
+const openRecentDispatchNotifications = async () => {
+  const taskId = String(recentUnreadDispatchMessage.value?.meta?.task_id || '')
+  await router.push({
+    name: 'mobile-messages',
+    query: taskId ? { task_focus: taskId } : {},
+  })
+}
 const openHandledExceptionResult = async () => {
   if (!recentHandledExceptionTask.value?.id) {
     await router.push({ name: 'mobile-tasks' })
@@ -131,6 +138,10 @@ const driverHomeShortcuts = computed(() => {
       action: () => (recentHandledExceptionTask.value
         ? openHandledExceptionResult()
         : router.push({ name: 'mobile-tasks' })),
+      secondaryActionLabel: recentHandledExceptionTask.value ? '查看任务通知' : '',
+      secondaryAction: () => (recentHandledExceptionTask.value
+        ? router.push({ name: 'mobile-messages', query: { task_focus: String(recentHandledExceptionTask.value.id) } })
+        : Promise.resolve()),
     },
     {
       key: 'messages',
@@ -143,6 +154,8 @@ const driverHomeShortcuts = computed(() => {
       actionLabel: recentUnreadDispatchMessage.value ? '查看任务并已读' : (unreadMessageCount.value > 0 ? '查看消息' : '打开消息中心'),
       disabled: false,
       action: () => (recentUnreadDispatchMessage.value ? openRecentDispatchMessageTask() : router.push({ name: 'mobile-messages' })),
+      secondaryActionLabel: recentUnreadDispatchMessage.value ? '只看该任务通知' : '',
+      secondaryAction: () => (recentUnreadDispatchMessage.value ? openRecentDispatchNotifications() : Promise.resolve()),
     },
   ]
 
@@ -262,6 +275,15 @@ onMounted(() => {
         <div class="mt-8">
           <el-button size="small" type="primary" :disabled="item.disabled" @click="item.action()">
             {{ item.actionLabel }}
+          </el-button>
+          <el-button
+            v-if="item.secondaryActionLabel"
+            size="small"
+            plain
+            class="ml-8"
+            @click="item.secondaryAction()"
+          >
+            {{ item.secondaryActionLabel }}
           </el-button>
         </div>
       </div>

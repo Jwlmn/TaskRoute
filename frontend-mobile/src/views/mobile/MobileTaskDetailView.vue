@@ -212,6 +212,13 @@ const focusHandledExceptionSection = async () => {
   await nextTick()
   handledExceptionResultRef.value?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
 }
+const openTaskNotifications = async () => {
+  const currentTaskId = taskId()
+  await router.push({
+    name: 'mobile-messages',
+    query: currentTaskId ? { task_focus: String(currentTaskId) } : {},
+  })
+}
 
 const handledExceptionSummaryLines = () => {
   const exception = handledException()
@@ -600,6 +607,7 @@ onUnmounted(() => {
         >
           上报异常
         </el-button>
+        <el-button plain size="small" @click="openTaskNotifications">相关通知</el-button>
         <el-button plain size="small" @click="router.push({ name: 'mobile-tasks' })">返回任务列表</el-button>
       </el-space>
     </div>
