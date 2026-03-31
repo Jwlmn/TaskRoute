@@ -52,6 +52,31 @@ const recentUnreadDispatchMessage = computed(() => driverMessages.value
   .filter((item) => item?.message_type === 'dispatch_notice' && !item?.read_at)
   .sort((a, b) => String(b?.created_at || '').localeCompare(String(a?.created_at || '')))
   [0] || null)
+const markRelatedTaskMessagesRead = async (taskId) => {
+  const ids = driverMessages.value
+    .filter((item) => Number(item?.meta?.task_id || 0) === Number(taskId) && !item?.read_at)
+    .map((item) => item.id)
+  if (!ids.length) return
+  if (ids.length === 1) {
+    await api.post('/message/read', { id: ids[0] })
+    return
+  }
+  await api.post('/message/read-batch', { ids })
+}
+const openRecentDispatchMessageTask = async () => {
+  const taskId = Number(recentUnreadDispatchMessage.value?.meta?.task_id || 0)
+  if (!taskId) {
+    await router.push({ name: 'mobile-messages' })
+    return
+  }
+  try {
+    await markRelatedTaskMessagesRead(taskId)
+    await fetchHomeStats()
+    await router.push({ name: 'mobile-task-detail', params: { id: taskId } })
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '处理消息失败')
+  }
+}
 const driverHomeShortcuts = computed(() => {
   if (user.value?.role !== 'driver') return []
 
@@ -104,9 +129,9 @@ const driverHomeShortcuts = computed(() => {
         : '当前没有新的未读通知',
       count: unreadMessageCount.value,
       type: unreadMessageCount.value > 0 ? 'warning' : 'info',
-      actionLabel: unreadMessageCount.value > 0 ? '查看消息' : '打开消息中心',
+      actionLabel: recentUnreadDispatchMessage.value ? '查看任务并已读' : (unreadMessageCount.value > 0 ? '查看消息' : '打开消息中心'),
       disabled: false,
-      action: () => router.push({ name: 'mobile-messages' }),
+      action: () => (recentUnreadDispatchMessage.value ? openRecentDispatchMessageTask() : router.push({ name: 'mobile-messages' })),
     },
   ]
 
