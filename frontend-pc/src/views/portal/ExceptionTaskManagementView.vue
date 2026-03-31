@@ -26,6 +26,7 @@ const filterForm = ref({
   task_no: '',
   exception_type: '',
   handle_action: '',
+  recommendation_action: '',
   handled_by_keyword: '',
   handled_by_me: false,
   overtime_only: false,
@@ -260,6 +261,9 @@ const displayedExceptionTasks = computed(() => {
       const matchedSite = orders.some((order) => (order.pickup_address || '') === filterForm.value.site_focus)
       if (!matchedSite) return false
     }
+    if (filterForm.value.recommendation_action && getExceptionRecommendation(task).action !== filterForm.value.recommendation_action) {
+      return false
+    }
     return isTaskMatchedOvertimeLevel(task)
   })
 })
@@ -279,6 +283,20 @@ const exceptionTypeStats = computed(() => Object.entries(exceptionTypeLabelMap).
   label,
   count: exceptionTasks.value.filter((task) => task.route_meta?.exception?.type === value).length,
 })).filter((item) => item.count > 0))
+const recommendationStats = computed(() => {
+  const map = new Map([
+    ['reassign', { action: 'reassign', label: '建议改派', type: 'warning', count: 0 }],
+    ['cancel', { action: 'cancel', label: '建议取消', type: 'danger', count: 0 }],
+    ['continue', { action: 'continue', label: '建议继续', type: 'success', count: 0 }],
+  ])
+  exceptionTasks.value.forEach((task) => {
+    if (task?.route_meta?.exception?.status !== 'pending') return
+    const recommendation = getExceptionRecommendation(task)
+    const current = map.get(recommendation.action)
+    if (current) current.count += 1
+  })
+  return [...map.values()].filter((item) => item.count > 0)
+})
 const driverExceptionRanking = computed(() => {
   const map = new Map()
   exceptionTasks.value.forEach((task) => {
@@ -322,6 +340,9 @@ const clearAggregationFilter = () => {
   filterForm.value.driver_focus = ''
   filterForm.value.site_focus = ''
 }
+const applyRecommendationFilter = (action) => {
+  filterForm.value.recommendation_action = filterForm.value.recommendation_action === action ? '' : action
+}
 const applyDriverRankingFilter = (item) => {
   filterForm.value.driver_focus = filterForm.value.driver_focus === item.account ? '' : (item.account || '')
   if (filterForm.value.driver_focus) {
@@ -346,6 +367,7 @@ watch(() => filterForm.value.status, (status) => {
   } else {
     filterForm.value.overtime_only = false
     filterForm.value.overtime_level = ''
+    filterForm.value.recommendation_action = ''
   }
 })
 
@@ -535,6 +557,31 @@ onMounted(async () => {
         </el-tag>
       </el-space>
     </el-card>
+    <el-card shadow="never" class="mb-12" v-if="filterForm.status === 'pending' && recommendationStats.length">
+      <div class="table-header">
+        <div class="mobile-section-title">建议动作分布</div>
+        <div class="text-secondary">点击卡片可按推荐动作分流</div>
+      </div>
+      <el-row :gutter="12">
+        <el-col v-for="item in recommendationStats" :key="item.action" :span="8">
+          <el-card
+            shadow="hover"
+            class="order-tag-clickable"
+            @click="applyRecommendationFilter(item.action)"
+          >
+            <div class="table-header">
+              <div>{{ item.label }}</div>
+              <el-tag :type="filterForm.recommendation_action === item.action ? 'primary' : item.type">
+                {{ item.count }} 条
+              </el-tag>
+            </div>
+            <div class="text-secondary">
+              {{ filterForm.recommendation_action === item.action ? '当前已按该建议筛选' : '点击查看该建议对应异常' }}
+            </div>
+          </el-card>
+        </el-col>
+      </el-row>
+    </el-card>
     <el-row :gutter="12" class="mb-12" v-if="filterForm.status === 'pending'">
       <el-col :span="12">
         <el-card shadow="never">
@@ -636,6 +683,13 @@ onMounted(async () => {
           </el-tag>
           <span class="text-secondary">当前列表命中 {{ aggregationMatchedCount }} 条异常</span>
           <el-button link type="primary" @click="clearAggregationFilter">清空聚合筛选</el-button>
+        </el-space>
+      </el-form-item>
+      <el-form-item v-if="filterForm.status === 'pending' && filterForm.recommendation_action" label="建议筛选">
+        <el-space wrap>
+          <el-tag closable @close="filterForm.recommendation_action = ''">
+            {{ getLabel(exceptionActionLabelMap, filterForm.recommendation_action) }}
+          </el-tag>
         </el-space>
       </el-form-item>
       <el-form-item>
