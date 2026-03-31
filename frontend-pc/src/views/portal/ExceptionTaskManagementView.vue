@@ -350,7 +350,8 @@ const applyRecommendationFilter = async (action) => {
     ElMessage.info('当前建议动作下暂无命中的异常任务')
     return
   }
-  openDetailDialog(matchedTask)
+  selectedExceptionTask.value = matchedTask
+  await openHandleDialog(matchedTask)
 }
 const applyDriverRankingFilter = (item) => {
   filterForm.value.driver_focus = filterForm.value.driver_focus === item.account ? '' : (item.account || '')
