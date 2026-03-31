@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '../../services/api'
@@ -340,8 +340,17 @@ const clearAggregationFilter = () => {
   filterForm.value.driver_focus = ''
   filterForm.value.site_focus = ''
 }
-const applyRecommendationFilter = (action) => {
-  filterForm.value.recommendation_action = filterForm.value.recommendation_action === action ? '' : action
+const applyRecommendationFilter = async (action) => {
+  const nextAction = filterForm.value.recommendation_action === action ? '' : action
+  filterForm.value.recommendation_action = nextAction
+  if (!nextAction) return
+  await nextTick()
+  const matchedTask = displayedExceptionTasks.value[0]
+  if (!matchedTask) {
+    ElMessage.info('当前建议动作下暂无命中的异常任务')
+    return
+  }
+  openDetailDialog(matchedTask)
 }
 const applyDriverRankingFilter = (item) => {
   filterForm.value.driver_focus = filterForm.value.driver_focus === item.account ? '' : (item.account || '')
