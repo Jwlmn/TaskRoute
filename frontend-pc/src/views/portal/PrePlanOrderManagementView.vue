@@ -20,6 +20,8 @@ const route = useRoute()
 const tableRef = ref()
 const prePlanOrders = ref([])
 const selectedOrders = ref([])
+const currentPage = ref(1)
+const pageSize = ref(10)
 const cargoCategories = ref([])
 const sites = ref([])
 const vehicles = ref([])
@@ -176,6 +178,11 @@ const cargoCategoryMap = computed(() => {
   }
   return map
 })
+const pagedPrePlanOrders = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  return prePlanOrders.value.slice(start, start + pageSize.value)
+})
+const totalPrePlanOrders = computed(() => prePlanOrders.value.length)
 
 const selectedOrderIds = computed(() => selectedOrders.value.map((item) => item.id))
 const splitWeightTotal = computed(() => splitParts.value.reduce((sum, part) => sum + Number(part.cargo_weight_kg || 0), 0))
@@ -414,11 +421,20 @@ const loadPrePlanOrders = async () => {
 
     const { data } = await api.post('/pre-plan-order/list', payload)
     prePlanOrders.value = Array.isArray(data?.data) ? data.data : []
+    const maxPage = Math.max(1, Math.ceil(totalPrePlanOrders.value / pageSize.value))
+    if (currentPage.value > maxPage) {
+      currentPage.value = maxPage
+    }
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '获取预计划单失败')
   } finally {
     loadingOrders.value = false
   }
+}
+
+const onSearch = async () => {
+  currentPage.value = 1
+  await loadPrePlanOrders()
 }
 
 const resetFilters = async () => {
@@ -430,6 +446,7 @@ const resetFilters = async () => {
   filterForm.is_locked = ''
   filterForm.cargo_category_id = ''
   filterForm.trace_type = ''
+  currentPage.value = 1
   await loadPrePlanOrders()
 }
 
@@ -1251,7 +1268,8 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <el-card shadow="never">
+  <div class="page-content-shell">
+  <el-card shadow="never" class="page-card">
     <template #header>
       <div class="table-header">
         <div class="card-title">预计划单管理</div>
@@ -1316,11 +1334,21 @@ onUnmounted(() => {
         </el-select>
       </el-form-item>
       <el-form-item>
-        <el-button type="primary" @click="loadPrePlanOrders">查询</el-button>
+        <el-button type="primary" @click="onSearch">查询</el-button>
         <el-button @click="resetFilters">重置</el-button>
       </el-form-item>
     </el-form>
-    <el-table ref="tableRef" :data="prePlanOrders" stripe v-loading="loadingOrders" @selection-change="onSelectionChange">
+    <div class="page-table-section">
+    <div class="page-table-wrap">
+    <el-table
+      ref="tableRef"
+      :data="pagedPrePlanOrders"
+      stripe
+      v-loading="loadingOrders"
+      height="100%"
+      class="page-table"
+      @selection-change="onSelectionChange"
+    >
       <el-table-column type="selection" width="50" :selectable="selectableOrder" />
       <el-table-column prop="order_no" label="预计划单号" min-width="180" />
       <el-table-column prop="client_name" label="客户" min-width="120" />
@@ -1490,7 +1518,19 @@ onUnmounted(() => {
         </template>
       </el-table-column>
     </el-table>
+    </div>
+    <div class="page-pagination">
+      <el-pagination
+        v-model:current-page="currentPage"
+        v-model:page-size="pageSize"
+        layout="prev, pager, next, total"
+        :page-sizes="[10, 20, 50]"
+        :total="totalPrePlanOrders"
+      />
+    </div>
+    </div>
   </el-card>
+  </div>
 
   <el-dialog v-model="splitDialogVisible" title="拆分计划单" width="460px" destroy-on-close>
     <el-form label-width="100px">
