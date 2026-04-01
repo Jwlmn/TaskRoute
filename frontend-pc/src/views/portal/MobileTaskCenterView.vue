@@ -10,6 +10,10 @@ const loadingTrajectory = ref(false)
 const tasks = ref([])
 const latestLocations = ref([])
 const trajectory = ref([])
+const taskCurrentPage = ref(1)
+const taskPageSize = ref(10)
+const locationCurrentPage = ref(1)
+const locationPageSize = ref(10)
 const trajectoryDialogVisible = ref(false)
 const selectedDriverName = ref('')
 
@@ -25,6 +29,16 @@ let replayTimer = null
 
 const amapKey = import.meta.env.VITE_AMAP_WEB_KEY || ''
 const amapSecurityJsCode = import.meta.env.VITE_AMAP_SECURITY_JS_CODE || ''
+const pagedTasks = computed(() => {
+  const start = (taskCurrentPage.value - 1) * taskPageSize.value
+  return tasks.value.slice(start, start + taskPageSize.value)
+})
+const taskTotal = computed(() => tasks.value.length)
+const pagedLatestLocations = computed(() => {
+  const start = (locationCurrentPage.value - 1) * locationPageSize.value
+  return latestLocations.value.slice(start, start + locationPageSize.value)
+})
+const locationTotal = computed(() => latestLocations.value.length)
 
 const formatDateTime = (value) => {
   if (!value) return '-'
@@ -44,6 +58,8 @@ const fetchTasks = async () => {
   try {
     const { data } = await api.post('/dispatch-task/list', {})
     tasks.value = data.data || []
+    const maxPage = Math.max(1, Math.ceil(taskTotal.value / taskPageSize.value))
+    if (taskCurrentPage.value > maxPage) taskCurrentPage.value = maxPage
   } finally {
     loadingTasks.value = false
   }
@@ -54,6 +70,8 @@ const fetchLatestLocations = async () => {
   try {
     const { data } = await api.post('/driver-location/latest', {})
     latestLocations.value = Array.isArray(data) ? data : []
+    const maxPage = Math.max(1, Math.ceil(locationTotal.value / locationPageSize.value))
+    if (locationCurrentPage.value > maxPage) locationCurrentPage.value = maxPage
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '获取司机定位失败')
   } finally {
@@ -291,7 +309,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <el-card shadow="never" class="mb-12">
+  <div class="page-content-shell">
+  <el-card shadow="never" class="page-section-card mb-12">
     <template #header>
       <div class="table-header">
         <div class="card-title">司机定位与轨迹回放</div>
@@ -309,7 +328,9 @@ onBeforeUnmount(() => {
       <span>当前可回放司机数：{{ latestLocations.length }}</span>
       <el-button type="primary" @click="openFirstTrajectory">打开轨迹回放</el-button>
     </div>
-    <el-table :data="tasks" v-loading="loadingTasks" stripe>
+    <div class="page-table-card" style="height: 320px">
+    <div class="page-table-wrap">
+    <el-table :data="pagedTasks" v-loading="loadingTasks" stripe height="100%" class="page-table">
       <el-table-column prop="task_no" label="任务编号" min-width="160" />
       <el-table-column label="派单模式" min-width="140">
         <template #default="{ row }">
@@ -336,13 +357,26 @@ onBeforeUnmount(() => {
       <el-table-column prop="estimated_distance_km" label="里程(km)" min-width="100" />
       <el-table-column prop="estimated_fuel_l" label="油耗(L)" min-width="100" />
     </el-table>
+    </div>
+    <div class="page-pagination">
+      <el-pagination
+        v-model:current-page="taskCurrentPage"
+        v-model:page-size="taskPageSize"
+        layout="prev, pager, next, total"
+        :page-sizes="[10, 20, 50]"
+        :total="taskTotal"
+      />
+    </div>
+    </div>
   </el-card>
 
-  <el-card shadow="never">
+  <el-card shadow="never" class="page-section-card">
     <template #header>
       <div class="card-title">司机实时定位</div>
     </template>
-    <el-table :data="latestLocations" v-loading="loadingLocations" stripe>
+    <div class="page-table-card" style="height: 360px">
+    <div class="page-table-wrap">
+    <el-table :data="pagedLatestLocations" v-loading="loadingLocations" stripe height="100%" class="page-table">
       <el-table-column label="司机" min-width="140">
         <template #default="{ row }">
           {{ row.driver?.name || '-' }}（{{ row.driver?.account || '-' }}）
@@ -367,7 +401,19 @@ onBeforeUnmount(() => {
         </template>
       </el-table-column>
     </el-table>
+    </div>
+    <div class="page-pagination">
+      <el-pagination
+        v-model:current-page="locationCurrentPage"
+        v-model:page-size="locationPageSize"
+        layout="prev, pager, next, total"
+        :page-sizes="[10, 20, 50]"
+        :total="locationTotal"
+      />
+    </div>
+    </div>
   </el-card>
+  </div>
 
   <el-dialog
     v-model="trajectoryDialogVisible"
