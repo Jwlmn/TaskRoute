@@ -1523,8 +1523,8 @@ onUnmounted(() => {
       <el-pagination
         v-model:current-page="currentPage"
         v-model:page-size="pageSize"
-        layout="prev, pager, next, total"
-        :page-sizes="[10, 20, 50]"
+        layout="sizes, prev, pager, next, jumper, total"
+        :page-sizes="[10, 20, 50, 100]"
         :total="totalPrePlanOrders"
       />
     </div>

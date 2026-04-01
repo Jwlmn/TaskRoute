@@ -113,6 +113,12 @@ const changePage = async (nextPage) => {
   await fetchTasks(nextPage)
 }
 
+const changePageSize = async (nextPageSize) => {
+  pagination.value.per_page = nextPageSize
+  pagination.value.page = 1
+  await fetchTasks(1)
+}
+
 const searchTasks = async () => {
   pagination.value.page = 1
   await fetchTasks(1)
@@ -313,11 +319,13 @@ watch(
             <el-pagination
               small
               background
-              layout="prev, pager, next, total"
+              layout="sizes, prev, pager, next, jumper, total"
               :current-page="pagination.page"
               :page-size="pagination.per_page"
+              :page-sizes="[10, 20, 50]"
               :total="pagination.total"
               @current-change="changePage"
+              @size-change="changePageSize"
             />
           </div>
         </div>

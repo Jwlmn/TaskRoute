@@ -199,6 +199,12 @@ const changePage = async (nextPage) => {
   await loadMessages(nextPage)
 }
 
+const changePageSize = async (nextPageSize) => {
+  pagination.per_page = nextPageSize
+  pagination.page = 1
+  await loadMessages(1)
+}
+
 const onSelectionChange = (rows) => {
   selectedIds.value = [...new Set(rows.flatMap((item) => getMessageRowIds(item)))]
 }
@@ -440,11 +446,13 @@ watch(() => filterForm.task_focus, () => {
       <el-pagination
         small
         background
-        layout="prev, pager, next, total"
+        layout="sizes, prev, pager, next, jumper, total"
         :current-page="pagination.page"
         :page-size="pagination.per_page"
+        :page-sizes="[10, 20, 50]"
         :total="pagination.total"
         @current-change="changePage"
+        @size-change="changePageSize"
       />
     </div>
   </el-card>

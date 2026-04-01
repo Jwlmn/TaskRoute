@@ -428,8 +428,8 @@ onMounted(async () => {
       <el-pagination
         v-model:current-page="currentPage"
         v-model:page-size="pageSize"
-        layout="prev, pager, next, total"
-        :page-sizes="[10, 20, 50]"
+        layout="sizes, prev, pager, next, jumper, total"
+        :page-sizes="[10, 20, 50, 100]"
         :total="dispatchTaskTotal"
       />
     </div>
@@ -609,8 +609,8 @@ onMounted(async () => {
       <el-pagination
         v-model:current-page="taskOrderCurrentPage"
         v-model:page-size="taskOrderPageSize"
-        layout="prev, pager, next, total"
-        :page-sizes="[10, 20, 50]"
+        layout="sizes, prev, pager, next, jumper, total"
+        :page-sizes="[10, 20, 50, 100]"
         :total="taskOrderTotal"
       />
     </div>

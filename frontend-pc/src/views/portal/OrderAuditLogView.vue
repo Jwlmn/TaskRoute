@@ -39,6 +39,12 @@ const onSearch = async () => {
   await loadLogs()
 }
 
+const onPageSizeChange = async (size) => {
+  pageSize.value = size
+  currentPage.value = 1
+  await loadLogs()
+}
+
 onMounted(loadLogs)
 </script>
 
@@ -87,10 +93,11 @@ onMounted(loadLogs)
       <el-pagination
         v-model:current-page="currentPage"
         v-model:page-size="pageSize"
-        layout="prev, pager, next, total"
-        :page-sizes="[20]"
+        layout="sizes, prev, pager, next, jumper, total"
+        :page-sizes="[10, 20, 50, 100]"
         :total="total"
         @current-change="loadLogs"
+        @size-change="onPageSizeChange"
       />
     </div>
   </el-card>

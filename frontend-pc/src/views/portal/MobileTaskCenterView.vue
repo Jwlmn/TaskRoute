@@ -362,8 +362,8 @@ onBeforeUnmount(() => {
       <el-pagination
         v-model:current-page="taskCurrentPage"
         v-model:page-size="taskPageSize"
-        layout="prev, pager, next, total"
-        :page-sizes="[10, 20, 50]"
+        layout="sizes, prev, pager, next, jumper, total"
+        :page-sizes="[10, 20, 50, 100]"
         :total="taskTotal"
       />
     </div>
@@ -406,8 +406,8 @@ onBeforeUnmount(() => {
       <el-pagination
         v-model:current-page="locationCurrentPage"
         v-model:page-size="locationPageSize"
-        layout="prev, pager, next, total"
-        :page-sizes="[10, 20, 50]"
+        layout="sizes, prev, pager, next, jumper, total"
+        :page-sizes="[10, 20, 50, 100]"
         :total="locationTotal"
       />
     </div>
