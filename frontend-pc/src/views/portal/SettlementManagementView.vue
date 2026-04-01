@@ -11,6 +11,8 @@ const statements = ref([])
 const detail = ref(null)
 const currentPage = ref(1)
 const pageSize = ref(10)
+const detailOrderCurrentPage = ref(1)
+const detailOrderPageSize = ref(10)
 
 const filterForm = reactive({
   client_name: '',
@@ -51,6 +53,12 @@ const pagedStatements = computed(() => {
   return statements.value.slice(start, start + pageSize.value)
 })
 const total = computed(() => statements.value.length)
+const pagedDetailOrders = computed(() => {
+  const orders = Array.isArray(detail.value?.orders) ? detail.value.orders : []
+  const start = (detailOrderCurrentPage.value - 1) * detailOrderPageSize.value
+  return orders.slice(start, start + detailOrderPageSize.value)
+})
+const detailOrderTotal = computed(() => Array.isArray(detail.value?.orders) ? detail.value.orders.length : 0)
 
 const formatStatusLabel = (status) => statusLabelMap[status] || status || '-'
 
@@ -127,6 +135,7 @@ const createStatement = async () => {
 const openDetail = async (row) => {
   detailDialogVisible.value = true
   detail.value = null
+  detailOrderCurrentPage.value = 1
   try {
     const { data } = await api.post('/settlement/detail', { id: row.id })
     detail.value = data
@@ -321,11 +330,13 @@ onMounted(loadStatements)
       <el-descriptions-item label="回款时间">{{ detail.paid_at || '-' }}</el-descriptions-item>
       <el-descriptions-item label="备注" :span="2">{{ detail.remark || '-' }}</el-descriptions-item>
     </el-descriptions>
+    <div v-if="detail?.orders?.length" class="page-table-section mt-12" style="height: 320px">
+    <div class="page-table-wrap">
     <el-table
-      v-if="detail?.orders?.length"
-      :data="detail.orders"
+      :data="pagedDetailOrders"
       size="small"
-      class="mt-12"
+      height="100%"
+      class="page-table"
     >
       <el-table-column prop="id" label="订单ID" width="90" />
       <el-table-column prop="order_no" label="订单号" min-width="150" />
@@ -335,6 +346,17 @@ onMounted(loadStatements)
       <el-table-column prop="freight_loss_deduct_amount" label="亏吨扣减" min-width="110" />
       <el-table-column prop="freight_amount" label="应结运费" min-width="110" />
     </el-table>
+    </div>
+    <div class="page-pagination">
+      <el-pagination
+        v-model:current-page="detailOrderCurrentPage"
+        v-model:page-size="detailOrderPageSize"
+        layout="sizes, prev, pager, next, jumper, total"
+        :page-sizes="[10, 20, 50, 100]"
+        :total="detailOrderTotal"
+      />
+    </div>
+    </div>
     <template #footer>
       <el-button @click="detailDialogVisible = false">关闭</el-button>
     </template>

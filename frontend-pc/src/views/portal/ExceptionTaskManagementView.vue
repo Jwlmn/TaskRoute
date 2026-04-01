@@ -14,6 +14,8 @@ const exceptionTasks = ref([])
 const vehicles = ref([])
 const currentPage = ref(1)
 const pageSize = ref(10)
+const detailOrderCurrentPage = ref(1)
+const detailOrderPageSize = ref(10)
 const exceptionHandleDialogVisible = ref(false)
 const exceptionDetailDialogVisible = ref(false)
 const handlingTask = ref(null)
@@ -235,6 +237,11 @@ const currentExceptionHistory = computed(() => {
   return Array.isArray(history) ? [...history].reverse() : []
 })
 const selectedTaskOrders = computed(() => Array.isArray(selectedExceptionTask.value?.orders) ? selectedExceptionTask.value.orders : [])
+const pagedSelectedTaskOrders = computed(() => {
+  const start = (detailOrderCurrentPage.value - 1) * detailOrderPageSize.value
+  return selectedTaskOrders.value.slice(start, start + detailOrderPageSize.value)
+})
+const selectedTaskOrderTotal = computed(() => selectedTaskOrders.value.length)
 const primaryTaskOrder = computed(() => selectedTaskOrders.value[0] || null)
 const currentExceptionRecommendation = computed(() => {
   if (!selectedExceptionTask.value) return null
@@ -434,6 +441,7 @@ const openHandleDialog = async (task) => {
 
 const openDetailDialog = (task) => {
   selectedExceptionTask.value = task
+  detailOrderCurrentPage.value = 1
   exceptionDetailDialogVisible.value = true
 }
 const applyRecommendedHandleAction = () => {
@@ -983,7 +991,9 @@ watch(displayedExceptionTasks, (list) => {
       </el-descriptions>
 
       <el-divider content-position="left">关联订单明细</el-divider>
-      <el-table :data="selectedTaskOrders" size="small" stripe>
+      <div class="page-table-section" style="height: 280px">
+      <div class="page-table-wrap">
+      <el-table :data="pagedSelectedTaskOrders" size="small" stripe height="100%" class="page-table">
         <el-table-column prop="order_no" label="订单号" min-width="160" />
         <el-table-column prop="client_name" label="客户" min-width="140" />
         <el-table-column prop="pickup_address" label="装货地" min-width="180" show-overflow-tooltip />
@@ -999,6 +1009,17 @@ watch(displayedExceptionTasks, (list) => {
           </template>
         </el-table-column>
       </el-table>
+      </div>
+      <div class="page-pagination">
+        <el-pagination
+          v-model:current-page="detailOrderCurrentPage"
+          v-model:page-size="detailOrderPageSize"
+          layout="sizes, prev, pager, next, jumper, total"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="selectedTaskOrderTotal"
+        />
+      </div>
+      </div>
 
       <el-divider content-position="left">异常处理轨迹</el-divider>
       <el-timeline>

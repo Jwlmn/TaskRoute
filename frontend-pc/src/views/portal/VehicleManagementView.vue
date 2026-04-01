@@ -24,11 +24,26 @@ const dispatchSubmitting = ref(false)
 const selectedVehicle = ref(null)
 const vehicleAssignment = ref(null)
 const vehicleUnassigned = ref([])
+const assignedOrderCurrentPage = ref(1)
+const assignedOrderPageSize = ref(10)
+const unassignedCurrentPage = ref(1)
+const unassignedPageSize = ref(10)
 const pagedRows = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value
   return rows.value.slice(start, start + pageSize.value)
 })
 const total = computed(() => rows.value.length)
+const pagedAssignedOrders = computed(() => {
+  const list = assignedOrders()
+  const start = (assignedOrderCurrentPage.value - 1) * assignedOrderPageSize.value
+  return list.slice(start, start + assignedOrderPageSize.value)
+})
+const assignedOrderTotal = computed(() => assignedOrders().length)
+const pagedVehicleUnassigned = computed(() => {
+  const start = (unassignedCurrentPage.value - 1) * unassignedPageSize.value
+  return vehicleUnassigned.value.slice(start, start + unassignedPageSize.value)
+})
+const unassignedTotal = computed(() => vehicleUnassigned.value.length)
 
 const form = reactive({
   id: null,
@@ -201,6 +216,8 @@ const openVehicleDispatch = async (row) => {
   selectedVehicle.value = row
   vehicleAssignment.value = null
   vehicleUnassigned.value = []
+  assignedOrderCurrentPage.value = 1
+  unassignedCurrentPage.value = 1
   dispatchDialogVisible.value = true
   dispatchLoading.value = true
   try {
@@ -539,10 +556,11 @@ onMounted(async () => {
               <el-col :span="6"><el-tag>耗时：{{ vehicleAssignment.estimated_duration_min || 0 }} min</el-tag></el-col>
             </el-row>
             <el-table
-              :data="assignedOrders()"
+              :data="pagedAssignedOrders"
               size="small"
               stripe
-              max-height="260"
+              height="260"
+              class="page-table"
             >
               <el-table-column prop="order_no" label="订单号" min-width="120" show-overflow-tooltip />
               <el-table-column prop="client_name" label="客户" min-width="120" show-overflow-tooltip />
@@ -551,6 +569,15 @@ onMounted(async () => {
               <el-table-column prop="cargo_weight_kg" label="重量(kg)" min-width="90" />
               <el-table-column prop="cargo_volume_m3" label="体积(m3)" min-width="90" />
             </el-table>
+            <div class="page-pagination">
+              <el-pagination
+                v-model:current-page="assignedOrderCurrentPage"
+                v-model:page-size="assignedOrderPageSize"
+                layout="sizes, prev, pager, next, jumper, total"
+                :page-sizes="[10, 20, 50, 100]"
+                :total="assignedOrderTotal"
+              />
+            </div>
           </template>
 
           <el-alert
@@ -563,15 +590,25 @@ onMounted(async () => {
           />
           <el-table
             v-if="vehicleUnassigned.length > 0"
-            :data="vehicleUnassigned"
+            :data="pagedVehicleUnassigned"
             size="small"
             stripe
             style="margin-top: 12px"
-            max-height="280"
+            height="280"
+            class="page-table"
           >
           <el-table-column prop="order_no" label="订单号" min-width="150" />
           <el-table-column prop="reason" label="未分配原因" min-width="240" show-overflow-tooltip />
         </el-table>
+        <div v-if="vehicleUnassigned.length > 0" class="page-pagination">
+          <el-pagination
+            v-model:current-page="unassignedCurrentPage"
+            v-model:page-size="unassignedPageSize"
+            layout="sizes, prev, pager, next, jumper, total"
+            :page-sizes="[10, 20, 50, 100]"
+            :total="unassignedTotal"
+          />
+        </div>
         </template>
       </el-skeleton>
     </div>
