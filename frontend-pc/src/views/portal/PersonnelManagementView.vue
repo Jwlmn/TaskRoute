@@ -8,6 +8,8 @@ import { getLabel, roleLabelMap, userStatusLabelMap } from '../../utils/labels'
 const loading = ref(false)
 const rows = ref([])
 const sites = ref([])
+const currentPage = ref(1)
+const pageSize = ref(10)
 const dialogVisible = ref(false)
 const dialogMode = ref('create')
 const user = computed(() => readCurrentUser())
@@ -55,6 +57,11 @@ const siteOptions = computed(() =>
     value: Number(item.id),
   })),
 )
+const pagedRows = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  return rows.value.slice(start, start + pageSize.value)
+})
+const total = computed(() => rows.value.length)
 
 const buildScopePayload = () => {
   if (form.data_scope_type === 'region') {
@@ -98,6 +105,8 @@ const fetchRows = async () => {
   try {
     const { data } = await api.post('/resource/personnel/list', {})
     rows.value = data.data || []
+    const maxPage = Math.max(1, Math.ceil(rows.value.length / pageSize.value))
+    if (currentPage.value > maxPage) currentPage.value = maxPage
   } finally {
     loading.value = false
   }
@@ -180,7 +189,8 @@ onMounted(async () => {
 </script>
 
 <template>
-  <el-card shadow="never">
+  <div class="page-content-shell">
+  <el-card shadow="never" class="page-card">
     <template #header>
       <div class="table-header">
         <span class="card-title">人员与账号管理</span>
@@ -191,7 +201,9 @@ onMounted(async () => {
       </div>
     </template>
 
-    <el-table :data="rows" v-loading="loading" stripe>
+    <div class="page-table-section">
+    <div class="page-table-wrap">
+    <el-table :data="pagedRows" v-loading="loading" stripe height="100%" class="page-table">
       <el-table-column prop="account" label="账号" min-width="120" />
       <el-table-column prop="name" label="姓名" min-width="100" />
       <el-table-column label="角色" min-width="100">
@@ -216,7 +228,19 @@ onMounted(async () => {
         </template>
       </el-table-column>
     </el-table>
+    </div>
+    <div class="page-pagination">
+      <el-pagination
+        v-model:current-page="currentPage"
+        v-model:page-size="pageSize"
+        layout="prev, pager, next, total"
+        :page-sizes="[10, 20, 50]"
+        :total="total"
+      />
+    </div>
+    </div>
   </el-card>
+  </div>
 
   <el-dialog
     v-model="dialogVisible"

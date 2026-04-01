@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../../services/api'
 
@@ -10,6 +10,8 @@ const dialogMode = ref('create')
 const templates = ref([])
 const cargoCategories = ref([])
 const sites = ref([])
+const currentPage = ref(1)
+const pageSize = ref(10)
 
 const filterForm = reactive({
   keyword: '',
@@ -42,6 +44,11 @@ const schemeOptions = [
   { label: '按体积', value: 'by_volume' },
   { label: '按趟', value: 'by_trip' },
 ]
+const pagedTemplates = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  return templates.value.slice(start, start + pageSize.value)
+})
+const total = computed(() => templates.value.length)
 
 const resetForm = () => {
   form.id = null
@@ -97,6 +104,8 @@ const loadTemplates = async () => {
     if (filterForm.dropoff_site_id) payload.dropoff_site_id = filterForm.dropoff_site_id
     const { data } = await api.post('/freight-template/list', payload)
     templates.value = Array.isArray(data?.data) ? data.data : []
+    const maxPage = Math.max(1, Math.ceil(templates.value.length / pageSize.value))
+    if (currentPage.value > maxPage) currentPage.value = maxPage
   } catch (error) {
     ElMessage.error(getErrorMessage(error, '加载运费模板失败'))
   } finally {
@@ -178,7 +187,8 @@ onMounted(async () => {
 </script>
 
 <template>
-  <el-card shadow="never">
+  <div class="page-content-shell">
+  <el-card shadow="never" class="page-card">
     <template #header>
       <div class="table-header">
         <div class="card-title">运费规则中心</div>
@@ -210,11 +220,13 @@ onMounted(async () => {
         </el-select>
       </el-form-item>
       <el-form-item>
-        <el-button type="primary" @click="loadTemplates">查询</el-button>
+        <el-button type="primary" @click="currentPage = 1; loadTemplates()">查询</el-button>
       </el-form-item>
     </el-form>
 
-    <el-table :data="templates" stripe v-loading="loading">
+    <div class="page-table-section">
+    <div class="page-table-wrap">
+    <el-table :data="pagedTemplates" stripe v-loading="loading" height="100%" class="page-table">
       <el-table-column prop="name" label="模板名称" min-width="160" />
       <el-table-column prop="client_name" label="客户" min-width="130" />
       <el-table-column label="货品分类" min-width="140">
@@ -248,7 +260,19 @@ onMounted(async () => {
         </template>
       </el-table-column>
     </el-table>
+    </div>
+    <div class="page-pagination">
+      <el-pagination
+        v-model:current-page="currentPage"
+        v-model:page-size="pageSize"
+        layout="prev, pager, next, total"
+        :page-sizes="[10, 20, 50]"
+        :total="total"
+      />
+    </div>
+    </div>
   </el-card>
+  </div>
 
   <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新增运费模板' : '编辑运费模板'" width="760px" destroy-on-close>
     <el-form label-width="120px">

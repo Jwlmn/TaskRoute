@@ -26,6 +26,8 @@ const pinningId = ref(null)
 const messages = ref([])
 const selectedIds = ref([])
 const expandedMessageKeys = ref([])
+const currentPage = ref(1)
+const pageSize = ref(10)
 const detailDialogVisible = ref(false)
 const detailLoading = ref(false)
 const detailOrder = ref(null)
@@ -116,6 +118,11 @@ const displayMessages = computed(() => {
   if (!filterForm.value.task_focus) return list
   return list.filter((item) => String(item?.meta?.task_id || '') === String(filterForm.value.task_focus))
 })
+const pagedMessages = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  return displayMessages.value.slice(start, start + pageSize.value)
+})
+const totalMessages = computed(() => displayMessages.value.length)
 const isExpandedMessageRow = (row) => expandedMessageKeys.value.includes(row?.aggregate_key)
 const toggleExpandedMessageRow = (row) => {
   if (!row?.aggregate_key || row.aggregate_count <= 1) return
@@ -174,6 +181,10 @@ const loadMessages = async () => {
   try {
     const { data } = await api.post('/message/list', buildNotificationListPayload(filterForm.value))
     messages.value = sortNotificationMessages(Array.isArray(data?.data) ? data.data : [])
+    const maxPage = Math.max(1, Math.ceil(displayMessages.value.length / pageSize.value))
+    if (currentPage.value > maxPage) {
+      currentPage.value = maxPage
+    }
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '加载通知失败')
   } finally {
@@ -183,6 +194,10 @@ const loadMessages = async () => {
 
 const onSelectionChange = (rows) => {
   selectedIds.value = [...new Set(rows.flatMap((item) => getMessageRowIds(item)))]
+}
+const onSearch = async () => {
+  currentPage.value = 1
+  await loadMessages()
 }
 
 const markRead = async (id) => {
@@ -384,10 +399,18 @@ onMounted(async () => {
 watch(() => filterForm.value.task_focus, () => {
   syncTaskFocusToRoute()
 })
+
+watch(displayMessages, (list) => {
+  const maxPage = Math.max(1, Math.ceil(list.length / pageSize.value))
+  if (currentPage.value > maxPage) {
+    currentPage.value = maxPage
+  }
+})
 </script>
 
 <template>
-  <el-card shadow="never">
+  <div class="page-content-shell">
+  <el-card shadow="never" class="page-card">
     <template #header>
       <div class="table-header">
         <div class="card-title">通知中心</div>
@@ -428,11 +451,13 @@ watch(() => filterForm.value.task_focus, () => {
         </el-space>
       </el-form-item>
       <el-form-item>
-        <el-button type="primary" @click="loadMessages">查询</el-button>
+        <el-button type="primary" @click="onSearch">查询</el-button>
       </el-form-item>
     </el-form>
 
-    <el-table :data="displayMessages" stripe v-loading="loading" @selection-change="onSelectionChange">
+    <div class="page-table-section">
+    <div class="page-table-wrap">
+    <el-table :data="pagedMessages" stripe v-loading="loading" height="100%" class="page-table" @selection-change="onSelectionChange">
       <el-table-column type="selection" width="50" />
       <el-table-column label="置顶" width="70">
         <template #default="{ row }">
@@ -526,7 +551,19 @@ watch(() => filterForm.value.task_focus, () => {
         </template>
       </el-table-column>
     </el-table>
+    </div>
+    <div class="page-pagination">
+      <el-pagination
+        v-model:current-page="currentPage"
+        v-model:page-size="pageSize"
+        layout="prev, pager, next, total"
+        :page-sizes="[10, 20, 50]"
+        :total="totalMessages"
+      />
+    </div>
+    </div>
   </el-card>
+  </div>
 
   <el-dialog v-model="detailDialogVisible" title="关联订单详情" width="860px" destroy-on-close>
     <PrePlanOrderDetailContent

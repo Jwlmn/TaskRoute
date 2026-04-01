@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../../services/api'
 import {
@@ -11,6 +11,8 @@ import {
 const loading = ref(false)
 const rows = ref([])
 const sites = ref([])
+const currentPage = ref(1)
+const pageSize = ref(10)
 const dialogVisible = ref(false)
 const dialogMode = ref('create')
 const cargoCategoryOptions = ref([])
@@ -22,6 +24,11 @@ const dispatchSubmitting = ref(false)
 const selectedVehicle = ref(null)
 const vehicleAssignment = ref(null)
 const vehicleUnassigned = ref([])
+const pagedRows = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  return rows.value.slice(start, start + pageSize.value)
+})
+const total = computed(() => rows.value.length)
 
 const form = reactive({
   id: null,
@@ -73,6 +80,8 @@ const fetchRows = async () => {
   try {
     const { data } = await api.post('/resource/vehicle/list', {})
     rows.value = data.data || []
+    const maxPage = Math.max(1, Math.ceil(rows.value.length / pageSize.value))
+    if (currentPage.value > maxPage) currentPage.value = maxPage
   } finally {
     loading.value = false
   }
@@ -283,7 +292,8 @@ onMounted(async () => {
 </script>
 
 <template>
-  <el-card shadow="never">
+  <div class="page-content-shell">
+  <el-card shadow="never" class="page-card">
     <template #header>
       <div class="table-header">
         <span class="card-title">车辆资源管理</span>
@@ -291,7 +301,9 @@ onMounted(async () => {
       </div>
     </template>
 
-    <el-table :data="rows" v-loading="loading" stripe>
+    <div class="page-table-section">
+    <div class="page-table-wrap">
+    <el-table :data="pagedRows" v-loading="loading" stripe height="100%" class="page-table">
       <el-table-column prop="plate_number" label="车牌号" min-width="120" />
       <el-table-column prop="name" label="车辆名称" min-width="130" />
       <el-table-column label="车辆类型" min-width="110">
@@ -335,7 +347,19 @@ onMounted(async () => {
         </template>
       </el-table-column>
     </el-table>
+    </div>
+    <div class="page-pagination">
+      <el-pagination
+        v-model:current-page="currentPage"
+        v-model:page-size="pageSize"
+        layout="prev, pager, next, total"
+        :page-sizes="[10, 20, 50]"
+        :total="total"
+      />
+    </div>
+    </div>
   </el-card>
+  </div>
 
   <el-dialog
     v-model="dialogVisible"

@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '../../services/api'
@@ -35,6 +35,10 @@ const detailCompareLoading = ref(false)
 const detailCompareRows = ref([])
 const orders = ref([])
 const messages = ref([])
+const orderCurrentPage = ref(1)
+const orderPageSize = ref(10)
+const messageCurrentPage = ref(1)
+const messagePageSize = ref(10)
 const cargoCategories = ref([])
 const templatePreview = ref(null)
 const previewingTemplate = ref(false)
@@ -46,6 +50,16 @@ const messageFilterForm = reactive({
 })
 
 let templatePreviewTimer = null
+const pagedOrders = computed(() => {
+  const start = (orderCurrentPage.value - 1) * orderPageSize.value
+  return orders.value.slice(start, start + orderPageSize.value)
+})
+const orderTotal = computed(() => orders.value.length)
+const pagedMessages = computed(() => {
+  const start = (messageCurrentPage.value - 1) * messagePageSize.value
+  return messages.value.slice(start, start + messagePageSize.value)
+})
+const messageTotal = computed(() => messages.value.length)
 
 const form = reactive({
   id: null,
@@ -209,6 +223,8 @@ const loadOrders = async () => {
   try {
     const { data } = await api.post('/pre-plan-order/customer-list', {})
     orders.value = Array.isArray(data?.data) ? data.data : []
+    const maxPage = Math.max(1, Math.ceil(orderTotal.value / orderPageSize.value))
+    if (orderCurrentPage.value > maxPage) orderCurrentPage.value = maxPage
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '加载客户计划单失败')
   } finally {
@@ -223,6 +239,8 @@ const loadMessages = async () => {
     messages.value = sortNotificationMessages(Array.isArray(data?.data) ? data.data : [], {
       pinnedFirst: false,
     })
+    const maxPage = Math.max(1, Math.ceil(messageTotal.value / messagePageSize.value))
+    if (messageCurrentPage.value > maxPage) messageCurrentPage.value = maxPage
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '加载审核通知失败')
   } finally {
@@ -367,7 +385,8 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <el-card shadow="never">
+  <div class="page-content-shell">
+  <el-card shadow="never" class="page-section-card">
     <template #header>
       <div class="table-header">
         <div class="card-title">客户计划单</div>
@@ -378,7 +397,9 @@ onUnmounted(() => {
       </div>
     </template>
 
-    <el-table :data="orders" stripe v-loading="loading">
+    <div class="page-table-card">
+    <div class="page-table-wrap">
+    <el-table :data="pagedOrders" stripe v-loading="loading" height="100%" class="page-table">
       <el-table-column prop="order_no" label="订单号" min-width="170" />
       <el-table-column prop="client_name" label="客户" min-width="120" />
       <el-table-column prop="pickup_address" label="装货地" min-width="170" />
@@ -442,9 +463,20 @@ onUnmounted(() => {
         </template>
       </el-table-column>
     </el-table>
+    </div>
+    <div class="page-pagination">
+      <el-pagination
+        v-model:current-page="orderCurrentPage"
+        v-model:page-size="orderPageSize"
+        layout="prev, pager, next, total"
+        :page-sizes="[10, 20, 50]"
+        :total="orderTotal"
+      />
+    </div>
+    </div>
   </el-card>
 
-  <el-card shadow="never" class="mt-12">
+  <el-card shadow="never" class="page-section-card mt-12">
     <template #header>
       <div class="table-header">
         <div class="card-title">审核通知</div>
@@ -475,11 +507,13 @@ onUnmounted(() => {
         <el-checkbox v-model="messageFilterForm.pinned_only">仅看置顶</el-checkbox>
       </el-form-item>
       <el-form-item>
-        <el-button type="primary" @click="loadMessages">查询</el-button>
+        <el-button type="primary" @click="messageCurrentPage = 1; loadMessages()">查询</el-button>
       </el-form-item>
     </el-form>
 
-    <el-table :data="messages" stripe v-loading="loadingMessages">
+    <div class="page-table-card" style="height: 420px">
+    <div class="page-table-wrap">
+    <el-table :data="pagedMessages" stripe v-loading="loadingMessages" height="100%" class="page-table">
       <el-table-column label="置顶" width="70">
         <template #default="{ row }">
           <el-tag v-if="row.is_pinned" type="warning">置顶</el-tag>
@@ -551,7 +585,19 @@ onUnmounted(() => {
         </template>
       </el-table-column>
     </el-table>
+    </div>
+    <div class="page-pagination">
+      <el-pagination
+        v-model:current-page="messageCurrentPage"
+        v-model:page-size="messagePageSize"
+        layout="prev, pager, next, total"
+        :page-sizes="[10, 20, 50]"
+        :total="messageTotal"
+      />
+    </div>
+    </div>
   </el-card>
+  </div>
 
   <el-dialog
     v-model="dialogVisible"

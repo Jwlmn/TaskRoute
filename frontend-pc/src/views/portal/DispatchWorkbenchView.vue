@@ -30,6 +30,10 @@ const taskOrdersDialogVisible = ref(false)
 const selectedOrder = ref(null)
 const selectedTask = ref(null)
 const taskOrders = ref([])
+const currentPage = ref(1)
+const pageSize = ref(10)
+const taskOrderCurrentPage = ref(1)
+const taskOrderPageSize = ref(10)
 const taskOrderFilter = ref({
   keyword: '',
   status: '',
@@ -46,6 +50,16 @@ const orderMap = computed(() => {
   }
   return map
 })
+const pagedDispatchTasks = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  return dispatchTasks.value.slice(start, start + pageSize.value)
+})
+const dispatchTaskTotal = computed(() => dispatchTasks.value.length)
+const pagedTaskOrders = computed(() => {
+  const start = (taskOrderCurrentPage.value - 1) * taskOrderPageSize.value
+  return taskOrders.value.slice(start, start + taskOrderPageSize.value)
+})
+const taskOrderTotal = computed(() => taskOrders.value.length)
 
 const loadPrePlanOrders = async () => {
   const { data } = await api.post('/pre-plan-order/list', {})
@@ -59,6 +73,8 @@ const loadDispatchTasks = async () => {
     if (taskFilter.keyword.trim()) payload.keyword = taskFilter.keyword.trim()
     const { data } = await api.post('/dispatch-task/list', payload)
     dispatchTasks.value = Array.isArray(data?.data) ? data.data : []
+    const maxPage = Math.max(1, Math.ceil(dispatchTasks.value.length / pageSize.value))
+    if (currentPage.value > maxPage) currentPage.value = maxPage
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '获取调度任务失败')
   } finally {
@@ -129,6 +145,8 @@ const loadTaskOrders = async () => {
       status: taskOrderFilter.value.status || undefined,
     })
     taskOrders.value = Array.isArray(data?.data) ? data.data : []
+    const maxPage = Math.max(1, Math.ceil(taskOrders.value.length / taskOrderPageSize.value))
+    if (taskOrderCurrentPage.value > maxPage) taskOrderCurrentPage.value = maxPage
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '加载任务订单明细失败')
   } finally {
@@ -140,13 +158,23 @@ const openTaskOrdersDialog = async (task) => {
   selectedTask.value = task
   taskOrderFilter.value.keyword = ''
   taskOrderFilter.value.status = ''
+  taskOrderCurrentPage.value = 1
   taskOrdersDialogVisible.value = true
   await loadTaskOrders()
 }
 
 const resetTaskFilters = async () => {
   taskFilter.keyword = ''
+  currentPage.value = 1
   await loadDispatchTasks()
+}
+const onSearchTasks = async () => {
+  currentPage.value = 1
+  await loadDispatchTasks()
+}
+const onSearchTaskOrders = async () => {
+  taskOrderCurrentPage.value = 1
+  await loadTaskOrders()
 }
 
 const applyRouteFilters = () => {
@@ -286,7 +314,8 @@ onMounted(async () => {
 </script>
 
 <template>
-  <el-card shadow="never">
+  <div class="page-content-shell">
+  <el-card shadow="never" class="page-card">
     <template #header>
       <div class="table-header">
         <div class="card-title">调度任务管理</div>
@@ -298,7 +327,7 @@ onMounted(async () => {
         <el-input v-model="taskFilter.keyword" clearable placeholder="任务号/车辆/司机" style="width: 240px" />
       </el-form-item>
       <el-form-item>
-        <el-button type="primary" @click="loadDispatchTasks">查询</el-button>
+        <el-button type="primary" @click="onSearchTasks">查询</el-button>
         <el-button @click="resetTaskFilters">重置</el-button>
       </el-form-item>
     </el-form>
@@ -324,7 +353,9 @@ onMounted(async () => {
         </el-button>
       </template>
     </el-alert>
-    <el-table :data="dispatchTasks" stripe v-loading="loadingTasks" :row-class-name="getTaskRowClassName">
+    <div class="page-table-section">
+    <div class="page-table-wrap">
+    <el-table :data="pagedDispatchTasks" stripe v-loading="loadingTasks" height="100%" class="page-table" :row-class-name="getTaskRowClassName">
       <el-table-column prop="task_no" label="任务编号" min-width="180" />
       <el-table-column label="派单模式" min-width="180">
         <template #default="{ row }">
@@ -392,7 +423,19 @@ onMounted(async () => {
         </template>
       </el-table-column>
     </el-table>
+    </div>
+    <div class="page-pagination">
+      <el-pagination
+        v-model:current-page="currentPage"
+        v-model:page-size="pageSize"
+        layout="prev, pager, next, total"
+        :page-sizes="[10, 20, 50]"
+        :total="dispatchTaskTotal"
+      />
+    </div>
+    </div>
   </el-card>
+  </div>
 
   <el-dialog
     v-model="previewDialogVisible"
@@ -537,10 +580,12 @@ onMounted(async () => {
         </el-select>
       </el-form-item>
       <el-form-item>
-        <el-button type="primary" @click="loadTaskOrders">查询</el-button>
+        <el-button type="primary" @click="onSearchTaskOrders">查询</el-button>
       </el-form-item>
     </el-form>
-    <el-table :data="taskOrders" stripe v-loading="taskOrdersLoading">
+    <div class="page-table-section" style="height: 420px">
+    <div class="page-table-wrap">
+    <el-table :data="pagedTaskOrders" stripe v-loading="taskOrdersLoading" height="100%" class="page-table">
       <el-table-column prop="sequence" label="序号" min-width="70" />
       <el-table-column prop="order_no" label="订单号" min-width="160" />
       <el-table-column prop="client_name" label="客户" min-width="120" />
@@ -559,6 +604,17 @@ onMounted(async () => {
         </template>
       </el-table-column>
     </el-table>
+    </div>
+    <div class="page-pagination">
+      <el-pagination
+        v-model:current-page="taskOrderCurrentPage"
+        v-model:page-size="taskOrderPageSize"
+        layout="prev, pager, next, total"
+        :page-sizes="[10, 20, 50]"
+        :total="taskOrderTotal"
+      />
+    </div>
+    </div>
     <template #footer>
       <el-button @click="taskOrdersDialogVisible = false">关闭</el-button>
     </template>

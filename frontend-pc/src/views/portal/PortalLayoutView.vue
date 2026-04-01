@@ -119,7 +119,9 @@ const logout = async () => {
       </el-aside>
 
       <el-main class="portal-main">
-        <router-view />
+        <div class="portal-main-scroll">
+          <router-view />
+        </div>
       </el-main>
     </el-container>
   </el-container>

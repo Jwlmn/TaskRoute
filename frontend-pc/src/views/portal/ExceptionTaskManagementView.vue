@@ -12,6 +12,8 @@ const loadingExceptions = ref(false)
 const handlingException = ref(false)
 const exceptionTasks = ref([])
 const vehicles = ref([])
+const currentPage = ref(1)
+const pageSize = ref(10)
 const exceptionHandleDialogVisible = ref(false)
 const exceptionDetailDialogVisible = ref(false)
 const handlingTask = ref(null)
@@ -267,6 +269,11 @@ const displayedExceptionTasks = computed(() => {
     return isTaskMatchedOvertimeLevel(task)
   })
 })
+const pagedExceptionTasks = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  return displayedExceptionTasks.value.slice(start, start + pageSize.value)
+})
+const exceptionTaskTotal = computed(() => displayedExceptionTasks.value.length)
 const hasAggregationFilter = computed(() => Boolean(filterForm.value.driver_focus || filterForm.value.site_focus))
 const aggregationMatchedCount = computed(() => {
   if (filterForm.value.status !== 'pending' || !hasAggregationFilter.value) return 0
@@ -399,6 +406,8 @@ const loadExceptionTasks = async () => {
 
     const { data } = await api.post('/dispatch-task/exception-list', payload)
     exceptionTasks.value = Array.isArray(data?.data) ? data.data : []
+    const maxPage = Math.max(1, Math.ceil(displayedExceptionTasks.value.length / pageSize.value))
+    if (currentPage.value > maxPage) currentPage.value = maxPage
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '获取异常任务失败')
   } finally {
@@ -518,10 +527,18 @@ onMounted(async () => {
   await loadExceptionTasks()
   openExceptionDetailFromRoute()
 })
+
+watch(displayedExceptionTasks, (list) => {
+  const maxPage = Math.max(1, Math.ceil(list.length / pageSize.value))
+  if (currentPage.value > maxPage) {
+    currentPage.value = maxPage
+  }
+})
 </script>
 
 <template>
-  <el-card shadow="never">
+  <div class="page-content-shell">
+  <el-card shadow="never" class="page-card">
     <template #header>
       <div class="table-header">
         <div class="card-title">异常任务管理</div>
@@ -703,10 +720,12 @@ onMounted(async () => {
         </el-space>
       </el-form-item>
       <el-form-item>
-        <el-button type="primary" @click="loadExceptionTasks">查询</el-button>
+        <el-button type="primary" @click="currentPage = 1; loadExceptionTasks()">查询</el-button>
       </el-form-item>
     </el-form>
-    <el-table :data="displayedExceptionTasks" stripe v-loading="loadingExceptions">
+    <div class="page-table-section">
+    <div class="page-table-wrap">
+    <el-table :data="pagedExceptionTasks" stripe v-loading="loadingExceptions" height="100%" class="page-table">
       <el-table-column prop="task_no" label="任务编号" min-width="180" />
       <el-table-column label="当前状态" min-width="110">
         <template #default="{ row }">
@@ -804,7 +823,19 @@ onMounted(async () => {
         </template>
       </el-table-column>
     </el-table>
+    </div>
+    <div class="page-pagination">
+      <el-pagination
+        v-model:current-page="currentPage"
+        v-model:page-size="pageSize"
+        layout="prev, pager, next, total"
+        :page-sizes="[10, 20, 50]"
+        :total="exceptionTaskTotal"
+      />
+    </div>
+    </div>
   </el-card>
+  </div>
 
   <el-dialog
     v-model="exceptionHandleDialogVisible"

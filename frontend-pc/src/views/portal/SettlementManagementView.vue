@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../../services/api'
 import { exportRowsToXlsx } from '../../utils/spreadsheet'
@@ -9,6 +9,8 @@ const creating = ref(false)
 const updating = ref(false)
 const statements = ref([])
 const detail = ref(null)
+const currentPage = ref(1)
+const pageSize = ref(10)
 
 const filterForm = reactive({
   client_name: '',
@@ -44,6 +46,11 @@ const transitionMap = {
   invoiced: 'paid',
   paid: '',
 }
+const pagedStatements = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  return statements.value.slice(start, start + pageSize.value)
+})
+const total = computed(() => statements.value.length)
 
 const formatStatusLabel = (status) => statusLabelMap[status] || status || '-'
 
@@ -73,6 +80,8 @@ const loadStatements = async () => {
     if (filterForm.status) payload.status = filterForm.status
     const { data } = await api.post('/settlement/list', payload)
     statements.value = Array.isArray(data?.data) ? data.data : []
+    const maxPage = Math.max(1, Math.ceil(statements.value.length / pageSize.value))
+    if (currentPage.value > maxPage) currentPage.value = maxPage
   } catch (error) {
     ElMessage.error(getErrorMessage(error, '加载结算单失败'))
   } finally {
@@ -193,7 +202,8 @@ onMounted(loadStatements)
 </script>
 
 <template>
-  <el-card shadow="never">
+  <div class="page-content-shell">
+  <el-card shadow="never" class="page-card">
     <template #header>
       <div class="table-header">
         <div class="card-title">结算单管理</div>
@@ -218,11 +228,13 @@ onMounted(loadStatements)
         </el-select>
       </el-form-item>
       <el-form-item>
-        <el-button type="primary" @click="loadStatements">查询</el-button>
+        <el-button type="primary" @click="currentPage = 1; loadStatements()">查询</el-button>
       </el-form-item>
     </el-form>
 
-    <el-table :data="statements" stripe v-loading="loading">
+    <div class="page-table-section">
+    <div class="page-table-wrap">
+    <el-table :data="pagedStatements" stripe v-loading="loading" height="100%" class="page-table">
       <el-table-column prop="statement_no" label="结算单号" min-width="180" />
       <el-table-column prop="client_name" label="客户" min-width="140" />
       <el-table-column prop="period_start" label="周期开始" min-width="110" />
@@ -254,7 +266,19 @@ onMounted(loadStatements)
         </template>
       </el-table-column>
     </el-table>
+    </div>
+    <div class="page-pagination">
+      <el-pagination
+        v-model:current-page="currentPage"
+        v-model:page-size="pageSize"
+        layout="prev, pager, next, total"
+        :page-sizes="[10, 20, 50]"
+        :total="total"
+      />
+    </div>
+    </div>
   </el-card>
+  </div>
 
   <el-dialog v-model="createDialogVisible" title="生成结算单" width="520px" destroy-on-close>
     <el-form label-width="100px">
