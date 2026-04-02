@@ -29,12 +29,13 @@ class ExceptionSlaService
         }
 
         $now = CarbonImmutable::now();
+        $alertLevels = $this->resolveAlertLevels((string) ($exception['type'] ?? ''));
         $annotatedException = $this->annotateException($exception, $now);
         $newAlertLevels = [];
         $shouldPersist = false;
 
         if (($annotatedException['status'] ?? null) === 'pending') {
-            $newAlertLevels = $this->resolveNewAlertLevels($annotatedException);
+            $newAlertLevels = $this->resolveNewAlertLevels($annotatedException, $alertLevels);
             if ($newAlertLevels !== []) {
                 $annotatedException = $this->appendAlertHistory($annotatedException, $newAlertLevels, $now);
                 $shouldPersist = true;
@@ -64,6 +65,9 @@ class ExceptionSlaService
      */
     public function annotateException(array $exception, CarbonImmutable $now): array
     {
+        $exceptionType = (string) ($exception['type'] ?? '');
+        $policyMinutes = $this->resolvePolicyMinutes($exceptionType);
+        $alertLevels = $this->resolveAlertLevels($exceptionType);
         $reportedAt = $this->parseTime($exception['reported_at'] ?? null);
         $handledAt = $this->parseTime($exception['handled_at'] ?? null);
         $status = (string) ($exception['status'] ?? '');
@@ -74,11 +78,11 @@ class ExceptionSlaService
             $pendingMinutes = max(0, $reportedAt->diffInMinutes($pendingEnd));
         }
 
-        $deadlineAt = $reportedAt?->addMinutes(self::POLICY_MINUTES);
-        $remainingMinutes = max(0, self::POLICY_MINUTES - $pendingMinutes);
-        $overtimeMinutes = max(0, $pendingMinutes - self::POLICY_MINUTES);
-        $level = $this->resolveLevelByMinutes($pendingMinutes);
-        $nextEscalationMinute = $this->resolveNextEscalationMinute($pendingMinutes);
+        $deadlineAt = $reportedAt?->addMinutes($policyMinutes);
+        $remainingMinutes = max(0, $policyMinutes - $pendingMinutes);
+        $overtimeMinutes = max(0, $pendingMinutes - $policyMinutes);
+        $level = $this->resolveLevelByMinutes($pendingMinutes, $alertLevels);
+        $nextEscalationMinute = $this->resolveNextEscalationMinute($pendingMinutes, $alertLevels);
         $handledMinutes = null;
         if ($status === 'handled' && $reportedAt && $handledAt) {
             $handledMinutes = max(0, $reportedAt->diffInMinutes($handledAt));
@@ -93,18 +97,18 @@ class ExceptionSlaService
             ->all();
 
         $exception['sla'] = array_merge($currentSla, [
-            'policy_minutes' => self::POLICY_MINUTES,
+            'policy_minutes' => $policyMinutes,
             'pending_minutes' => $pendingMinutes,
             'remaining_minutes' => $remainingMinutes,
             'overtime_minutes' => $overtimeMinutes,
-            'is_overtime' => $pendingMinutes >= self::POLICY_MINUTES,
+            'is_overtime' => $pendingMinutes >= $policyMinutes,
             'deadline_at' => $deadlineAt?->toDateTimeString(),
             'level_code' => $level['code'],
             'level_label' => $level['label'],
             'level_type' => $level['type'],
             'next_escalation_minutes' => $nextEscalationMinute,
             'handled_minutes' => $handledMinutes,
-            'handled_overtime' => $handledMinutes !== null ? $handledMinutes >= self::POLICY_MINUTES : null,
+            'handled_overtime' => $handledMinutes !== null ? $handledMinutes >= $policyMinutes : null,
             'alerted_levels' => $currentAlerts,
         ]);
 
@@ -115,7 +119,7 @@ class ExceptionSlaService
      * @param  array<string, mixed>  $exception
      * @return array<int, array{minutes:int,code:string,label:string,type:string}>
      */
-    private function resolveNewAlertLevels(array $exception): array
+    private function resolveNewAlertLevels(array $exception, array $alertLevels): array
     {
         $sla = is_array($exception['sla'] ?? null) ? $exception['sla'] : [];
         $pendingMinutes = (int) ($sla['pending_minutes'] ?? 0);
@@ -126,7 +130,7 @@ class ExceptionSlaService
             ->values()
             ->all();
 
-        return collect(self::ALERT_LEVELS)
+        return collect($alertLevels)
             ->filter(fn ($level) => $pendingMinutes >= $level['minutes'])
             ->reject(fn ($level) => in_array($level['code'], $alerted, true))
             ->values()
@@ -226,24 +230,26 @@ class ExceptionSlaService
     /**
      * @return array{code:string,label:string,type:string}
      */
-    private function resolveLevelByMinutes(int $pendingMinutes): array
+    private function resolveLevelByMinutes(int $pendingMinutes, array $alertLevels): array
     {
-        if ($pendingMinutes >= 120) {
-            return ['code' => 'timeout_120', 'label' => '严重超时', 'type' => 'danger'];
-        }
-        if ($pendingMinutes >= 60) {
-            return ['code' => 'timeout_60', 'label' => '高优先级', 'type' => 'warning'];
-        }
-        if ($pendingMinutes >= 30) {
-            return ['code' => 'timeout_30', 'label' => '临近超时', 'type' => 'primary'];
+        $resolved = ['code' => 'normal', 'label' => '正常', 'type' => 'success'];
+        foreach ($alertLevels as $level) {
+            if ($pendingMinutes < $level['minutes']) {
+                break;
+            }
+            $resolved = [
+                'code' => (string) $level['code'],
+                'label' => (string) $level['label'],
+                'type' => (string) $level['type'],
+            ];
         }
 
-        return ['code' => 'normal', 'label' => '正常', 'type' => 'success'];
+        return $resolved;
     }
 
-    private function resolveNextEscalationMinute(int $pendingMinutes): ?int
+    private function resolveNextEscalationMinute(int $pendingMinutes, array $alertLevels): ?int
     {
-        foreach (self::ALERT_LEVELS as $level) {
+        foreach ($alertLevels as $level) {
             if ($pendingMinutes < $level['minutes']) {
                 return $level['minutes'] - $pendingMinutes;
             }
@@ -263,5 +269,73 @@ class ExceptionSlaService
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    private function resolvePolicyMinutes(string $exceptionType): int
+    {
+        $default = (int) config('dispatch.exception_sla.default.policy_minutes', self::POLICY_MINUTES);
+        $typed = (int) config("dispatch.exception_sla.by_type.{$exceptionType}.policy_minutes", 0);
+
+        return max(1, $typed > 0 ? $typed : $default);
+    }
+
+    /**
+     * @return array<int, array{minutes:int,code:string,label:string,type:string}>
+     */
+    private function resolveAlertLevels(string $exceptionType): array
+    {
+        $raw = config("dispatch.exception_sla.by_type.{$exceptionType}.alert_levels");
+        if (! is_array($raw) || $raw === []) {
+            $raw = config('dispatch.exception_sla.default.alert_levels', self::ALERT_LEVELS);
+        }
+
+        $levels = collect($raw)
+            ->filter(fn ($item) => is_array($item))
+            ->map(function (array $item): array {
+                $minutes = max(1, (int) ($item['minutes'] ?? 0));
+                $code = trim((string) ($item['code'] ?? ''));
+                $label = trim((string) ($item['label'] ?? ''));
+                $type = trim((string) ($item['type'] ?? ''));
+
+                return [
+                    'minutes' => $minutes,
+                    'code' => $code !== '' ? $code : "timeout_{$minutes}",
+                    'label' => $label !== '' ? $label : $this->resolveDefaultLabel($minutes),
+                    'type' => $type !== '' ? $type : $this->resolveDefaultTagType($minutes),
+                ];
+            })
+            ->sortBy('minutes')
+            ->values()
+            ->all();
+
+        if ($levels === []) {
+            return self::ALERT_LEVELS;
+        }
+
+        return $levels;
+    }
+
+    private function resolveDefaultLabel(int $minutes): string
+    {
+        if ($minutes >= 120) {
+            return '严重超时';
+        }
+        if ($minutes >= 60) {
+            return '高优先级';
+        }
+
+        return '临近超时';
+    }
+
+    private function resolveDefaultTagType(int $minutes): string
+    {
+        if ($minutes >= 120) {
+            return 'danger';
+        }
+        if ($minutes >= 60) {
+            return 'warning';
+        }
+
+        return 'primary';
     }
 }

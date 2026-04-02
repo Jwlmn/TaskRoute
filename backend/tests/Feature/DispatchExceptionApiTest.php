@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\Vehicle;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Config;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -330,5 +331,58 @@ class DispatchExceptionApiTest extends TestCase
             ->where('meta->notice_type', 'exception_sla')
             ->count();
         $this->assertSame($firstNoticeCount, $secondNoticeCount);
+    }
+
+    public function test_exception_sla_can_use_type_specific_policy_config(): void
+    {
+        Config::set('dispatch.exception_sla.by_type.traffic_jam.policy_minutes', 45);
+        Config::set('dispatch.exception_sla.by_type.traffic_jam.alert_levels', [
+            ['minutes' => 45, 'code' => 'timeout_45', 'label' => '拥堵临近超时', 'type' => 'primary'],
+            ['minutes' => 90, 'code' => 'timeout_90', 'label' => '拥堵严重超时', 'type' => 'danger'],
+        ]);
+
+        $this->seed(DatabaseSeeder::class);
+
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $driver = User::query()->where('account', 'driver')->firstOrFail();
+        $vehicle = Vehicle::query()->where('driver_id', $driver->id)->where('status', 'idle')->firstOrFail();
+        $order = PrePlanOrder::query()->where('status', 'pending')->firstOrFail();
+
+        Sanctum::actingAs($dispatcher);
+        $createResponse = $this->postJson('/api/v1/dispatch/manual-create-tasks', [
+            'assignments' => [[
+                'vehicle_id' => $vehicle->id,
+                'order_ids' => [$order->id],
+            ]],
+        ]);
+        $createResponse->assertCreated();
+        $taskId = (int) $createResponse->json('created_task_ids.0');
+
+        Sanctum::actingAs($driver);
+        $this->postJson('/api/v1/driver-task/start', ['task_id' => $taskId])->assertOk();
+        $this->postJson('/api/v1/driver-task/report-exception', [
+            'task_id' => $taskId,
+            'exception_type' => 'traffic_jam',
+            'description' => '按类型SLA配置测试',
+        ])->assertOk()
+            ->assertJsonPath('route_meta.exception.sla.policy_minutes', 45);
+
+        $task = \App\Models\DispatchTask::query()->findOrFail($taskId);
+        $routeMeta = is_array($task->route_meta) ? $task->route_meta : [];
+        $exception = is_array($routeMeta['exception'] ?? null) ? $routeMeta['exception'] : [];
+        $exception['reported_at'] = now()->subMinutes(46)->toDateTimeString();
+        $routeMeta['exception'] = $exception;
+        $task->route_meta = $routeMeta;
+        $task->save();
+
+        Sanctum::actingAs($dispatcher);
+        $this->postJson('/api/v1/dispatch-task/exception-list', [
+            'status' => 'pending',
+            'task_no' => $task->task_no,
+        ])->assertOk()
+            ->assertJsonPath('data.0.route_meta.exception.sla.policy_minutes', 45)
+            ->assertJsonPath('data.0.route_meta.exception.sla.level_code', 'timeout_45')
+            ->assertJsonPath('data.0.route_meta.exception.sla.level_label', '拥堵临近超时')
+            ->assertJsonPath('data.0.route_meta.exception.sla.level_type', 'primary');
     }
 }
