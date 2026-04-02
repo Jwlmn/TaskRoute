@@ -4,6 +4,7 @@ return [
     'exception_sla' => [
         'default' => [
             'policy_minutes' => 30,
+            'reminder_interval_minutes' => 30,
             'alert_levels' => [
                 ['minutes' => 30, 'code' => 'timeout_30', 'label' => '临近超时', 'type' => 'primary'],
                 ['minutes' => 60, 'code' => 'timeout_60', 'label' => '高优先级', 'type' => 'warning'],

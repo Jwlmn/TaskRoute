@@ -32,6 +32,7 @@ class ExceptionSlaService
         $alertLevels = $this->resolveAlertLevels((string) ($exception['type'] ?? ''));
         $annotatedException = $this->annotateException($exception, $now);
         $newAlertLevels = [];
+        $shouldSendReminder = false;
         $shouldPersist = false;
 
         if (($annotatedException['status'] ?? null) === 'pending') {
@@ -39,6 +40,12 @@ class ExceptionSlaService
             if ($newAlertLevels !== []) {
                 $annotatedException = $this->appendAlertHistory($annotatedException, $newAlertLevels, $now);
                 $shouldPersist = true;
+            } else {
+                $shouldSendReminder = $this->shouldSendReminder($annotatedException, $now);
+                if ($shouldSendReminder) {
+                    $annotatedException = $this->appendReminderHistory($annotatedException, $now);
+                    $shouldPersist = true;
+                }
             }
         }
 
@@ -54,6 +61,9 @@ class ExceptionSlaService
 
         if ($notifyOnEscalation && $newAlertLevels !== []) {
             $this->notifyEscalation($task, $annotatedException, $newAlertLevels);
+        }
+        if ($notifyOnEscalation && $shouldSendReminder) {
+            $this->notifyReminder($task, $annotatedException);
         }
 
         return $task;
@@ -172,6 +182,36 @@ class ExceptionSlaService
             'alerted_levels' => array_values(array_unique($alertedLevels)),
             'last_alert_at' => $now->toDateTimeString(),
             'current_alert_level' => end($newAlertLevels)['code'] ?? ($sla['current_alert_level'] ?? null),
+            'last_notice_at' => $now->toDateTimeString(),
+        ]);
+
+        return $exception;
+    }
+
+    /**
+     * @param  array<string, mixed>  $exception
+     * @return array<string, mixed>
+     */
+    private function appendReminderHistory(array $exception, CarbonImmutable $now): array
+    {
+        $sla = is_array($exception['sla'] ?? null) ? $exception['sla'] : [];
+        $history = is_array($exception['history'] ?? null) ? $exception['history'] : [];
+        $currentLevelLabel = (string) ($sla['level_label'] ?? '超时');
+
+        $history[] = [
+            'event' => 'sla_reminder',
+            'level_code' => $sla['level_code'] ?? null,
+            'level_label' => $currentLevelLabel,
+            'occurred_at' => $now->toDateTimeString(),
+            'operator_id' => null,
+            'operator_account' => 'system',
+            'operator_name' => '系统',
+        ];
+
+        $exception['history'] = $history;
+        $exception['sla'] = array_merge($sla, [
+            'last_notice_at' => $now->toDateTimeString(),
+            'reminder_count' => (int) ($sla['reminder_count'] ?? 0) + 1,
         ]);
 
         return $exception;
@@ -228,6 +268,45 @@ class ExceptionSlaService
     }
 
     /**
+     * @param  array<string, mixed>  $exception
+     */
+    private function notifyReminder(DispatchTask $task, array $exception): void
+    {
+        $sla = is_array($exception['sla'] ?? null) ? $exception['sla'] : [];
+        $taskNo = (string) ($task->task_no ?? '-');
+        $pendingMinutes = (int) ($sla['pending_minutes'] ?? 0);
+        $levelLabel = (string) ($sla['level_label'] ?? '超时');
+
+        $title = '异常任务持续超时催办';
+        $content = "任务 {$taskNo} 已持续待处理 {$pendingMinutes} 分钟（{$levelLabel}），请尽快处理。";
+
+        $recipientIds = User::query()
+            ->where('status', 'active')
+            ->whereIn('role', ['admin', 'dispatcher'])
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        foreach ($recipientIds as $userId) {
+            SystemMessage::query()->create([
+                'user_id' => $userId,
+                'message_type' => 'dispatch_notice',
+                'title' => $title,
+                'content' => $content,
+                'meta' => [
+                    'task_id' => (int) $task->id,
+                    'task_no' => $taskNo,
+                    'exception_type' => $exception['type'] ?? null,
+                    'sla_level_code' => $sla['level_code'] ?? null,
+                    'sla_level_label' => $levelLabel,
+                    'pending_minutes' => $pendingMinutes,
+                    'notice_type' => 'exception_sla_reminder',
+                ],
+            ]);
+        }
+    }
+
+    /**
      * @return array{code:string,label:string,type:string}
      */
     private function resolveLevelByMinutes(int $pendingMinutes, array $alertLevels): array
@@ -256,6 +335,35 @@ class ExceptionSlaService
         }
 
         return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $exception
+     */
+    private function shouldSendReminder(array $exception, CarbonImmutable $now): bool
+    {
+        $sla = is_array($exception['sla'] ?? null) ? $exception['sla'] : [];
+        $levelCode = (string) ($sla['level_code'] ?? 'normal');
+        if ($levelCode === '' || $levelCode === 'normal') {
+            return false;
+        }
+
+        $alertedLevels = collect($sla['alerted_levels'] ?? [])
+            ->map(fn ($value) => trim((string) $value))
+            ->filter()
+            ->values()
+            ->all();
+        if ($alertedLevels === []) {
+            return false;
+        }
+
+        $interval = max(5, $this->resolveReminderIntervalMinutes((string) ($exception['type'] ?? '')));
+        $lastNoticeAt = $this->parseTime($sla['last_notice_at'] ?? null);
+        if (! $lastNoticeAt) {
+            return true;
+        }
+
+        return $lastNoticeAt->diffInMinutes($now) >= $interval;
     }
 
     private function parseTime(mixed $value): ?CarbonImmutable
@@ -313,6 +421,14 @@ class ExceptionSlaService
         }
 
         return $levels;
+    }
+
+    private function resolveReminderIntervalMinutes(string $exceptionType): int
+    {
+        $default = (int) config('dispatch.exception_sla.default.reminder_interval_minutes', 30);
+        $typed = (int) config("dispatch.exception_sla.by_type.{$exceptionType}.reminder_interval_minutes", 0);
+
+        return max(5, $typed > 0 ? $typed : $default);
     }
 
     private function resolveDefaultLabel(int $minutes): string

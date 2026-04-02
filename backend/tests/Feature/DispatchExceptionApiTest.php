@@ -385,4 +385,65 @@ class DispatchExceptionApiTest extends TestCase
             ->assertJsonPath('data.0.route_meta.exception.sla.level_label', '拥堵临近超时')
             ->assertJsonPath('data.0.route_meta.exception.sla.level_type', 'primary');
     }
+
+    public function test_exception_sla_reminder_will_respect_interval_config(): void
+    {
+        Config::set('dispatch.exception_sla.default.reminder_interval_minutes', 20);
+
+        $this->seed(DatabaseSeeder::class);
+
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $driver = User::query()->where('account', 'driver')->firstOrFail();
+        $vehicle = Vehicle::query()->where('driver_id', $driver->id)->where('status', 'idle')->firstOrFail();
+        $order = PrePlanOrder::query()->where('status', 'pending')->firstOrFail();
+
+        Sanctum::actingAs($dispatcher);
+        $createResponse = $this->postJson('/api/v1/dispatch/manual-create-tasks', [
+            'assignments' => [[
+                'vehicle_id' => $vehicle->id,
+                'order_ids' => [$order->id],
+            ]],
+        ]);
+        $createResponse->assertCreated();
+        $taskId = (int) $createResponse->json('created_task_ids.0');
+
+        Sanctum::actingAs($driver);
+        $this->postJson('/api/v1/driver-task/start', ['task_id' => $taskId])->assertOk();
+        $this->postJson('/api/v1/driver-task/report-exception', [
+            'task_id' => $taskId,
+            'exception_type' => 'traffic_jam',
+            'description' => '催办间隔测试',
+        ])->assertOk();
+
+        $task = \App\Models\DispatchTask::query()->findOrFail($taskId);
+        $routeMeta = is_array($task->route_meta) ? $task->route_meta : [];
+        $exception = is_array($routeMeta['exception'] ?? null) ? $routeMeta['exception'] : [];
+        $exception['reported_at'] = now()->subMinutes(65)->toDateTimeString();
+        $routeMeta['exception'] = $exception;
+        $task->route_meta = $routeMeta;
+        $task->save();
+
+        Sanctum::actingAs($dispatcher);
+        $this->postJson('/api/v1/dispatch-task/exception-list', ['status' => 'pending'])->assertOk();
+        $initialReminderCount = SystemMessage::query()
+            ->where('meta->notice_type', 'exception_sla_reminder')
+            ->count();
+        $this->assertSame(0, $initialReminderCount);
+
+        $task->refresh();
+        $routeMeta = is_array($task->route_meta) ? $task->route_meta : [];
+        $exception = is_array($routeMeta['exception'] ?? null) ? $routeMeta['exception'] : [];
+        $sla = is_array($exception['sla'] ?? null) ? $exception['sla'] : [];
+        $sla['last_notice_at'] = now()->subMinutes(21)->toDateTimeString();
+        $exception['sla'] = $sla;
+        $routeMeta['exception'] = $exception;
+        $task->route_meta = $routeMeta;
+        $task->save();
+
+        $this->postJson('/api/v1/dispatch-task/exception-list', ['status' => 'pending'])->assertOk();
+        $afterReminderCount = SystemMessage::query()
+            ->where('meta->notice_type', 'exception_sla_reminder')
+            ->count();
+        $this->assertGreaterThan(0, $afterReminderCount);
+    }
 }
