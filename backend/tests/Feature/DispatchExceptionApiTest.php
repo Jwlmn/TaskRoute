@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\PrePlanOrder;
+use App\Models\SystemMessage;
 use App\Models\User;
 use App\Models\Vehicle;
 use Database\Seeders\DatabaseSeeder;
@@ -50,7 +51,10 @@ class DispatchExceptionApiTest extends TestCase
         $listResponse->assertOk()
             ->assertJsonPath('total', 1)
             ->assertJsonPath('data.0.id', $taskId)
-            ->assertJsonPath('data.0.route_meta.exception.description', '高架拥堵，预计延后30分钟');
+            ->assertJsonPath('data.0.route_meta.exception.description', '高架拥堵，预计延后30分钟')
+            ->assertJsonPath('data.0.route_meta.exception.sla.policy_minutes', 30);
+
+        $this->assertIsString((string) $listResponse->json('data.0.route_meta.exception.sla.level_code'));
     }
 
     public function test_dispatcher_can_handle_exception_by_reassign_vehicle(): void
@@ -269,5 +273,62 @@ class DispatchExceptionApiTest extends TestCase
             'action' => 'cancel',
             'handle_note' => '冲突处理',
         ])->assertStatus(422)->assertJsonPath('message', '当前异常已处理，请勿重复提交不同处理动作');
+    }
+
+    public function test_exception_list_will_trigger_sla_alert_message_once_per_level(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $driver = User::query()->where('account', 'driver')->firstOrFail();
+        $vehicle = Vehicle::query()->where('driver_id', $driver->id)->where('status', 'idle')->firstOrFail();
+        $order = PrePlanOrder::query()->where('status', 'pending')->firstOrFail();
+
+        Sanctum::actingAs($dispatcher);
+        $createResponse = $this->postJson('/api/v1/dispatch/manual-create-tasks', [
+            'assignments' => [[
+                'vehicle_id' => $vehicle->id,
+                'order_ids' => [$order->id],
+            ]],
+        ]);
+        $createResponse->assertCreated();
+        $taskId = (int) $createResponse->json('created_task_ids.0');
+
+        Sanctum::actingAs($driver);
+        $this->postJson('/api/v1/driver-task/start', ['task_id' => $taskId])->assertOk();
+        $this->postJson('/api/v1/driver-task/report-exception', [
+            'task_id' => $taskId,
+            'exception_type' => 'traffic_jam',
+            'description' => 'SLA 预警测试',
+        ])->assertOk();
+
+        $task = \App\Models\DispatchTask::query()->findOrFail($taskId);
+        $routeMeta = is_array($task->route_meta) ? $task->route_meta : [];
+        $exception = is_array($routeMeta['exception'] ?? null) ? $routeMeta['exception'] : [];
+        $exception['reported_at'] = now()->subMinutes(61)->toDateTimeString();
+        $routeMeta['exception'] = $exception;
+        $task->route_meta = $routeMeta;
+        $task->save();
+
+        Sanctum::actingAs($dispatcher);
+        $this->postJson('/api/v1/dispatch-task/exception-list', [
+            'status' => 'pending',
+        ])->assertOk()
+            ->assertJsonPath('data.0.route_meta.exception.sla.level_code', 'timeout_60');
+
+        $firstNoticeCount = SystemMessage::query()
+            ->where('meta->notice_type', 'exception_sla')
+            ->count();
+        $this->assertGreaterThan(0, $firstNoticeCount);
+
+        // 重复查询不应重复发送同等级告警
+        $this->postJson('/api/v1/dispatch-task/exception-list', [
+            'status' => 'pending',
+        ])->assertOk();
+
+        $secondNoticeCount = SystemMessage::query()
+            ->where('meta->notice_type', 'exception_sla')
+            ->count();
+        $this->assertSame($firstNoticeCount, $secondNoticeCount);
     }
 }

@@ -9,6 +9,7 @@ use App\Models\PrePlanOrder;
 use App\Models\TaskWaypoint;
 use App\Models\Vehicle;
 use App\Services\Auth\DataScopeService;
+use App\Services\Dispatch\ExceptionSlaService;
 use App\Services\Dispatch\SmartDispatchService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -21,6 +22,7 @@ class DriverTaskExecutionController extends Controller
     public function __construct(
         private readonly SmartDispatchService $smartDispatchService,
         private readonly DataScopeService $dataScopeService,
+        private readonly ExceptionSlaService $exceptionSlaService,
     )
     {
     }
@@ -112,7 +114,7 @@ class DriverTaskExecutionController extends Controller
                 return response()->json(['message' => '当前任务已有待处理异常，请勿重复上报'], 422);
             }
 
-            $routeMeta['exception'] = [
+            $routeMeta['exception'] = $this->exceptionSlaService->annotateException([
                 'status' => 'pending',
                 'type' => $payload['exception_type'],
                 'description' => $payload['description'],
@@ -139,7 +141,7 @@ class DriverTaskExecutionController extends Controller
                         'occurred_at' => now()->toDateTimeString(),
                     ]]
                 )),
-            ];
+            ], now()->toImmutable());
             $task->route_meta = $routeMeta;
             $task->save();
 

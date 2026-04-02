@@ -99,7 +99,15 @@ const formatVehicleDisplay = (plateNumber, name, id) => {
   return id ? `#${id}` : '-'
 }
 const formatDriverDisplay = (name, account, id) => name || account || (id ? `#${id}` : '-')
+const getExceptionSla = (task) => {
+  const sla = task?.route_meta?.exception?.sla
+  return sla && typeof sla === 'object' ? sla : null
+}
 const getPendingDurationMinutes = (task) => {
+  const sla = getExceptionSla(task)
+  if (sla && Number.isFinite(Number(sla.pending_minutes))) {
+    return Number(sla.pending_minutes)
+  }
   const reportedAt = task?.route_meta?.exception?.reported_at
   if (!reportedAt) return 0
   const date = new Date(reportedAt)
@@ -115,13 +123,29 @@ const formatPendingDurationMinutes = (minutes) => {
   return `${hours} 小时 ${remainMinutes} 分钟`
 }
 const formatPendingDuration = (task) => formatPendingDurationMinutes(getPendingDurationMinutes(task))
+const formatSlaRemaining = (task) => {
+  const sla = getExceptionSla(task)
+  if (!sla || !Number.isFinite(Number(sla.remaining_minutes))) return '-'
+  const remaining = Math.max(0, Number(sla.remaining_minutes))
+  if (remaining === 0) return '已超时'
+  return `${remaining} 分钟`
+}
 const getPendingDurationTagType = (task) => {
+  const sla = getExceptionSla(task)
+  if (sla?.level_type) return sla.level_type
   const minutes = getPendingDurationMinutes(task)
   if (minutes >= overtimeThresholdMinutes * 2) return 'danger'
   if (minutes >= overtimeThresholdMinutes) return 'warning'
   return 'info'
 }
 const getSlaLevel = (task) => {
+  const sla = getExceptionSla(task)
+  if (sla?.level_label) {
+    return {
+      label: sla.level_label,
+      type: sla.level_type || 'info',
+    }
+  }
   const minutes = getPendingDurationMinutes(task)
   if (minutes >= 120) return { label: '严重超时', type: 'danger' }
   if (minutes >= 60) return { label: '高优先级', type: 'warning' }
@@ -794,6 +818,17 @@ watch(displayedExceptionTasks, (list) => {
           <span v-else>-</span>
         </template>
       </el-table-column>
+      <el-table-column label="SLA 剩余" min-width="120">
+        <template #default="{ row }">
+          <el-tag
+            v-if="row.route_meta?.exception?.status === 'pending'"
+            :type="getPendingDurationTagType(row)"
+          >
+            {{ formatSlaRemaining(row) }}
+          </el-tag>
+          <span v-else>-</span>
+        </template>
+      </el-table-column>
       <el-table-column label="处理建议" min-width="220">
         <template #default="{ row }">
           <el-tag :type="getExceptionRecommendation(row).type">
@@ -934,6 +969,8 @@ watch(displayedExceptionTasks, (list) => {
         </el-descriptions-item>
         <el-descriptions-item label="上报时间">{{ formatDateTime(currentException.reported_at) }}</el-descriptions-item>
         <el-descriptions-item label="处理时间">{{ formatDateTime(currentException.handled_at) }}</el-descriptions-item>
+        <el-descriptions-item label="SLA 阈值">{{ Number.isFinite(Number(currentException.sla?.policy_minutes)) ? `${currentException.sla.policy_minutes} 分钟` : '-' }}</el-descriptions-item>
+        <el-descriptions-item label="已等待时长">{{ Number.isFinite(Number(currentException.sla?.pending_minutes)) ? formatPendingDurationMinutes(Number(currentException.sla.pending_minutes)) : '-' }}</el-descriptions-item>
         <el-descriptions-item label="处理动作">
           {{ getLabel(exceptionActionLabelMap, currentException.handle_action) }}
         </el-descriptions-item>

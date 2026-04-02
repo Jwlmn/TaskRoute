@@ -7,6 +7,7 @@ use App\Models\DispatchTask;
 use App\Models\SystemMessage;
 use App\Models\Vehicle;
 use App\Services\Auth\DataScopeService;
+use App\Services\Dispatch\ExceptionSlaService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -15,7 +16,10 @@ use Illuminate\Validation\ValidationException;
 
 class DispatchTaskController extends Controller
 {
-    public function __construct(private readonly DataScopeService $dataScopeService)
+    public function __construct(
+        private readonly DataScopeService $dataScopeService,
+        private readonly ExceptionSlaService $exceptionSlaService,
+    )
     {
     }
 
@@ -255,6 +259,10 @@ class DispatchTaskController extends Controller
             ])
             ->latest()
             ->get()
+            ->map(function (DispatchTask $task) use ($targetStatus): DispatchTask {
+                $syncSla = $targetStatus === 'pending';
+                return $this->exceptionSlaService->syncTaskExceptionSla($task, $syncSla);
+            })
             ->filter(function (DispatchTask $task) use ($targetStatus, $keyword, $exceptionType, $handleAction, $handledByKeyword, $handledByMe, $currentUserId): bool {
                 if ($keyword !== '' && ! str_contains((string) $task->task_no, $keyword)) {
                     return false;
@@ -480,7 +488,7 @@ class DispatchTaskController extends Controller
                 'reassign_vehicle_id' => $payload['reassign_vehicle_id'] ?? null,
             ];
 
-            $routeMeta['exception'] = array_merge($exception, [
+            $routeMeta['exception'] = $this->exceptionSlaService->annotateException(array_merge($exception, [
                 'status' => 'handled',
                 'handled_at' => now()->toDateTimeString(),
                 'handled_by' => (int) $user->id,
@@ -504,7 +512,7 @@ class DispatchTaskController extends Controller
                 'current_driver_account' => $nextDriverAccount,
                 'current_driver_name' => $nextDriverName,
                 'history' => $history,
-            ]);
+            ]), now()->toImmutable());
 
             $task->route_meta = $routeMeta;
             $task->save();

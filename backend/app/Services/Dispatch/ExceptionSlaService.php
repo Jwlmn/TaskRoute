@@ -1,0 +1,267 @@
+<?php
+
+namespace App\Services\Dispatch;
+
+use App\Models\DispatchTask;
+use App\Models\SystemMessage;
+use App\Models\User;
+use Carbon\CarbonImmutable;
+
+class ExceptionSlaService
+{
+    private const POLICY_MINUTES = 30;
+
+    /**
+     * @var array<int, array{minutes:int,code:string,label:string,type:string}>
+     */
+    private const ALERT_LEVELS = [
+        ['minutes' => 30, 'code' => 'timeout_30', 'label' => '临近超时', 'type' => 'primary'],
+        ['minutes' => 60, 'code' => 'timeout_60', 'label' => '高优先级', 'type' => 'warning'],
+        ['minutes' => 120, 'code' => 'timeout_120', 'label' => '严重超时', 'type' => 'danger'],
+    ];
+
+    public function syncTaskExceptionSla(DispatchTask $task, bool $notifyOnEscalation = true): DispatchTask
+    {
+        $routeMeta = is_array($task->route_meta) ? $task->route_meta : [];
+        $exception = is_array($routeMeta['exception'] ?? null) ? $routeMeta['exception'] : null;
+        if (! $exception) {
+            return $task;
+        }
+
+        $now = CarbonImmutable::now();
+        $annotatedException = $this->annotateException($exception, $now);
+        $newAlertLevels = [];
+        $shouldPersist = false;
+
+        if (($annotatedException['status'] ?? null) === 'pending') {
+            $newAlertLevels = $this->resolveNewAlertLevels($annotatedException);
+            if ($newAlertLevels !== []) {
+                $annotatedException = $this->appendAlertHistory($annotatedException, $newAlertLevels, $now);
+                $shouldPersist = true;
+            }
+        }
+
+        if ($shouldPersist) {
+            $routeMeta['exception'] = $annotatedException;
+            $task->route_meta = $routeMeta;
+            $task->save();
+            $task->refresh();
+        } else {
+            $routeMeta['exception'] = $annotatedException;
+            $task->setAttribute('route_meta', $routeMeta);
+        }
+
+        if ($notifyOnEscalation && $newAlertLevels !== []) {
+            $this->notifyEscalation($task, $annotatedException, $newAlertLevels);
+        }
+
+        return $task;
+    }
+
+    /**
+     * @param  array<string, mixed>  $exception
+     * @return array<string, mixed>
+     */
+    public function annotateException(array $exception, CarbonImmutable $now): array
+    {
+        $reportedAt = $this->parseTime($exception['reported_at'] ?? null);
+        $handledAt = $this->parseTime($exception['handled_at'] ?? null);
+        $status = (string) ($exception['status'] ?? '');
+
+        $pendingMinutes = 0;
+        if ($reportedAt) {
+            $pendingEnd = $status === 'handled' && $handledAt ? $handledAt : $now;
+            $pendingMinutes = max(0, $reportedAt->diffInMinutes($pendingEnd));
+        }
+
+        $deadlineAt = $reportedAt?->addMinutes(self::POLICY_MINUTES);
+        $remainingMinutes = max(0, self::POLICY_MINUTES - $pendingMinutes);
+        $overtimeMinutes = max(0, $pendingMinutes - self::POLICY_MINUTES);
+        $level = $this->resolveLevelByMinutes($pendingMinutes);
+        $nextEscalationMinute = $this->resolveNextEscalationMinute($pendingMinutes);
+        $handledMinutes = null;
+        if ($status === 'handled' && $reportedAt && $handledAt) {
+            $handledMinutes = max(0, $reportedAt->diffInMinutes($handledAt));
+        }
+
+        $currentSla = is_array($exception['sla'] ?? null) ? $exception['sla'] : [];
+        $currentAlerts = collect($currentSla['alerted_levels'] ?? [])
+            ->map(fn ($value) => trim((string) $value))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $exception['sla'] = array_merge($currentSla, [
+            'policy_minutes' => self::POLICY_MINUTES,
+            'pending_minutes' => $pendingMinutes,
+            'remaining_minutes' => $remainingMinutes,
+            'overtime_minutes' => $overtimeMinutes,
+            'is_overtime' => $pendingMinutes >= self::POLICY_MINUTES,
+            'deadline_at' => $deadlineAt?->toDateTimeString(),
+            'level_code' => $level['code'],
+            'level_label' => $level['label'],
+            'level_type' => $level['type'],
+            'next_escalation_minutes' => $nextEscalationMinute,
+            'handled_minutes' => $handledMinutes,
+            'handled_overtime' => $handledMinutes !== null ? $handledMinutes >= self::POLICY_MINUTES : null,
+            'alerted_levels' => $currentAlerts,
+        ]);
+
+        return $exception;
+    }
+
+    /**
+     * @param  array<string, mixed>  $exception
+     * @return array<int, array{minutes:int,code:string,label:string,type:string}>
+     */
+    private function resolveNewAlertLevels(array $exception): array
+    {
+        $sla = is_array($exception['sla'] ?? null) ? $exception['sla'] : [];
+        $pendingMinutes = (int) ($sla['pending_minutes'] ?? 0);
+        $alerted = collect($sla['alerted_levels'] ?? [])
+            ->map(fn ($value) => trim((string) $value))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        return collect(self::ALERT_LEVELS)
+            ->filter(fn ($level) => $pendingMinutes >= $level['minutes'])
+            ->reject(fn ($level) => in_array($level['code'], $alerted, true))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $exception
+     * @param  array<int, array{minutes:int,code:string,label:string,type:string}>  $newAlertLevels
+     * @return array<string, mixed>
+     */
+    private function appendAlertHistory(array $exception, array $newAlertLevels, CarbonImmutable $now): array
+    {
+        $sla = is_array($exception['sla'] ?? null) ? $exception['sla'] : [];
+        $history = is_array($exception['history'] ?? null) ? $exception['history'] : [];
+        $alertedLevels = collect($sla['alerted_levels'] ?? [])
+            ->map(fn ($value) => trim((string) $value))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        foreach ($newAlertLevels as $level) {
+            $alertedLevels[] = $level['code'];
+            $history[] = [
+                'event' => 'sla_alert',
+                'level_code' => $level['code'],
+                'level_label' => $level['label'],
+                'threshold_minutes' => $level['minutes'],
+                'occurred_at' => $now->toDateTimeString(),
+                'operator_id' => null,
+                'operator_account' => 'system',
+                'operator_name' => '系统',
+            ];
+        }
+
+        $exception['history'] = $history;
+        $exception['sla'] = array_merge($sla, [
+            'alerted_levels' => array_values(array_unique($alertedLevels)),
+            'last_alert_at' => $now->toDateTimeString(),
+            'current_alert_level' => end($newAlertLevels)['code'] ?? ($sla['current_alert_level'] ?? null),
+        ]);
+
+        return $exception;
+    }
+
+    /**
+     * @param  array<string, mixed>  $exception
+     * @param  array<int, array{minutes:int,code:string,label:string,type:string}>  $newAlertLevels
+     */
+    private function notifyEscalation(DispatchTask $task, array $exception, array $newAlertLevels): void
+    {
+        $sla = is_array($exception['sla'] ?? null) ? $exception['sla'] : [];
+        $highestLevel = end($newAlertLevels);
+        if (! is_array($highestLevel)) {
+            return;
+        }
+
+        $title = match ($highestLevel['code']) {
+            'timeout_120' => '异常任务严重超时预警',
+            'timeout_60' => '异常任务高优先级预警',
+            default => '异常任务超时预警',
+        };
+
+        $taskNo = (string) ($task->task_no ?? '-');
+        $pendingMinutes = (int) ($sla['pending_minutes'] ?? 0);
+        $levelLabel = (string) ($highestLevel['label'] ?? '异常预警');
+        $content = "任务 {$taskNo} 异常待处理 {$pendingMinutes} 分钟，当前等级：{$levelLabel}，请尽快处理。";
+
+        $recipientIds = User::query()
+            ->where('status', 'active')
+            ->whereIn('role', ['admin', 'dispatcher'])
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        foreach ($recipientIds as $userId) {
+            SystemMessage::query()->create([
+                'user_id' => $userId,
+                'message_type' => 'dispatch_notice',
+                'title' => $title,
+                'content' => $content,
+                'meta' => [
+                    'task_id' => (int) $task->id,
+                    'task_no' => $taskNo,
+                    'exception_type' => $exception['type'] ?? null,
+                    'sla_level_code' => $highestLevel['code'],
+                    'sla_level_label' => $levelLabel,
+                    'pending_minutes' => $pendingMinutes,
+                    'alerted_levels' => collect($newAlertLevels)->pluck('code')->values()->all(),
+                    'notice_type' => 'exception_sla',
+                ],
+            ]);
+        }
+    }
+
+    /**
+     * @return array{code:string,label:string,type:string}
+     */
+    private function resolveLevelByMinutes(int $pendingMinutes): array
+    {
+        if ($pendingMinutes >= 120) {
+            return ['code' => 'timeout_120', 'label' => '严重超时', 'type' => 'danger'];
+        }
+        if ($pendingMinutes >= 60) {
+            return ['code' => 'timeout_60', 'label' => '高优先级', 'type' => 'warning'];
+        }
+        if ($pendingMinutes >= 30) {
+            return ['code' => 'timeout_30', 'label' => '临近超时', 'type' => 'primary'];
+        }
+
+        return ['code' => 'normal', 'label' => '正常', 'type' => 'success'];
+    }
+
+    private function resolveNextEscalationMinute(int $pendingMinutes): ?int
+    {
+        foreach (self::ALERT_LEVELS as $level) {
+            if ($pendingMinutes < $level['minutes']) {
+                return $level['minutes'] - $pendingMinutes;
+            }
+        }
+
+        return null;
+    }
+
+    private function parseTime(mixed $value): ?CarbonImmutable
+    {
+        if (! is_string($value) || trim($value) === '') {
+            return null;
+        }
+
+        try {
+            return CarbonImmutable::parse($value);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+}
