@@ -30,6 +30,7 @@ const exceptionHandleDialogVisible = ref(false)
 const exceptionAssignDialogVisible = ref(false)
 const exceptionFeedbackDialogVisible = ref(false)
 const exceptionDetailDialogVisible = ref(false)
+const exceptionDetailActiveTab = ref('overview')
 const analyticsDetailDialogVisible = ref(false)
 const analyticsDetailTitle = ref('')
 const analyticsDetailDescription = ref('')
@@ -1495,6 +1496,7 @@ const openHandleDialog = async (task) => {
 const openDetailDialog = (task) => {
   selectedExceptionTask.value = task
   detailOrderCurrentPage.value = 1
+  exceptionDetailActiveTab.value = 'overview'
   exceptionDetailDialogVisible.value = true
 }
 const openAssignDialog = async (task, useCurrentUser = false) => {
@@ -1658,6 +1660,7 @@ const openExceptionDetailFromRoute = () => {
   const matchedTask = exceptionTasks.value.find((item) => item.id === focusTaskId)
   if (!matchedTask) return
   selectedExceptionTask.value = matchedTask
+  exceptionDetailActiveTab.value = 'overview'
   exceptionDetailDialogVisible.value = true
 }
 
@@ -2647,76 +2650,17 @@ watch(() => route.fullPath, async () => {
     </template>
   </el-dialog>
 
-  <el-drawer
+  <el-dialog
     v-if="!isAnalyticsPage"
     v-model="exceptionDetailDialogVisible"
     title="异常处理详情"
-    size="720px"
+    width="min(64vw, 920px)"
+    top="4vh"
+    class="exception-detail-dialog"
     destroy-on-close
   >
     <template v-if="selectedExceptionTask && currentException">
-      <el-descriptions :column="2" border size="small">
-        <el-descriptions-item label="任务编号">{{ selectedExceptionTask.task_no || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="任务状态">{{ getLabel(taskStatusLabelMap, selectedExceptionTask.status) }}</el-descriptions-item>
-        <el-descriptions-item label="异常状态">
-          <el-tag :type="exceptionStatusTagTypeMap[currentException.status] || 'info'">
-            {{ getLabel(exceptionStatusLabelMap, currentException.status) }}
-          </el-tag>
-        </el-descriptions-item>
-        <el-descriptions-item label="异常类型">{{ getLabel(exceptionTypeLabelMap, currentException.type) }}</el-descriptions-item>
-        <el-descriptions-item label="当前司机">
-          {{ selectedExceptionTask.driver?.name || '-' }}（{{ selectedExceptionTask.driver?.account || '-' }}）
-        </el-descriptions-item>
-        <el-descriptions-item label="当前车辆">
-          {{ selectedExceptionTask.vehicle?.plate_number || '-' }} {{ selectedExceptionTask.vehicle?.name || '' }}
-        </el-descriptions-item>
-        <el-descriptions-item label="上报时间">{{ formatDateTime(currentException.reported_at) }}</el-descriptions-item>
-        <el-descriptions-item label="处理时间">{{ formatDateTime(currentException.handled_at) }}</el-descriptions-item>
-        <el-descriptions-item label="SLA 阈值">{{ Number.isFinite(Number(currentException.sla?.policy_minutes)) ? `${currentException.sla.policy_minutes} 分钟` : '-' }}</el-descriptions-item>
-        <el-descriptions-item label="已等待时长">{{ Number.isFinite(Number(currentException.sla?.pending_minutes)) ? formatPendingDurationMinutes(Number(currentException.sla.pending_minutes)) : '-' }}</el-descriptions-item>
-        <el-descriptions-item label="催办间隔">{{ Number.isFinite(Number(currentException.sla?.reminder_interval_minutes)) ? `${currentException.sla.reminder_interval_minutes} 分钟` : '-' }}</el-descriptions-item>
-        <el-descriptions-item label="下次催办">{{ formatNextReminderMinutes(currentException.sla?.next_reminder_minutes) }}</el-descriptions-item>
-        <el-descriptions-item label="催办次数">{{ Number.isFinite(Number(currentException.sla?.reminder_count)) ? Number(currentException.sla.reminder_count) : 0 }}</el-descriptions-item>
-        <el-descriptions-item label="最近催办时间">{{ formatDateTime(currentException.last_reminded_at || currentException.sla?.last_notice_at) }}</el-descriptions-item>
-        <el-descriptions-item label="最近催办人">
-          {{ formatOperator(currentException.last_reminded_by_name, currentException.last_reminded_by_account, currentException.last_reminded_by) }}
-        </el-descriptions-item>
-        <el-descriptions-item label="最近反馈时间">{{ formatDateTime(currentException.last_feedback_at) }}</el-descriptions-item>
-        <el-descriptions-item label="最近反馈人">
-          {{ formatOperator(currentException.last_feedback_by_name, currentException.last_feedback_by_account, currentException.last_feedback_by) }}
-        </el-descriptions-item>
-        <el-descriptions-item label="反馈 SLA 阈值">
-          {{ Number.isFinite(Number(currentException.sla?.feedback_policy_minutes)) ? `${currentException.sla.feedback_policy_minutes} 分钟` : '-' }}
-        </el-descriptions-item>
-        <el-descriptions-item label="距上次反馈">
-          {{ Number.isFinite(Number(currentException.sla?.feedback_pending_minutes)) ? formatPendingDurationMinutes(Number(currentException.sla.feedback_pending_minutes)) : '-' }}
-        </el-descriptions-item>
-        <el-descriptions-item label="反馈 SLA 剩余">{{ formatFeedbackSlaRemaining(selectedExceptionTask) }}</el-descriptions-item>
-        <el-descriptions-item label="反馈 SLA 状态">
-          <el-tag :type="getFeedbackSlaTag(selectedExceptionTask).type">
-            {{ getFeedbackSlaTag(selectedExceptionTask).label }}
-          </el-tag>
-        </el-descriptions-item>
-        <el-descriptions-item label="最近反馈内容" :span="2">{{ currentException.last_feedback_content || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="处理动作">
-          {{ getLabel(exceptionActionLabelMap, currentException.handle_action) }}
-        </el-descriptions-item>
-        <el-descriptions-item label="上报人">
-          {{ formatOperator(currentException.reported_by_name, currentException.reported_by_account, currentException.reported_by) }}
-        </el-descriptions-item>
-        <el-descriptions-item label="处理人">
-          {{ formatOperator(currentException.handled_by_name, currentException.handled_by_account, currentException.handled_by) }}
-        </el-descriptions-item>
-        <el-descriptions-item label="当前责任人">
-          {{ formatOperator(currentException.assigned_handler_name, currentException.assigned_handler_account, currentException.assigned_handler_id) }}
-        </el-descriptions-item>
-        <el-descriptions-item label="关联节点">{{ currentException.waypoint_id || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="异常说明" :span="2">{{ currentException.description || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="处理备注" :span="2">{{ currentException.handle_note || '-' }}</el-descriptions-item>
-      </el-descriptions>
-
-      <el-divider content-position="left">快捷联动</el-divider>
-      <el-space wrap class="mb-12">
+      <div class="exception-detail-toolbar mb-12">
         <el-button type="primary" @click="jumpToDispatchTask">查看调度任务订单明细</el-button>
         <el-button @click="jumpToPrePlanOrder" :disabled="!primaryTaskOrder?.id">查看关联预计划单</el-button>
         <el-button
@@ -2743,155 +2687,224 @@ watch(() => route.fullPath, async () => {
         >
           提交反馈
         </el-button>
-      </el-space>
-
-      <el-divider content-position="left">处理建议</el-divider>
-      <el-alert
-        v-if="currentExceptionRecommendation"
-        class="mb-12"
-        :closable="false"
-        show-icon
-        :type="currentExceptionRecommendation.type"
-        :title="currentExceptionRecommendation.label"
-        :description="currentExceptionRecommendation.reason"
-      />
-
-      <el-divider content-position="left">处理前后变化</el-divider>
-      <el-descriptions :column="1" border size="small">
-        <el-descriptions-item label="任务状态">
-          {{ formatEntityChange('状态', getLabel(taskStatusLabelMap, currentException.previous_task_status), getLabel(taskStatusLabelMap, currentException.current_task_status)) }}
-        </el-descriptions-item>
-        <el-descriptions-item label="车辆变更">
-          {{
-            formatEntityChange(
-              '车辆',
-              formatVehicleDisplay(currentException.previous_vehicle_plate_number, currentException.previous_vehicle_name, currentException.previous_vehicle_id),
-              formatVehicleDisplay(currentException.current_vehicle_plate_number, currentException.current_vehicle_name, currentException.current_vehicle_id),
-            )
-          }}
-        </el-descriptions-item>
-        <el-descriptions-item label="司机变更">
-          {{
-            formatEntityChange(
-              '司机',
-              formatDriverDisplay(currentException.previous_driver_name, currentException.previous_driver_account, currentException.previous_driver_id),
-              formatDriverDisplay(currentException.current_driver_name, currentException.current_driver_account, currentException.current_driver_id),
-            )
-          }}
-        </el-descriptions-item>
-      </el-descriptions>
-
-      <el-divider content-position="left">反馈 SLA 趋势</el-divider>
-      <el-empty v-if="!feedbackSlaTrendSegments.length" description="暂无反馈趋势数据" />
-      <el-timeline v-else>
-        <el-timeline-item
-          v-for="item in feedbackSlaTrendSegments"
-          :key="item.key"
-          :timestamp="`${formatDateTime(item.start_at)} ~ ${formatDateTime(item.end_at)}`"
-          placement="top"
-        >
-          <el-card shadow="never">
-            <div class="table-header mb-8">
-              <strong>{{ item.label }}</strong>
-              <el-space>
-                <el-tag :type="item.stage === 'pending' ? 'warning' : 'info'" effect="plain">
-                  {{ item.stage === 'pending' ? '当前时段' : '历史时段' }}
-                </el-tag>
-                <el-tag :type="item.is_overtime ? 'danger' : 'success'">
-                  {{ item.is_overtime ? '已超时' : '未超时' }}
-                </el-tag>
-              </el-space>
-            </div>
-            <div>间隔时长：{{ formatPendingDurationMinutes(Number(item.gap_minutes || 0)) }}（阈值 {{ Number(item.threshold_minutes || 0) }} 分钟）</div>
-            <div v-if="item.start_detail">起点信息：{{ item.start_detail }}</div>
-            <div v-if="item.end_detail">终点信息：{{ item.end_detail }}</div>
-            <div v-if="item.operator">反馈人：{{ item.operator }}</div>
-          </el-card>
-        </el-timeline-item>
-      </el-timeline>
-
-      <el-divider content-position="left">关联订单明细</el-divider>
-      <div class="page-table-section" style="height: 280px">
-      <div class="page-table-wrap">
-      <el-table :data="pagedSelectedTaskOrders" size="small" stripe height="100%" class="page-table">
-        <el-table-column prop="order_no" label="订单号" min-width="160" />
-        <el-table-column prop="client_name" label="客户" min-width="140" />
-        <el-table-column prop="pickup_address" label="装货地" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="dropoff_address" label="卸货地" min-width="180" show-overflow-tooltip />
-        <el-table-column label="审核状态" min-width="100">
-          <template #default="{ row }">
-            {{ getLabel(auditStatusLabelMap, row.audit_status) }}
-          </template>
-        </el-table-column>
-        <el-table-column label="订单状态" min-width="100">
-          <template #default="{ row }">
-            {{ getLabel(taskStatusLabelMap, row.status) }}
-          </template>
-        </el-table-column>
-      </el-table>
       </div>
-      <div class="page-pagination">
-        <el-pagination
-          v-model:current-page="detailOrderCurrentPage"
-          v-model:page-size="detailOrderPageSize"
-          layout="sizes, prev, pager, next, jumper, total"
-          :page-sizes="[10, 20, 50, 100]"
-          :total="selectedTaskOrderTotal"
-        />
-      </div>
-      </div>
+      <el-tabs v-model="exceptionDetailActiveTab" class="exception-detail-tabs">
+        <el-tab-pane label="基础信息" name="overview">
+          <el-descriptions :column="3" border size="small">
+            <el-descriptions-item label="任务编号">{{ selectedExceptionTask.task_no || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="任务状态">{{ getLabel(taskStatusLabelMap, selectedExceptionTask.status) }}</el-descriptions-item>
+            <el-descriptions-item label="异常状态">
+              <el-tag :type="exceptionStatusTagTypeMap[currentException.status] || 'info'">
+                {{ getLabel(exceptionStatusLabelMap, currentException.status) }}
+              </el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="异常类型">{{ getLabel(exceptionTypeLabelMap, currentException.type) }}</el-descriptions-item>
+            <el-descriptions-item label="当前司机">
+              {{ selectedExceptionTask.driver?.name || '-' }}（{{ selectedExceptionTask.driver?.account || '-' }}）
+            </el-descriptions-item>
+            <el-descriptions-item label="当前车辆">
+              {{ selectedExceptionTask.vehicle?.plate_number || '-' }} {{ selectedExceptionTask.vehicle?.name || '' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="上报时间">{{ formatDateTime(currentException.reported_at) }}</el-descriptions-item>
+            <el-descriptions-item label="处理时间">{{ formatDateTime(currentException.handled_at) }}</el-descriptions-item>
+            <el-descriptions-item label="处理动作">{{ getLabel(exceptionActionLabelMap, currentException.handle_action) }}</el-descriptions-item>
+            <el-descriptions-item label="上报人">
+              {{ formatOperator(currentException.reported_by_name, currentException.reported_by_account, currentException.reported_by) }}
+            </el-descriptions-item>
+            <el-descriptions-item label="处理人">
+              {{ formatOperator(currentException.handled_by_name, currentException.handled_by_account, currentException.handled_by) }}
+            </el-descriptions-item>
+            <el-descriptions-item label="当前责任人">
+              {{ formatOperator(currentException.assigned_handler_name, currentException.assigned_handler_account, currentException.assigned_handler_id) }}
+            </el-descriptions-item>
+            <el-descriptions-item label="关联节点">{{ currentException.waypoint_id || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="异常说明" :span="3">{{ currentException.description || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="处理备注" :span="3">{{ currentException.handle_note || '-' }}</el-descriptions-item>
+          </el-descriptions>
+        </el-tab-pane>
 
-      <el-divider content-position="left">异常处理轨迹</el-divider>
-      <el-timeline>
-        <el-timeline-item
-          v-for="(item, index) in currentExceptionHistory"
-          :key="`${item.event || 'event'}-${index}`"
-          :timestamp="formatDateTime(item.occurred_at)"
-          placement="top"
-        >
-          <el-card shadow="never">
-            <div class="mb-8">
-              <strong>{{ getHistoryEventLabel(item.event) }}</strong>
-            </div>
-            <div>异常类型：{{ getLabel(exceptionTypeLabelMap, item.type) }}</div>
-            <div v-if="item.description">异常说明：{{ item.description }}</div>
-            <div v-if="item.action">处理动作：{{ getLabel(exceptionActionLabelMap, item.action) }}</div>
-            <div v-if="item.handle_note">处理备注：{{ item.handle_note }}</div>
-            <div v-if="item.remind_note">催办说明：{{ item.remind_note }}</div>
-            <div v-if="item.feedback_content">反馈内容：{{ item.feedback_content }}</div>
-            <div v-if="item.feedback_policy_minutes">反馈SLA阈值：{{ item.feedback_policy_minutes }} 分钟</div>
-            <div v-if="item.feedback_pending_minutes || item.feedback_pending_minutes === 0">
-              触发时反馈间隔：{{ item.feedback_pending_minutes }} 分钟
-            </div>
-            <div v-if="item.level_label">预警等级：{{ item.level_label }}</div>
-            <div v-if="item.threshold_minutes">触发阈值：{{ item.threshold_minutes }} 分钟</div>
-            <div v-if="item.assigned_handler_name || item.assigned_handler_account">
-              指派责任人：{{ formatOperator(item.assigned_handler_name, item.assigned_handler_account, item.assigned_handler_id) }}
-            </div>
-            <div>操作人：{{ formatOperator(item.operator_name, item.operator_account, item.operator_id) }}</div>
-            <div v-if="item.previous_task_status || item.current_task_status">
-              任务状态：{{ getLabel(taskStatusLabelMap, item.previous_task_status) }} -> {{ getLabel(taskStatusLabelMap, item.current_task_status) }}
-            </div>
-            <div v-if="item.previous_vehicle_id || item.current_vehicle_id">
-              车辆变更：{{
-                formatVehicleDisplay(item.previous_vehicle_plate_number, item.previous_vehicle_name, item.previous_vehicle_id)
-              }} -> {{
-                formatVehicleDisplay(item.current_vehicle_plate_number, item.current_vehicle_name, item.current_vehicle_id)
+        <el-tab-pane label="SLA与处理建议" name="sla">
+          <el-descriptions :column="3" border size="small">
+            <el-descriptions-item label="SLA 阈值">{{ Number.isFinite(Number(currentException.sla?.policy_minutes)) ? `${currentException.sla.policy_minutes} 分钟` : '-' }}</el-descriptions-item>
+            <el-descriptions-item label="已等待时长">{{ Number.isFinite(Number(currentException.sla?.pending_minutes)) ? formatPendingDurationMinutes(Number(currentException.sla.pending_minutes)) : '-' }}</el-descriptions-item>
+            <el-descriptions-item label="催办间隔">{{ Number.isFinite(Number(currentException.sla?.reminder_interval_minutes)) ? `${currentException.sla.reminder_interval_minutes} 分钟` : '-' }}</el-descriptions-item>
+            <el-descriptions-item label="下次催办">{{ formatNextReminderMinutes(currentException.sla?.next_reminder_minutes) }}</el-descriptions-item>
+            <el-descriptions-item label="催办次数">{{ Number.isFinite(Number(currentException.sla?.reminder_count)) ? Number(currentException.sla.reminder_count) : 0 }}</el-descriptions-item>
+            <el-descriptions-item label="最近催办时间">{{ formatDateTime(currentException.last_reminded_at || currentException.sla?.last_notice_at) }}</el-descriptions-item>
+            <el-descriptions-item label="最近催办人">
+              {{ formatOperator(currentException.last_reminded_by_name, currentException.last_reminded_by_account, currentException.last_reminded_by) }}
+            </el-descriptions-item>
+            <el-descriptions-item label="反馈 SLA 阈值">
+              {{ Number.isFinite(Number(currentException.sla?.feedback_policy_minutes)) ? `${currentException.sla.feedback_policy_minutes} 分钟` : '-' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="距上次反馈">
+              {{ Number.isFinite(Number(currentException.sla?.feedback_pending_minutes)) ? formatPendingDurationMinutes(Number(currentException.sla.feedback_pending_minutes)) : '-' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="最近反馈时间">{{ formatDateTime(currentException.last_feedback_at) }}</el-descriptions-item>
+            <el-descriptions-item label="最近反馈人">
+              {{ formatOperator(currentException.last_feedback_by_name, currentException.last_feedback_by_account, currentException.last_feedback_by) }}
+            </el-descriptions-item>
+            <el-descriptions-item label="反馈 SLA 剩余">{{ formatFeedbackSlaRemaining(selectedExceptionTask) }}</el-descriptions-item>
+            <el-descriptions-item label="反馈 SLA 状态">
+              <el-tag :type="getFeedbackSlaTag(selectedExceptionTask).type">
+                {{ getFeedbackSlaTag(selectedExceptionTask).label }}
+              </el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="最近反馈内容" :span="3">{{ currentException.last_feedback_content || '-' }}</el-descriptions-item>
+          </el-descriptions>
+
+          <el-divider content-position="left">处理建议</el-divider>
+          <el-alert
+            v-if="currentExceptionRecommendation"
+            class="mb-12"
+            :closable="false"
+            show-icon
+            :type="currentExceptionRecommendation.type"
+            :title="currentExceptionRecommendation.label"
+            :description="currentExceptionRecommendation.reason"
+          />
+
+          <el-divider content-position="left">处理前后变化</el-divider>
+          <el-descriptions :column="1" border size="small">
+            <el-descriptions-item label="任务状态">
+              {{ formatEntityChange('状态', getLabel(taskStatusLabelMap, currentException.previous_task_status), getLabel(taskStatusLabelMap, currentException.current_task_status)) }}
+            </el-descriptions-item>
+            <el-descriptions-item label="车辆变更">
+              {{
+                formatEntityChange(
+                  '车辆',
+                  formatVehicleDisplay(currentException.previous_vehicle_plate_number, currentException.previous_vehicle_name, currentException.previous_vehicle_id),
+                  formatVehicleDisplay(currentException.current_vehicle_plate_number, currentException.current_vehicle_name, currentException.current_vehicle_id),
+                )
               }}
-            </div>
-            <div v-if="item.previous_driver_id || item.current_driver_id">
-              司机变更：{{
-                formatDriverDisplay(item.previous_driver_name, item.previous_driver_account, item.previous_driver_id)
-              }} -> {{
-                formatDriverDisplay(item.current_driver_name, item.current_driver_account, item.current_driver_id)
+            </el-descriptions-item>
+            <el-descriptions-item label="司机变更">
+              {{
+                formatEntityChange(
+                  '司机',
+                  formatDriverDisplay(currentException.previous_driver_name, currentException.previous_driver_account, currentException.previous_driver_id),
+                  formatDriverDisplay(currentException.current_driver_name, currentException.current_driver_account, currentException.current_driver_id),
+                )
               }}
+            </el-descriptions-item>
+          </el-descriptions>
+        </el-tab-pane>
+
+        <el-tab-pane label="反馈趋势与轨迹" name="timeline">
+          <el-divider content-position="left">反馈 SLA 趋势</el-divider>
+          <el-empty v-if="!feedbackSlaTrendSegments.length" description="暂无反馈趋势数据" />
+          <el-timeline v-else>
+            <el-timeline-item
+              v-for="item in feedbackSlaTrendSegments"
+              :key="item.key"
+              :timestamp="`${formatDateTime(item.start_at)} ~ ${formatDateTime(item.end_at)}`"
+              placement="top"
+            >
+              <el-card shadow="never">
+                <div class="table-header mb-8">
+                  <strong>{{ item.label }}</strong>
+                  <el-space>
+                    <el-tag :type="item.stage === 'pending' ? 'warning' : 'info'" effect="plain">
+                      {{ item.stage === 'pending' ? '当前时段' : '历史时段' }}
+                    </el-tag>
+                    <el-tag :type="item.is_overtime ? 'danger' : 'success'">
+                      {{ item.is_overtime ? '已超时' : '未超时' }}
+                    </el-tag>
+                  </el-space>
+                </div>
+                <div>间隔时长：{{ formatPendingDurationMinutes(Number(item.gap_minutes || 0)) }}（阈值 {{ Number(item.threshold_minutes || 0) }} 分钟）</div>
+                <div v-if="item.start_detail">起点信息：{{ item.start_detail }}</div>
+                <div v-if="item.end_detail">终点信息：{{ item.end_detail }}</div>
+                <div v-if="item.operator">反馈人：{{ item.operator }}</div>
+              </el-card>
+            </el-timeline-item>
+          </el-timeline>
+
+          <el-divider content-position="left">异常处理轨迹</el-divider>
+          <el-timeline>
+            <el-timeline-item
+              v-for="(item, index) in currentExceptionHistory"
+              :key="`${item.event || 'event'}-${index}`"
+              :timestamp="formatDateTime(item.occurred_at)"
+              placement="top"
+            >
+              <el-card shadow="never">
+                <div class="mb-8">
+                  <strong>{{ getHistoryEventLabel(item.event) }}</strong>
+                </div>
+                <div>异常类型：{{ getLabel(exceptionTypeLabelMap, item.type) }}</div>
+                <div v-if="item.description">异常说明：{{ item.description }}</div>
+                <div v-if="item.action">处理动作：{{ getLabel(exceptionActionLabelMap, item.action) }}</div>
+                <div v-if="item.handle_note">处理备注：{{ item.handle_note }}</div>
+                <div v-if="item.remind_note">催办说明：{{ item.remind_note }}</div>
+                <div v-if="item.feedback_content">反馈内容：{{ item.feedback_content }}</div>
+                <div v-if="item.feedback_policy_minutes">反馈SLA阈值：{{ item.feedback_policy_minutes }} 分钟</div>
+                <div v-if="item.feedback_pending_minutes || item.feedback_pending_minutes === 0">
+                  触发时反馈间隔：{{ item.feedback_pending_minutes }} 分钟
+                </div>
+                <div v-if="item.level_label">预警等级：{{ item.level_label }}</div>
+                <div v-if="item.threshold_minutes">触发阈值：{{ item.threshold_minutes }} 分钟</div>
+                <div v-if="item.assigned_handler_name || item.assigned_handler_account">
+                  指派责任人：{{ formatOperator(item.assigned_handler_name, item.assigned_handler_account, item.assigned_handler_id) }}
+                </div>
+                <div>操作人：{{ formatOperator(item.operator_name, item.operator_account, item.operator_id) }}</div>
+                <div v-if="item.previous_task_status || item.current_task_status">
+                  任务状态：{{ getLabel(taskStatusLabelMap, item.previous_task_status) }} -> {{ getLabel(taskStatusLabelMap, item.current_task_status) }}
+                </div>
+                <div v-if="item.previous_vehicle_id || item.current_vehicle_id">
+                  车辆变更：{{
+                    formatVehicleDisplay(item.previous_vehicle_plate_number, item.previous_vehicle_name, item.previous_vehicle_id)
+                  }} -> {{
+                    formatVehicleDisplay(item.current_vehicle_plate_number, item.current_vehicle_name, item.current_vehicle_id)
+                  }}
+                </div>
+                <div v-if="item.previous_driver_id || item.current_driver_id">
+                  司机变更：{{
+                    formatDriverDisplay(item.previous_driver_name, item.previous_driver_account, item.previous_driver_id)
+                  }} -> {{
+                    formatDriverDisplay(item.current_driver_name, item.current_driver_account, item.current_driver_id)
+                  }}
+                </div>
+              </el-card>
+            </el-timeline-item>
+          </el-timeline>
+        </el-tab-pane>
+
+        <el-tab-pane label="关联订单" name="orders">
+          <div class="page-table-section exception-order-table-section">
+            <div class="page-table-wrap">
+              <el-table :data="pagedSelectedTaskOrders" size="small" stripe height="100%" class="page-table">
+                <el-table-column prop="order_no" label="订单号" min-width="160" />
+                <el-table-column prop="client_name" label="客户" min-width="140" />
+                <el-table-column prop="pickup_address" label="装货地" min-width="180" show-overflow-tooltip />
+                <el-table-column prop="dropoff_address" label="卸货地" min-width="180" show-overflow-tooltip />
+                <el-table-column label="审核状态" min-width="100">
+                  <template #default="{ row }">
+                    {{ getLabel(auditStatusLabelMap, row.audit_status) }}
+                  </template>
+                </el-table-column>
+                <el-table-column label="订单状态" min-width="100">
+                  <template #default="{ row }">
+                    {{ getLabel(taskStatusLabelMap, row.status) }}
+                  </template>
+                </el-table-column>
+              </el-table>
             </div>
-          </el-card>
-        </el-timeline-item>
-      </el-timeline>
+            <div class="page-pagination">
+              <el-pagination
+                v-model:current-page="detailOrderCurrentPage"
+                v-model:page-size="detailOrderPageSize"
+                layout="sizes, prev, pager, next, jumper, total"
+                :page-sizes="[10, 20, 50, 100]"
+                :total="selectedTaskOrderTotal"
+              />
+            </div>
+          </div>
+        </el-tab-pane>
+      </el-tabs>
     </template>
     <el-empty v-else description="暂无异常详情" />
-  </el-drawer>
+  </el-dialog>
 </template>
 
 <style scoped>
@@ -3013,6 +3026,41 @@ watch(() => route.fullPath, async () => {
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.exception-detail-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.exception-detail-dialog :deep(.el-dialog) {
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.exception-detail-dialog :deep(.el-dialog__body) {
+  height: calc(92vh - 120px);
+  min-height: 560px;
+  overflow: hidden;
+}
+
+.exception-detail-tabs {
+  height: 100%;
+  min-height: 0;
+}
+
+.exception-detail-tabs :deep(.el-tabs__content) {
+  height: calc(100% - 48px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.exception-order-table-section {
+  height: calc(100vh - 320px);
+  min-height: 360px;
 }
 
 .ranking-card-body {
