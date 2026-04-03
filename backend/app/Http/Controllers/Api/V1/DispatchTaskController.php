@@ -682,6 +682,59 @@ class DispatchTaskController extends Controller
         });
     }
 
+    public function remindExceptionBatch(Request $request): JsonResponse
+    {
+        if (! $request->user()?->hasAnyRole(['admin', 'dispatcher'])) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $payload = $request->validate([
+            'task_ids' => ['required', 'array', 'min:1', 'max:200'],
+            'task_ids.*' => ['integer', 'exists:dispatch_tasks,id'],
+            'remind_note' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        return DB::transaction(function () use ($payload, $request): JsonResponse {
+            $operator = $request->user();
+            $taskIds = collect($payload['task_ids'])->map(fn ($id) => (int) $id)->unique()->values();
+            $tasks = $this->dataScopeService->applyDispatchTaskScope(DispatchTask::query(), $operator)
+                ->whereIn('id', $taskIds->all())
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('id');
+            if ($tasks->count() !== $taskIds->count()) {
+                return response()->json(['message' => '存在超出当前账号可管理范围的异常任务'], 403);
+            }
+
+            $updatedCount = 0;
+            $skippedCount = 0;
+            foreach ($taskIds as $taskId) {
+                /** @var DispatchTask|null $task */
+                $task = $tasks->get((int) $taskId);
+                if (! $task) {
+                    $skippedCount++;
+                    continue;
+                }
+
+                $changed = $this->applyManualExceptionReminder(
+                    task: $task,
+                    operator: $operator,
+                    remindNote: $payload['remind_note'] ?? null,
+                );
+                if ($changed) {
+                    $updatedCount++;
+                } else {
+                    $skippedCount++;
+                }
+            }
+
+            return response()->json([
+                'updated_count' => $updatedCount,
+                'skipped_count' => $skippedCount,
+            ]);
+        });
+    }
+
     private function applyManualExceptionAssignment(
         DispatchTask $task,
         User $operator,
@@ -739,6 +792,74 @@ class DispatchTaskController extends Controller
                 'exception_type' => $exception['type'] ?? null,
                 'notice_type' => 'exception_manual_assign',
                 'assign_note' => $assignNote,
+            ],
+        ]);
+
+        return true;
+    }
+
+    private function applyManualExceptionReminder(
+        DispatchTask $task,
+        User $operator,
+        ?string $remindNote = null,
+    ): bool {
+        $routeMeta = is_array($task->route_meta) ? $task->route_meta : [];
+        $exception = is_array($routeMeta['exception'] ?? null) ? $routeMeta['exception'] : null;
+        if (! $exception || ($exception['status'] ?? null) !== 'pending') {
+            return false;
+        }
+
+        $targetHandler = User::query()
+            ->where('id', (int) ($exception['assigned_handler_id'] ?? 0))
+            ->where('status', 'active')
+            ->whereIn('role', ['admin', 'dispatcher'])
+            ->first();
+        if (! $targetHandler) {
+            return false;
+        }
+
+        $occurredAt = now()->toDateTimeString();
+        $history = is_array($exception['history'] ?? null) ? $exception['history'] : [];
+        $history[] = [
+            'event' => 'manual_reminder',
+            'operator_id' => (int) $operator->id,
+            'operator_account' => $operator->account,
+            'operator_name' => $operator->name,
+            'assigned_handler_id' => (int) $targetHandler->id,
+            'assigned_handler_account' => $targetHandler->account,
+            'assigned_handler_name' => $targetHandler->name,
+            'remind_note' => $remindNote,
+            'occurred_at' => $occurredAt,
+        ];
+
+        $sla = is_array($exception['sla'] ?? null) ? $exception['sla'] : [];
+        $sla['last_notice_at'] = $occurredAt;
+        $sla['reminder_count'] = (int) ($sla['reminder_count'] ?? 0) + 1;
+
+        $routeMeta['exception'] = array_merge($exception, [
+            'history' => $history,
+            'last_reminded_at' => $occurredAt,
+            'last_reminded_by' => (int) $operator->id,
+            'last_reminded_by_account' => $operator->account,
+            'last_reminded_by_name' => $operator->name,
+            'remind_note' => $remindNote,
+            'sla' => $sla,
+        ]);
+        $task->route_meta = $routeMeta;
+        $task->save();
+
+        $noteText = $remindNote ? "，催办说明：{$remindNote}" : '';
+        SystemMessage::query()->create([
+            'user_id' => (int) $targetHandler->id,
+            'message_type' => 'dispatch_notice',
+            'title' => '异常任务待你处理',
+            'content' => "任务 {$task->task_no} 异常已由 {$operator->name} 催办，请尽快处理{$noteText}",
+            'meta' => [
+                'task_id' => (int) $task->id,
+                'task_no' => (string) $task->task_no,
+                'exception_type' => $exception['type'] ?? null,
+                'notice_type' => 'exception_manual_reminder',
+                'remind_note' => $remindNote,
             ],
         ]);
 

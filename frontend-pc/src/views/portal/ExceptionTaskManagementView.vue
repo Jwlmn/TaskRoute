@@ -26,6 +26,7 @@ const handlingTask = ref(null)
 const assigningTask = ref(null)
 const selectedExceptionTask = ref(null)
 const assigningExceptionHandler = ref(false)
+const remindingException = ref(false)
 const assignCandidates = ref([])
 const exceptionHandleForm = ref({
   action: 'continue',
@@ -159,6 +160,7 @@ const getHistoryEventLabel = (event) => {
   if (event === 'handled') return '调度处理异常'
   if (event === 'sla_alert') return 'SLA 升级预警'
   if (event === 'sla_reminder') return 'SLA 超时催办'
+  if (event === 'manual_reminder') return '人工催办'
   if (event === 'sla_assign') return 'SLA 自动指派'
   if (event === 'manual_assign') return '人工改派责任人'
   return '系统事件'
@@ -490,6 +492,49 @@ const applyAssigneeRankingFilter = (item) => {
   if (filterForm.value.assigned_handler_id) {
     focusMatchedTask((task) => Number(task?.route_meta?.exception?.assigned_handler_id || 0) === assigneeId)
   }
+}
+const remindExceptionsByTaskIds = async (taskIds, remindNote = '') => {
+  const ids = [...new Set((Array.isArray(taskIds) ? taskIds : []).map((id) => Number(id)).filter((id) => id > 0))]
+  if (ids.length === 0) {
+    ElMessage.warning('没有可催办的异常任务')
+    return
+  }
+
+  remindingException.value = true
+  try {
+    const { data } = await api.post('/dispatch-task/exception-remind-batch', {
+      task_ids: ids,
+      remind_note: remindNote || null,
+    })
+    ElMessage.success(`催办完成：成功 ${Number(data?.updated_count || 0)} 条，跳过 ${Number(data?.skipped_count || 0)} 条`)
+    await loadExceptionTasks()
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '批量催办失败')
+  } finally {
+    remindingException.value = false
+  }
+}
+const batchRemindSelected = async () => {
+  if (selectedTaskIds.value.length === 0) {
+    ElMessage.warning('请先勾选异常任务')
+    return
+  }
+  await remindExceptionsByTaskIds(selectedTaskIds.value, '请尽快处理并同步最新进展。')
+}
+const remindAssigneeRanking = async (item) => {
+  const assigneeId = Number(item?.assigned_handler_id || 0)
+  if (assigneeId <= 0) return
+  const taskIds = exceptionTasks.value
+    .filter((task) => task?.route_meta?.exception?.status === 'pending')
+    .filter((task) => Number(task?.route_meta?.exception?.assigned_handler_id || 0) === assigneeId)
+    .map((task) => Number(task.id))
+    .filter((id) => id > 0)
+  await remindExceptionsByTaskIds(taskIds, `请优先处理你负责的异常任务（${getAssigneeRankingName(item)}）。`)
+}
+const remindSingleTask = async (task) => {
+  const taskId = Number(task?.id || 0)
+  if (taskId <= 0) return
+  await remindExceptionsByTaskIds([taskId], `任务 ${task?.task_no || ''} 存在待处理异常，请尽快跟进。`)
 }
 
 watch(() => filterForm.value.status, (status) => {
@@ -868,6 +913,15 @@ watch(displayedExceptionTasks, (list) => {
               <span class="text-secondary">
                 （超时 {{ Number(item.overtime_count || 0) }}，严重 {{ Number(item.severe_count || 0) }}）
               </span>
+              <el-button
+                size="small"
+                link
+                type="warning"
+                :loading="remindingException"
+                @click="remindAssigneeRanking(item)"
+              >
+                催办
+              </el-button>
             </div>
           </div>
         </el-card>
@@ -1018,6 +1072,16 @@ watch(displayedExceptionTasks, (list) => {
           批量接管（{{ selectedTaskIds.length }}）
         </el-button>
       </el-form-item>
+      <el-form-item v-if="filterForm.status === 'pending'">
+        <el-button
+          type="warning"
+          plain
+          :loading="remindingException"
+          @click="batchRemindSelected"
+        >
+          批量催办（{{ selectedTaskIds.length }}）
+        </el-button>
+      </el-form-item>
     </el-form>
     <div class="page-table-section">
     <div class="page-table-wrap">
@@ -1154,11 +1218,12 @@ watch(displayedExceptionTasks, (list) => {
           }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="240" fixed="right">
+      <el-table-column label="操作" width="300" fixed="right">
         <template #default="{ row }">
           <el-button link type="info" @click="openDetailDialog(row)">详情</el-button>
           <el-button link type="warning" :disabled="row.route_meta?.exception?.status !== 'pending'" @click="openAssignDialog(row)">指派</el-button>
           <el-button link type="success" :disabled="row.route_meta?.exception?.status !== 'pending'" @click="assignToMe(row)">接管</el-button>
+          <el-button link type="warning" :disabled="row.route_meta?.exception?.status !== 'pending'" @click="remindSingleTask(row)">催办</el-button>
           <el-button link type="primary" :disabled="row.route_meta?.exception?.status !== 'pending'" @click="openHandleDialog(row)">处理</el-button>
         </template>
       </el-table-column>
@@ -1435,6 +1500,7 @@ watch(displayedExceptionTasks, (list) => {
             <div v-if="item.description">异常说明：{{ item.description }}</div>
             <div v-if="item.action">处理动作：{{ getLabel(exceptionActionLabelMap, item.action) }}</div>
             <div v-if="item.handle_note">处理备注：{{ item.handle_note }}</div>
+            <div v-if="item.remind_note">催办说明：{{ item.remind_note }}</div>
             <div v-if="item.level_label">预警等级：{{ item.level_label }}</div>
             <div v-if="item.threshold_minutes">触发阈值：{{ item.threshold_minutes }} 分钟</div>
             <div v-if="item.assigned_handler_name || item.assigned_handler_account">

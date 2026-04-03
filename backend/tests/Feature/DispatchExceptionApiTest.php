@@ -678,4 +678,75 @@ class DispatchExceptionApiTest extends TestCase
             $this->assertSame($dispatcher->id, data_get($task->route_meta, 'exception.assigned_handler_id'));
         }
     }
+
+    public function test_admin_can_batch_remind_exception_handler(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $admin = User::query()->where('role', 'admin')->firstOrFail();
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $vehicles = Vehicle::query()->where('status', 'idle')->limit(2)->get();
+        $orders = PrePlanOrder::query()->where('status', 'pending')->limit(2)->get();
+        $this->assertCount(2, $vehicles);
+        $this->assertCount(2, $orders);
+
+        Sanctum::actingAs($admin);
+        $taskIds = [];
+        foreach ($orders as $index => $order) {
+            $resp = $this->postJson('/api/v1/dispatch/manual-create-tasks', [
+                'assignments' => [[
+                    'vehicle_id' => $vehicles[$index]->id,
+                    'order_ids' => [$order->id],
+                ]],
+            ]);
+            $resp->assertCreated();
+            $taskIds[] = (int) $resp->json('created_task_ids.0');
+        }
+
+        foreach ($taskIds as $taskId) {
+            $task = \App\Models\DispatchTask::query()->findOrFail($taskId);
+            $task->status = 'in_progress';
+            $task->route_meta = array_merge(is_array($task->route_meta) ? $task->route_meta : [], [
+                'exception' => [
+                    'status' => 'pending',
+                    'type' => 'traffic_jam',
+                    'description' => '批量催办测试',
+                    'reported_at' => now()->toDateTimeString(),
+                    'history' => [],
+                    'sla' => [
+                        'reminder_count' => 0,
+                    ],
+                ],
+            ]);
+            $task->save();
+        }
+
+        $this->postJson('/api/v1/dispatch-task/exception-assign-batch', [
+            'task_ids' => $taskIds,
+            'assigned_handler_id' => $dispatcher->id,
+            'assign_note' => '先指派再催办',
+        ])->assertOk()
+            ->assertJsonPath('updated_count', 2)
+            ->assertJsonPath('skipped_count', 0);
+
+        $this->postJson('/api/v1/dispatch-task/exception-remind-batch', [
+            'task_ids' => $taskIds,
+            'remind_note' => '请 10 分钟内反馈处理进展',
+        ])->assertOk()
+            ->assertJsonPath('updated_count', 2)
+            ->assertJsonPath('skipped_count', 0);
+
+        $reminderNoticeCount = SystemMessage::query()
+            ->where('user_id', $dispatcher->id)
+            ->where('meta->notice_type', 'exception_manual_reminder')
+            ->count();
+        $this->assertSame(2, $reminderNoticeCount);
+
+        foreach ($taskIds as $taskId) {
+            $task = \App\Models\DispatchTask::query()->findOrFail($taskId);
+            $this->assertSame(1, (int) data_get($task->route_meta, 'exception.sla.reminder_count'));
+            $history = data_get($task->route_meta, 'exception.history', []);
+            $this->assertTrue(collect($history)->contains(fn ($item) => data_get($item, 'event') === 'manual_reminder'));
+        }
+    }
 }
