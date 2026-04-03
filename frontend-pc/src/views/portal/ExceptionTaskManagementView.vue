@@ -1329,144 +1329,141 @@ watch(displayedExceptionTasks, (list) => {
       </div>
     </template>
     <template v-if="!isOperationsPage">
-    <el-row :gutter="12" class="mb-12">
-      <el-col :span="8">
-        <el-card shadow="never">
-          <div class="text-secondary mb-8">当前异常总量</div>
-          <div class="card-title">{{ exceptionTasks.length }}</div>
+    <div class="analytics-layout">
+      <div class="analytics-summary-grid">
+        <el-card shadow="never" class="analytics-summary-card">
+          <div class="analytics-kpi-label">当前异常总量</div>
+          <div class="analytics-kpi-value">{{ exceptionTasks.length }}</div>
         </el-card>
-      </el-col>
-      <el-col :span="8">
-        <el-card shadow="never">
-          <div class="text-secondary mb-8">超时异常数</div>
-          <div class="card-title">{{ overtimeExceptionCount }}</div>
+        <el-card shadow="never" class="analytics-summary-card">
+          <div class="analytics-kpi-label">超时异常数</div>
+          <div class="analytics-kpi-value">{{ overtimeExceptionCount }}</div>
           <div class="text-secondary">阈值 {{ overtimeThresholdMinutes }} 分钟</div>
         </el-card>
-      </el-col>
-      <el-col :span="8">
-        <el-card shadow="never">
-          <div class="text-secondary mb-8">最长待处理时长</div>
-          <div class="card-title">{{ longestPendingMinutes > 0 ? formatPendingDurationMinutes(longestPendingMinutes) : '-' }}</div>
+        <el-card shadow="never" class="analytics-summary-card">
+          <div class="analytics-kpi-label">最长待处理时长</div>
+          <div class="analytics-kpi-value">{{ longestPendingMinutes > 0 ? formatPendingDurationMinutes(longestPendingMinutes) : '-' }}</div>
           <div class="text-secondary">待处理 {{ pendingExceptionCount }} 条</div>
         </el-card>
-      </el-col>
-    </el-row>
-    <el-row :gutter="12" class="mb-12" v-if="filterForm.status === 'pending'">
-      <el-col :span="4">
-        <el-card shadow="never">
-          <div class="text-secondary mb-8">待处理总量</div>
-          <div class="card-title">{{ pendingTotalCount }}</div>
-        </el-card>
-      </el-col>
-      <el-col :span="4">
-        <el-card shadow="never">
-          <div class="text-secondary mb-8">已指派责任人</div>
-          <div class="card-title">{{ pendingAssignedCount }}</div>
-        </el-card>
-      </el-col>
-      <el-col :span="4">
-        <el-card shadow="never">
-          <div class="text-secondary mb-8">未指派责任人</div>
-          <div class="card-title">{{ pendingUnassignedCount }}</div>
-        </el-card>
-      </el-col>
-      <el-col :span="4">
-        <el-card shadow="never">
-          <div class="text-secondary mb-8">我负责的异常</div>
-          <div class="card-title">{{ pendingMyCount }}</div>
-        </el-card>
-      </el-col>
-      <el-col :span="4">
-        <el-card shadow="never">
-          <div class="text-secondary mb-8">无反馈异常</div>
-          <div class="card-title">{{ pendingNoFeedbackCount }}</div>
-        </el-card>
-      </el-col>
-      <el-col :span="4">
-        <el-card shadow="never">
-          <div class="text-secondary mb-8">反馈超时异常</div>
-          <div class="card-title">{{ pendingFeedbackTimeoutCount }}</div>
-        </el-card>
-      </el-col>
-    </el-row>
-    <el-card shadow="never" class="mb-12" v-if="filterForm.status === 'pending' && exceptionTypeStats.length">
-      <div class="table-header">
-        <div class="mobile-section-title">异常类型分布</div>
-        <div class="text-secondary">当前待处理池内统计</div>
       </div>
-      <el-space wrap>
-        <el-tag
-          v-for="item in exceptionTypeStats"
-          :key="item.value"
-          :type="filterForm.exception_type === item.value ? 'primary' : 'info'"
-          class="order-tag-clickable"
-          @click="filterForm.exception_type = filterForm.exception_type === item.value ? '' : item.value"
-        >
-          {{ item.label }}：{{ item.count }}
-        </el-tag>
-      </el-space>
-    </el-card>
-    <el-card shadow="never" class="mb-12" v-if="filterForm.status === 'pending' && recommendationStats.length">
-      <div class="table-header">
-        <div class="mobile-section-title">建议动作分布</div>
-        <div class="text-secondary">点击卡片可按推荐动作分流</div>
+
+      <div v-if="filterForm.status === 'pending'" class="analytics-sub-summary-grid">
+        <el-card shadow="never" class="analytics-sub-summary-card">
+          <div class="analytics-kpi-label">待处理总量</div>
+          <div class="analytics-sub-value">{{ pendingTotalCount }}</div>
+        </el-card>
+        <el-card shadow="never" class="analytics-sub-summary-card">
+          <div class="analytics-kpi-label">已指派责任人</div>
+          <div class="analytics-sub-value">{{ pendingAssignedCount }}</div>
+        </el-card>
+        <el-card shadow="never" class="analytics-sub-summary-card">
+          <div class="analytics-kpi-label">未指派责任人</div>
+          <div class="analytics-sub-value">{{ pendingUnassignedCount }}</div>
+        </el-card>
+        <el-card shadow="never" class="analytics-sub-summary-card">
+          <div class="analytics-kpi-label">我负责的异常</div>
+          <div class="analytics-sub-value">{{ pendingMyCount }}</div>
+        </el-card>
+        <el-card shadow="never" class="analytics-sub-summary-card">
+          <div class="analytics-kpi-label">无反馈异常</div>
+          <div class="analytics-sub-value">{{ pendingNoFeedbackCount }}</div>
+        </el-card>
+        <el-card shadow="never" class="analytics-sub-summary-card">
+          <div class="analytics-kpi-label">反馈超时异常</div>
+          <div class="analytics-sub-value">{{ pendingFeedbackTimeoutCount }}</div>
+        </el-card>
       </div>
-      <el-row :gutter="12">
-        <el-col v-for="item in recommendationStats" :key="item.action" :span="8">
-          <el-card
-            shadow="hover"
-            class="order-tag-clickable"
-            @click="applyRecommendationFilter(item.action)"
-          >
-            <div class="table-header">
-              <div>{{ item.label }}</div>
-              <el-tag :type="filterForm.recommendation_action === item.action ? 'primary' : item.type">
-                {{ item.count }} 条
+
+      <div v-if="filterForm.status === 'pending'" class="analytics-distribution-grid">
+        <el-card shadow="never" v-if="exceptionTypeStats.length" class="analytics-panel-card">
+          <div class="table-header">
+            <div class="mobile-section-title">异常类型分布</div>
+            <div class="text-secondary">当前待处理池内统计</div>
+          </div>
+          <el-space wrap>
+            <el-tag
+              v-for="item in exceptionTypeStats"
+              :key="item.value"
+              :type="filterForm.exception_type === item.value ? 'primary' : 'info'"
+              class="order-tag-clickable"
+              @click="filterForm.exception_type = filterForm.exception_type === item.value ? '' : item.value"
+            >
+              {{ item.label }}：{{ item.count }}
+            </el-tag>
+          </el-space>
+        </el-card>
+
+        <el-card shadow="never" v-if="recommendationStats.length" class="analytics-panel-card">
+          <div class="table-header">
+            <div class="mobile-section-title">建议动作分布</div>
+            <div class="text-secondary">点击卡片可按推荐动作分流</div>
+          </div>
+          <div class="analytics-recommend-grid">
+            <el-card
+              v-for="item in recommendationStats"
+              :key="item.action"
+              shadow="hover"
+              class="order-tag-clickable analytics-recommend-card"
+              @click="applyRecommendationFilter(item.action)"
+            >
+              <div class="table-header">
+                <div>{{ item.label }}</div>
+                <el-tag :type="filterForm.recommendation_action === item.action ? 'primary' : item.type">
+                  {{ item.count }} 条
+                </el-tag>
+              </div>
+              <div class="text-secondary">
+                {{ filterForm.recommendation_action === item.action ? '当前已按该建议筛选' : '点击查看该建议对应异常' }}
+              </div>
+            </el-card>
+          </div>
+        </el-card>
+
+        <el-card shadow="never" v-if="feedbackTimeoutTypeStats.length" class="analytics-panel-card">
+          <div class="table-header">
+            <div class="mobile-section-title">反馈超时原因分布</div>
+            <div class="text-secondary">按异常类型聚合，点击可联动筛选并催办</div>
+          </div>
+          <div class="analytics-list">
+            <div
+              v-for="item in feedbackTimeoutTypeStats"
+              :key="`feedback-timeout-${item.value}`"
+              class="analytics-list-row"
+            >
+              <el-tag
+                :type="filterForm.exception_type === item.value && filterForm.feedback_filter === 'feedback_timeout' ? 'danger' : 'warning'"
+                class="order-tag-clickable"
+                @click="applyFeedbackTimeoutTypeFilter(item.value)"
+              >
+                {{ item.label }}：{{ item.count }}
               </el-tag>
+              <el-button
+                size="small"
+                link
+                type="danger"
+                :loading="remindingException"
+                @click="remindFeedbackTimeoutByType(item)"
+              >
+                催办
+              </el-button>
             </div>
-            <div class="text-secondary">
-              {{ filterForm.recommendation_action === item.action ? '当前已按该建议筛选' : '点击查看该建议对应异常' }}
-            </div>
-          </el-card>
-        </el-col>
-      </el-row>
-    </el-card>
-    <el-card shadow="never" class="mb-12" v-if="filterForm.status === 'pending' && feedbackTimeoutTypeStats.length">
-      <div class="table-header">
-        <div class="mobile-section-title">反馈超时原因分布</div>
-        <div class="text-secondary">按异常类型聚合，点击可联动筛选并催办</div>
+          </div>
+        </el-card>
       </div>
-      <el-space wrap>
-        <span v-for="item in feedbackTimeoutTypeStats" :key="`feedback-timeout-${item.value}`" class="mobile-exception-result-line">
-          <el-tag
-            :type="filterForm.exception_type === item.value && filterForm.feedback_filter === 'feedback_timeout' ? 'danger' : 'warning'"
-            class="order-tag-clickable"
-            @click="applyFeedbackTimeoutTypeFilter(item.value)"
-          >
-            {{ item.label }}：{{ item.count }}
-          </el-tag>
-          <el-button
-            size="small"
-            link
-            type="danger"
-            :loading="remindingException"
-            @click="remindFeedbackTimeoutByType(item)"
-          >
-            催办
-          </el-button>
-        </span>
-      </el-space>
-    </el-card>
-    <el-row :gutter="12" class="mb-12" v-if="filterForm.status === 'pending'">
-      <el-col :span="6">
-        <el-card shadow="never">
+
+      <div v-if="filterForm.status === 'pending'" class="analytics-ranking-grid">
+        <el-card shadow="never" class="analytics-panel-card analytics-span-2">
           <div class="table-header">
             <div class="mobile-section-title">责任人反馈超时占比</div>
             <div class="text-secondary">Top 5</div>
           </div>
           <el-empty v-if="!assigneeFeedbackTimeoutRanking.length" :image-size="52" description="暂无反馈超时排行" />
           <div v-else class="ranking-card-body">
-            <div v-for="item in assigneeFeedbackTimeoutRanking" :key="`assignee-feedback-timeout-${item.assigned_handler_id}`" class="mobile-exception-result-line">
+            <div
+              v-for="item in assigneeFeedbackTimeoutRanking"
+              :key="`assignee-feedback-timeout-${item.assigned_handler_id}`"
+              class="analytics-list-row"
+            >
               <span class="order-tag-clickable" @click="applyAssigneeFeedbackTimeoutFilter(item)">
                 {{ getAssigneeRankingName(item) }}：{{ Number(item.feedback_timeout_count || 0) }}/{{ Number(item.pending_count || 0) }}（{{ formatRatioPercent(item.timeout_rate) }}）
               </span>
@@ -1483,12 +1480,11 @@ watch(displayedExceptionTasks, (list) => {
             </div>
           </div>
         </el-card>
-      </el-col>
-      <el-col :span="6">
-        <el-card shadow="never">
+
+        <el-card shadow="never" class="analytics-panel-card analytics-span-2">
           <div class="table-header">
             <div class="mobile-section-title">责任人反馈及时率</div>
-            <el-space wrap>
+            <el-space wrap class="analytics-controls">
               <el-segmented
                 v-model="assigneeTimelyWindow"
                 :options="[
@@ -1515,7 +1511,11 @@ watch(displayedExceptionTasks, (list) => {
           </div>
           <el-empty v-if="!assigneeFeedbackTimelyRanking.length" :image-size="52" description="暂无及时率样本" />
           <div v-else class="ranking-card-body">
-            <div v-for="item in assigneeFeedbackTimelyRanking" :key="`assignee-feedback-timely-${item.assigned_handler_id}`" class="mobile-exception-result-line">
+            <div
+              v-for="item in assigneeFeedbackTimelyRanking"
+              :key="`assignee-feedback-timely-${item.assigned_handler_id}`"
+              class="analytics-list-row"
+            >
               <span class="order-tag-clickable" @click="applyAssigneeRankingFilter(item)">
                 {{ getAssigneeRankingName(item) }}：
                 <el-tag size="small" :type="isTimelyRateLow(item) ? 'danger' : 'success'">
@@ -1536,23 +1536,24 @@ watch(displayedExceptionTasks, (list) => {
             </div>
           </div>
         </el-card>
-      </el-col>
-      <el-col :span="6">
-        <el-card shadow="never">
+
+        <el-card shadow="never" class="analytics-panel-card analytics-span-2">
           <div class="table-header">
             <div class="mobile-section-title">责任人绩效分布</div>
             <div class="text-secondary">Top 5</div>
           </div>
           <el-empty v-if="!assigneeRanking.length" :image-size="52" description="暂无责任人数据" />
           <div v-else class="ranking-card-body">
-            <div v-for="item in assigneeRanking" :key="`assignee-rank-${item.assigned_handler_id}`" class="mobile-exception-result-line">
-              <span class="order-tag-clickable" @click="applyAssigneeRankingFilter(item)">
-                {{ getAssigneeRankingName(item) }}：待处理 {{ Number(item.pending_count || 0) }} 条
-              </span>
-              <span class="text-secondary">
-                （超时 {{ Number(item.overtime_count || 0) }}，严重 {{ Number(item.severe_count || 0) }}）
-              </span>
-              <div class="text-secondary">{{ formatAssigneeRecentTimelyStats(item) }}</div>
+            <div v-for="item in assigneeRanking" :key="`assignee-rank-${item.assigned_handler_id}`" class="analytics-performance-row">
+              <div>
+                <span class="order-tag-clickable" @click="applyAssigneeRankingFilter(item)">
+                  {{ getAssigneeRankingName(item) }}：待处理 {{ Number(item.pending_count || 0) }} 条
+                </span>
+                <span class="text-secondary">
+                  （超时 {{ Number(item.overtime_count || 0) }}，严重 {{ Number(item.severe_count || 0) }}）
+                </span>
+                <div class="text-secondary">{{ formatAssigneeRecentTimelyStats(item) }}</div>
+              </div>
               <el-button
                 size="small"
                 link
@@ -1566,36 +1567,34 @@ watch(displayedExceptionTasks, (list) => {
             </div>
           </div>
         </el-card>
-      </el-col>
-      <el-col :span="3">
-        <el-card shadow="never">
+
+        <el-card shadow="never" class="analytics-panel-card">
           <div class="table-header">
             <div class="mobile-section-title">司机异常排行</div>
             <div class="text-secondary">Top 5</div>
           </div>
           <el-empty v-if="!driverExceptionRanking.length" :image-size="52" description="暂无异常数据" />
           <div v-else class="ranking-card-body">
-            <div v-for="item in driverExceptionRanking" :key="`driver-rank-${item.key}`" class="mobile-exception-result-line">
+            <div v-for="item in driverExceptionRanking" :key="`driver-rank-${item.key}`" class="analytics-list-row">
               <span class="order-tag-clickable" @click="applyDriverRankingFilter(item)">{{ item.name }}：{{ item.count }} 次</span>
             </div>
           </div>
         </el-card>
-      </el-col>
-      <el-col :span="3">
-        <el-card shadow="never">
+
+        <el-card shadow="never" class="analytics-panel-card">
           <div class="table-header">
             <div class="mobile-section-title">装货地异常排行</div>
             <div class="text-secondary">Top 5</div>
           </div>
           <el-empty v-if="!siteExceptionRanking.length" :image-size="52" description="暂无异常数据" />
           <div v-else class="ranking-card-body">
-            <div v-for="item in siteExceptionRanking" :key="`site-rank-${item.key}`" class="mobile-exception-result-line">
+            <div v-for="item in siteExceptionRanking" :key="`site-rank-${item.key}`" class="analytics-list-row">
               <span class="order-tag-clickable" @click="applySiteRankingFilter(item)">{{ item.name }}：{{ item.count }} 次</span>
             </div>
           </div>
         </el-card>
-      </el-col>
-    </el-row>
+      </div>
+    </div>
     </template>
     <template v-if="!isAnalyticsPage">
     <el-form inline class="mb-12">
@@ -2365,9 +2364,157 @@ watch(displayedExceptionTasks, (list) => {
 </template>
 
 <style scoped>
+.analytics-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.analytics-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.analytics-summary-card {
+  border-color: #e5ebf5;
+}
+
+.analytics-kpi-label {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.analytics-kpi-value {
+  margin-top: 8px;
+  color: #1f2937;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.analytics-sub-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.analytics-sub-summary-card {
+  border-color: #e5ebf5;
+}
+
+.analytics-sub-value {
+  margin-top: 6px;
+  color: #111827;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.analytics-distribution-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.analytics-panel-card {
+  border-color: #e5ebf5;
+}
+
+.analytics-recommend-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.analytics-recommend-card {
+  border: 1px solid #e9eef8;
+}
+
+.analytics-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.analytics-list-row {
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.analytics-ranking-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.analytics-span-2 {
+  grid-column: span 2;
+}
+
+.analytics-controls {
+  justify-content: flex-end;
+}
+
+.analytics-performance-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 0;
+}
+
 .ranking-card-body {
-  max-height: 170px;
+  max-height: 188px;
   overflow-y: auto;
   padding-right: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+@media (max-width: 1600px) {
+  .analytics-sub-summary-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .analytics-ranking-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .analytics-span-2 {
+    grid-column: span 1;
+  }
+}
+
+@media (max-width: 1200px) {
+  .analytics-summary-grid,
+  .analytics-distribution-grid,
+  .analytics-recommend-grid,
+  .analytics-sub-summary-grid,
+  .analytics-ranking-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .analytics-summary-grid,
+  .analytics-distribution-grid,
+  .analytics-recommend-grid,
+  .analytics-sub-summary-grid,
+  .analytics-ranking-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .analytics-kpi-value {
+    font-size: 24px;
+  }
+
+  .analytics-sub-value {
+    font-size: 20px;
+  }
 }
 </style>
