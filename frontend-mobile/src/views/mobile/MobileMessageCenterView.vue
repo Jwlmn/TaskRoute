@@ -403,6 +403,15 @@ watch(() => filterForm.dispatch_notice_type, (value) => {
   }
   syncFiltersToRoute()
 })
+
+watch([unreadManualReminderCount, unreadManualFeedbackCount], ([reminderCount, feedbackCount]) => {
+  if (filterForm.unread_manual_reminder_only && reminderCount <= 0) {
+    filterForm.unread_manual_reminder_only = false
+  }
+  if (filterForm.unread_manual_feedback_only && feedbackCount <= 0) {
+    filterForm.unread_manual_feedback_only = false
+  }
+})
 </script>
 
 <template>
