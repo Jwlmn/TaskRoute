@@ -50,7 +50,7 @@ const recentHandledExceptionTask = computed(() => driverTasks.value
 const unreadMessageCount = computed(() => driverMessages.value.filter((item) => !item?.read_at).length)
 const unreadManualReminderCount = computed(() => driverMessages.value
   .filter((item) => item?.message_type === 'dispatch_notice')
-  .filter((item) => String(item?.meta?.notice_type || '') === 'exception_manual_reminder')
+  .filter((item) => ['exception_manual_reminder', 'exception_sla_reminder', 'exception_feedback_sla'].includes(String(item?.meta?.notice_type || '')))
   .filter((item) => !item?.read_at)
   .length)
 const unreadManualFeedbackCount = computed(() => driverMessages.value
@@ -97,7 +97,7 @@ const openRecentDispatchNotifications = async () => {
 const openManualReminderMessages = async () => {
   await router.push({
     name: 'mobile-messages',
-    query: { dispatch_notice_type: 'exception_manual_reminder' },
+    query: { unread_reminder_only: '1' },
   })
 }
 const openManualFeedbackMessages = async () => {

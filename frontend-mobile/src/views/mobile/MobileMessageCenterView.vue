@@ -14,11 +14,13 @@ const messageTypeLabelMap = {
 const dispatchNoticeTypeLabelMap = {
   exception_sla: '异常SLA预警',
   exception_sla_reminder: '异常SLA催办',
+  exception_feedback_sla: '异常反馈SLA催办',
   exception_sla_assign: '异常自动指派',
   exception_manual_assign: '异常人工改派',
   exception_manual_reminder: '异常人工催办',
   exception_manual_feedback: '异常人工反馈',
 }
+const reminderNoticeTypes = ['exception_manual_reminder', 'exception_sla_reminder', 'exception_feedback_sla']
 
 const auditStatusLabelMap = {
   pending_approval: '待审核',
@@ -63,12 +65,17 @@ const getNotificationAuditStatus = (message) => message?.meta?.audit_status || '
 const getNotificationTaskNo = (message) => message?.meta?.task_no || '-'
 const getDispatchNoticeType = (message) => String(message?.meta?.notice_type || '')
 const hasUnreadDispatchNoticeType = (row, noticeType) => {
+  return hasUnreadDispatchNoticeTypes(row, [noticeType])
+}
+const hasUnreadDispatchNoticeTypes = (row, noticeTypes) => {
   if (row?.message_type !== 'dispatch_notice') return false
+  const typeSet = new Set((Array.isArray(noticeTypes) ? noticeTypes : []).map((item) => String(item)))
+  if (!typeSet.size) return false
   const aggregateItems = Array.isArray(row?.aggregate_items) ? row.aggregate_items : []
   if (aggregateItems.length > 0) {
-    return aggregateItems.some((entry) => !entry?.read_at && getDispatchNoticeType(entry) === noticeType)
+    return aggregateItems.some((entry) => !entry?.read_at && typeSet.has(getDispatchNoticeType(entry)))
   }
-  return !row?.read_at && getDispatchNoticeType(row) === noticeType
+  return !row?.read_at && typeSet.has(getDispatchNoticeType(row))
 }
 const getMessageRowIds = (row) => {
   if (Array.isArray(row?.aggregate_ids) && row.aggregate_ids.length) {
@@ -151,7 +158,7 @@ const displayMessages = computed(() => {
     : list
 
   const filteredByUnreadQuickSwitch = filteredByDispatchNoticeType
-    .filter((item) => (filterForm.unread_manual_reminder_only ? hasUnreadDispatchNoticeType(item, 'exception_manual_reminder') : true))
+    .filter((item) => (filterForm.unread_manual_reminder_only ? hasUnreadDispatchNoticeTypes(item, reminderNoticeTypes) : true))
     .filter((item) => (filterForm.unread_manual_feedback_only ? hasUnreadDispatchNoticeType(item, 'exception_manual_feedback') : true))
 
   if (!filterForm.task_focus) return filteredByUnreadQuickSwitch
@@ -160,7 +167,7 @@ const displayMessages = computed(() => {
 const unreadManualReminderCount = computed(() => messages.value
   .filter((item) => item?.message_type === 'dispatch_notice')
   .filter((item) => !item?.read_at)
-  .filter((item) => getDispatchNoticeType(item) === 'exception_manual_reminder')
+  .filter((item) => reminderNoticeTypes.includes(getDispatchNoticeType(item)))
   .length)
 const unreadManualFeedbackCount = computed(() => messages.value
   .filter((item) => item?.message_type === 'dispatch_notice')
@@ -215,6 +222,11 @@ const syncFiltersToRoute = async () => {
     nextQuery.dispatch_notice_type = String(filterForm.dispatch_notice_type)
   } else {
     delete nextQuery.dispatch_notice_type
+  }
+  if (filterForm.unread_manual_reminder_only) {
+    nextQuery.unread_reminder_only = '1'
+  } else {
+    delete nextQuery.unread_reminder_only
   }
   await router.replace({ query: nextQuery })
 }
@@ -375,6 +387,10 @@ const markRelatedTaskMessagesRead = async (taskId) => {
 onMounted(async () => {
   filterForm.task_focus = typeof route.query.task_focus === 'string' ? route.query.task_focus : ''
   filterForm.dispatch_notice_type = typeof route.query.dispatch_notice_type === 'string' ? route.query.dispatch_notice_type : ''
+  filterForm.unread_manual_reminder_only = route.query.unread_reminder_only === '1'
+  if (filterForm.unread_manual_reminder_only) {
+    filterForm.unread_manual_feedback_only = false
+  }
   if (filterForm.dispatch_notice_type && !filterForm.message_type) {
     filterForm.message_type = 'dispatch_notice'
   }
