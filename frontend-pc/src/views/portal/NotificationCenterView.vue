@@ -33,6 +33,8 @@ const detailLoading = ref(false)
 const detailOrder = ref(null)
 const detailCompareLoading = ref(false)
 const detailCompareRows = ref([])
+const savedFilterViews = ref([])
+const FILTER_VIEWS_STORAGE_KEY = 'taskroute.notification.filterViews'
 
 const currentUser = computed(() => readCurrentUser())
 const isDispatchNotificationUser = computed(() => hasPermission(currentUser.value, 'dispatch'))
@@ -206,6 +208,83 @@ const toggleUnreadFeedbackOnly = () => {
 const clearUnreadQuickFilters = () => {
   filterForm.value.unread_reminder_only = false
   filterForm.value.unread_feedback_only = false
+}
+const buildCurrentFilterSnapshot = () => ({
+  keyword: String(filterForm.value.keyword || ''),
+  read_status: String(filterForm.value.read_status || 'all'),
+  message_type: String(filterForm.value.message_type || ''),
+  dispatch_notice_type: String(filterForm.value.dispatch_notice_type || ''),
+  unread_reminder_only: Boolean(filterForm.value.unread_reminder_only),
+  unread_feedback_only: Boolean(filterForm.value.unread_feedback_only),
+  pinned_only: Boolean(filterForm.value.pinned_only),
+  task_focus: String(filterForm.value.task_focus || ''),
+})
+const loadSavedFilterViews = () => {
+  try {
+    const raw = window.localStorage.getItem(FILTER_VIEWS_STORAGE_KEY)
+    const parsed = raw ? JSON.parse(raw) : []
+    savedFilterViews.value = Array.isArray(parsed) ? parsed : []
+  } catch {
+    savedFilterViews.value = []
+  }
+}
+const persistSavedFilterViews = () => {
+  try {
+    window.localStorage.setItem(FILTER_VIEWS_STORAGE_KEY, JSON.stringify(savedFilterViews.value))
+  } catch {
+    // ignore storage errors
+  }
+}
+const saveCurrentFilterView = async () => {
+  const name = window.prompt('请输入筛选视图名称（最多20字）')
+  const normalizedName = String(name || '').trim().slice(0, 20)
+  if (!normalizedName) {
+    ElMessage.info('已取消保存筛选视图')
+    return
+  }
+  const snapshot = buildCurrentFilterSnapshot()
+  const existingIndex = savedFilterViews.value.findIndex((item) => String(item?.name || '') === normalizedName)
+  if (existingIndex >= 0) {
+    savedFilterViews.value[existingIndex] = {
+      ...savedFilterViews.value[existingIndex],
+      snapshot,
+    }
+  } else {
+    savedFilterViews.value = [
+      ...savedFilterViews.value,
+      {
+        id: Date.now(),
+        name: normalizedName,
+        snapshot,
+      },
+    ].slice(-10)
+  }
+  persistSavedFilterViews()
+  ElMessage.success('筛选视图已保存')
+}
+const applySavedFilterView = async (view) => {
+  const snapshot = view?.snapshot && typeof view.snapshot === 'object' ? view.snapshot : {}
+  filterForm.value = {
+    ...filterForm.value,
+    keyword: String(snapshot.keyword || ''),
+    read_status: String(snapshot.read_status || 'all'),
+    message_type: String(snapshot.message_type || ''),
+    dispatch_notice_type: String(snapshot.dispatch_notice_type || ''),
+    unread_reminder_only: Boolean(snapshot.unread_reminder_only),
+    unread_feedback_only: Boolean(snapshot.unread_feedback_only),
+    pinned_only: Boolean(snapshot.pinned_only),
+    task_focus: String(snapshot.task_focus || ''),
+  }
+  if (filterForm.value.unread_reminder_only && filterForm.value.unread_feedback_only) {
+    filterForm.value.unread_feedback_only = false
+  }
+  currentPage.value = 1
+  await loadMessages()
+  ElMessage.success(`已应用视图：${String(view?.name || '-')}`)
+}
+const removeSavedFilterView = (viewId) => {
+  savedFilterViews.value = savedFilterViews.value.filter((item) => Number(item?.id) !== Number(viewId))
+  persistSavedFilterViews()
 }
 const syncFiltersToRoute = async () => {
   const nextQuery = { ...route.query }
@@ -473,6 +552,7 @@ const isNotificationActionDisabled = (row) => {
 }
 
 onMounted(async () => {
+  loadSavedFilterViews()
   filterForm.value.task_focus = typeof route.query.task_focus === 'string' ? route.query.task_focus : ''
   filterForm.value.dispatch_notice_type = typeof route.query.dispatch_notice_type === 'string' ? route.query.dispatch_notice_type : ''
   filterForm.value.unread_reminder_only = route.query.unread_reminder_only === '1'
@@ -611,6 +691,23 @@ watch([unreadReminderCount, unreadFeedbackCount], ([reminderCount, feedbackCount
       </el-form-item>
       <el-form-item>
         <el-button type="primary" @click="onSearch">查询</el-button>
+      </el-form-item>
+      <el-form-item>
+        <el-button plain @click="saveCurrentFilterView">保存当前筛选</el-button>
+      </el-form-item>
+      <el-form-item v-if="savedFilterViews.length" label="已保存视图">
+        <el-space wrap>
+          <el-tag
+            v-for="view in savedFilterViews"
+            :key="`saved-filter-view-${view.id}`"
+            closable
+            class="order-tag-clickable"
+            @click="applySavedFilterView(view)"
+            @close="removeSavedFilterView(view.id)"
+          >
+            {{ view.name }}
+          </el-tag>
+        </el-space>
       </el-form-item>
     </el-form>
 
