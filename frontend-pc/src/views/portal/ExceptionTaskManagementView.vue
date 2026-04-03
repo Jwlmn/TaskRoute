@@ -155,6 +155,11 @@ const formatNextReminder = (task) => {
   if (!sla) return '-'
   return formatNextReminderMinutes(sla.next_reminder_minutes)
 }
+const isTaskInReminderCooldown = (task) => {
+  const sla = getExceptionSla(task)
+  if (!sla) return false
+  return Number(sla.next_reminder_minutes || 0) > 0
+}
 const getHistoryEventLabel = (event) => {
   if (event === 'reported') return '司机上报异常'
   if (event === 'handled') return '调度处理异常'
@@ -506,7 +511,16 @@ const remindExceptionsByTaskIds = async (taskIds, remindNote = '') => {
       task_ids: ids,
       remind_note: remindNote || null,
     })
-    ElMessage.success(`催办完成：成功 ${Number(data?.updated_count || 0)} 条，跳过 ${Number(data?.skipped_count || 0)} 条`)
+    const updatedCount = Number(data?.updated_count || 0)
+    const skippedCount = Number(data?.skipped_count || 0)
+    const cooldownCount = Number(data?.cooldown_count || 0)
+    if (updatedCount > 0) {
+      ElMessage.success(`催办完成：成功 ${updatedCount} 条，跳过 ${skippedCount} 条（冷却中 ${cooldownCount} 条）`)
+    } else if (cooldownCount > 0) {
+      ElMessage.warning('当前任务处于催办冷却期，请稍后重试')
+    } else {
+      ElMessage.info(`未催办成功：跳过 ${skippedCount} 条`)
+    }
     await loadExceptionTasks()
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '批量催办失败')
@@ -519,21 +533,38 @@ const batchRemindSelected = async () => {
     ElMessage.warning('请先勾选异常任务')
     return
   }
-  await remindExceptionsByTaskIds(selectedTaskIds.value, '请尽快处理并同步最新进展。')
+  const availableTaskIds = selectedTaskIds.value.filter((taskId) => {
+    const task = exceptionTasks.value.find((item) => Number(item.id) === Number(taskId))
+    return task && !isTaskInReminderCooldown(task)
+  })
+  if (availableTaskIds.length === 0) {
+    ElMessage.warning('所选任务均处于催办冷却期')
+    return
+  }
+  await remindExceptionsByTaskIds(availableTaskIds, '请尽快处理并同步最新进展。')
 }
 const remindAssigneeRanking = async (item) => {
   const assigneeId = Number(item?.assigned_handler_id || 0)
   if (assigneeId <= 0) return
   const taskIds = exceptionTasks.value
     .filter((task) => task?.route_meta?.exception?.status === 'pending')
+    .filter((task) => !isTaskInReminderCooldown(task))
     .filter((task) => Number(task?.route_meta?.exception?.assigned_handler_id || 0) === assigneeId)
     .map((task) => Number(task.id))
     .filter((id) => id > 0)
+  if (taskIds.length === 0) {
+    ElMessage.warning('该责任人当前异常均处于催办冷却期')
+    return
+  }
   await remindExceptionsByTaskIds(taskIds, `请优先处理你负责的异常任务（${getAssigneeRankingName(item)}）。`)
 }
 const remindSingleTask = async (task) => {
   const taskId = Number(task?.id || 0)
   if (taskId <= 0) return
+  if (isTaskInReminderCooldown(task)) {
+    ElMessage.warning('该任务处于催办冷却期，请稍后重试')
+    return
+  }
   await remindExceptionsByTaskIds([taskId], `任务 ${task?.task_no || ''} 存在待处理异常，请尽快跟进。`)
 }
 
@@ -917,6 +948,7 @@ watch(displayedExceptionTasks, (list) => {
                 size="small"
                 link
                 type="warning"
+                :disabled="remindingException || Number(item.pending_count || 0) <= 0"
                 :loading="remindingException"
                 @click="remindAssigneeRanking(item)"
               >
@@ -1177,6 +1209,14 @@ watch(displayedExceptionTasks, (list) => {
           <span v-else>-</span>
         </template>
       </el-table-column>
+      <el-table-column label="催办状态" min-width="120">
+        <template #default="{ row }">
+          <el-tag v-if="row.route_meta?.exception?.status === 'pending'" :type="isTaskInReminderCooldown(row) ? 'info' : 'success'">
+            {{ isTaskInReminderCooldown(row) ? '冷却中' : '可催办' }}
+          </el-tag>
+          <span v-else>-</span>
+        </template>
+      </el-table-column>
       <el-table-column label="处理建议" min-width="220">
         <template #default="{ row }">
           <el-tag :type="getExceptionRecommendation(row).type">
@@ -1223,7 +1263,7 @@ watch(displayedExceptionTasks, (list) => {
           <el-button link type="info" @click="openDetailDialog(row)">详情</el-button>
           <el-button link type="warning" :disabled="row.route_meta?.exception?.status !== 'pending'" @click="openAssignDialog(row)">指派</el-button>
           <el-button link type="success" :disabled="row.route_meta?.exception?.status !== 'pending'" @click="assignToMe(row)">接管</el-button>
-          <el-button link type="warning" :disabled="row.route_meta?.exception?.status !== 'pending'" @click="remindSingleTask(row)">催办</el-button>
+          <el-button link type="warning" :disabled="row.route_meta?.exception?.status !== 'pending' || isTaskInReminderCooldown(row)" @click="remindSingleTask(row)">催办</el-button>
           <el-button link type="primary" :disabled="row.route_meta?.exception?.status !== 'pending'" @click="openHandleDialog(row)">处理</el-button>
         </template>
       </el-table-column>

@@ -749,4 +749,61 @@ class DispatchExceptionApiTest extends TestCase
             $this->assertTrue(collect($history)->contains(fn ($item) => data_get($item, 'event') === 'manual_reminder'));
         }
     }
+
+    public function test_batch_remind_should_skip_tasks_in_cooldown_window(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $admin = User::query()->where('role', 'admin')->firstOrFail();
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $vehicle = Vehicle::query()->where('status', 'idle')->firstOrFail();
+        $order = PrePlanOrder::query()->where('status', 'pending')->firstOrFail();
+
+        Sanctum::actingAs($admin);
+        $createResponse = $this->postJson('/api/v1/dispatch/manual-create-tasks', [
+            'assignments' => [[
+                'vehicle_id' => $vehicle->id,
+                'order_ids' => [$order->id],
+            ]],
+        ]);
+        $createResponse->assertCreated();
+        $taskId = (int) $createResponse->json('created_task_ids.0');
+
+        $task = \App\Models\DispatchTask::query()->findOrFail($taskId);
+        $task->status = 'in_progress';
+        $task->route_meta = array_merge(is_array($task->route_meta) ? $task->route_meta : [], [
+            'exception' => [
+                'status' => 'pending',
+                'type' => 'traffic_jam',
+                'description' => '冷却窗口催办测试',
+                'reported_at' => now()->subMinutes(40)->toDateTimeString(),
+                'assigned_handler_id' => $dispatcher->id,
+                'assigned_handler_account' => $dispatcher->account,
+                'assigned_handler_name' => $dispatcher->name,
+                'history' => [],
+                'sla' => [
+                    'level_code' => 'timeout_30',
+                    'last_notice_at' => now()->subMinutes(5)->toDateTimeString(),
+                    'reminder_interval_minutes' => 30,
+                    'next_reminder_minutes' => 25,
+                    'reminder_count' => 1,
+                ],
+            ],
+        ]);
+        $task->save();
+
+        $this->postJson('/api/v1/dispatch-task/exception-remind-batch', [
+            'task_ids' => [$taskId],
+            'remind_note' => '冷却窗口内不应重复催办',
+        ])->assertOk()
+            ->assertJsonPath('updated_count', 0)
+            ->assertJsonPath('skipped_count', 1)
+            ->assertJsonPath('cooldown_count', 1);
+
+        $noticeCount = SystemMessage::query()
+            ->where('user_id', $dispatcher->id)
+            ->where('meta->notice_type', 'exception_manual_reminder')
+            ->count();
+        $this->assertSame(0, $noticeCount);
+    }
 }

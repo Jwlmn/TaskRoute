@@ -708,6 +708,7 @@ class DispatchTaskController extends Controller
 
             $updatedCount = 0;
             $skippedCount = 0;
+            $cooldownCount = 0;
             foreach ($taskIds as $taskId) {
                 /** @var DispatchTask|null $task */
                 $task = $tasks->get((int) $taskId);
@@ -716,13 +717,17 @@ class DispatchTaskController extends Controller
                     continue;
                 }
 
-                $changed = $this->applyManualExceptionReminder(
+                $task = $this->exceptionSlaService->syncTaskExceptionSla($task, true);
+                $result = $this->applyManualExceptionReminder(
                     task: $task,
                     operator: $operator,
                     remindNote: $payload['remind_note'] ?? null,
                 );
-                if ($changed) {
+                if ($result['changed']) {
                     $updatedCount++;
+                } elseif ($result['reason'] === 'cooldown') {
+                    $cooldownCount++;
+                    $skippedCount++;
                 } else {
                     $skippedCount++;
                 }
@@ -731,6 +736,7 @@ class DispatchTaskController extends Controller
             return response()->json([
                 'updated_count' => $updatedCount,
                 'skipped_count' => $skippedCount,
+                'cooldown_count' => $cooldownCount,
             ]);
         });
     }
@@ -798,15 +804,24 @@ class DispatchTaskController extends Controller
         return true;
     }
 
+    /**
+     * @return array{changed:bool,reason:string}
+     */
     private function applyManualExceptionReminder(
         DispatchTask $task,
         User $operator,
         ?string $remindNote = null,
-    ): bool {
+    ): array {
         $routeMeta = is_array($task->route_meta) ? $task->route_meta : [];
         $exception = is_array($routeMeta['exception'] ?? null) ? $routeMeta['exception'] : null;
         if (! $exception || ($exception['status'] ?? null) !== 'pending') {
-            return false;
+            return ['changed' => false, 'reason' => 'invalid_exception'];
+        }
+
+        $sla = is_array($exception['sla'] ?? null) ? $exception['sla'] : [];
+        $nextReminderMinutes = (int) ($sla['next_reminder_minutes'] ?? 0);
+        if ($nextReminderMinutes > 0) {
+            return ['changed' => false, 'reason' => 'cooldown'];
         }
 
         $targetHandler = User::query()
@@ -815,7 +830,7 @@ class DispatchTaskController extends Controller
             ->whereIn('role', ['admin', 'dispatcher'])
             ->first();
         if (! $targetHandler) {
-            return false;
+            return ['changed' => false, 'reason' => 'missing_handler'];
         }
 
         $occurredAt = now()->toDateTimeString();
@@ -832,7 +847,6 @@ class DispatchTaskController extends Controller
             'occurred_at' => $occurredAt,
         ];
 
-        $sla = is_array($exception['sla'] ?? null) ? $exception['sla'] : [];
         $sla['last_notice_at'] = $occurredAt;
         $sla['reminder_count'] = (int) ($sla['reminder_count'] ?? 0) + 1;
 
@@ -863,7 +877,7 @@ class DispatchTaskController extends Controller
             ],
         ]);
 
-        return true;
+        return ['changed' => true, 'reason' => 'ok'];
     }
 
     private function notifyDriversForHandledException(
