@@ -27,6 +27,7 @@ const handlingTask = ref(null)
 const assigningTask = ref(null)
 const feedbackTask = ref(null)
 const selectedExceptionTask = ref(null)
+const assigneeTimelyWindow = ref('7d')
 const assigningExceptionHandler = ref(false)
 const remindingException = ref(false)
 const submittingFeedback = ref(false)
@@ -667,19 +668,22 @@ const assigneeFeedbackTimeoutRanking = computed(() => {
 })
 const assigneeFeedbackTimelyRanking = computed(() => {
   if (!Array.isArray(assigneeStats.value)) return []
+  const use30d = assigneeTimelyWindow.value === '30d'
+  const countKey = use30d ? 'recent_feedback_30d_count' : 'recent_feedback_7d_count'
+  const rateKey = use30d ? 'recent_feedback_30d_timely_rate' : 'recent_feedback_7d_timely_rate'
   return assigneeStats.value
     .map((item) => ({
       assigned_handler_id: Number(item?.assigned_handler_id || 0),
       assigned_handler_name: item?.assigned_handler_name || '',
       assigned_handler_account: item?.assigned_handler_account || '',
-      recent_feedback_7d_count: Number(item?.recent_feedback_7d_count || 0),
-      recent_feedback_7d_timely_rate: Number(item?.recent_feedback_7d_timely_rate || 0),
+      timely_feedback_count: Number(item?.[countKey] || 0),
+      timely_feedback_rate: Number(item?.[rateKey] || 0),
     }))
-    .filter((item) => item.assigned_handler_id > 0 && item.recent_feedback_7d_count > 0)
+    .filter((item) => item.assigned_handler_id > 0 && item.timely_feedback_count > 0)
     .sort((a, b) => {
-      const timelyGap = Number(a.recent_feedback_7d_timely_rate || 0) - Number(b.recent_feedback_7d_timely_rate || 0)
+      const timelyGap = Number(a.timely_feedback_rate || 0) - Number(b.timely_feedback_rate || 0)
       if (Math.abs(timelyGap) > 0.0001) return timelyGap
-      return Number(b.recent_feedback_7d_count || 0) - Number(a.recent_feedback_7d_count || 0)
+      return Number(b.timely_feedback_count || 0) - Number(a.timely_feedback_count || 0)
     })
     .slice(0, 5)
 })
@@ -1425,14 +1429,21 @@ watch(displayedExceptionTasks, (list) => {
       <el-col :span="6">
         <el-card shadow="never">
           <div class="table-header">
-            <div class="mobile-section-title">责任人近7天及时率</div>
-            <div class="text-secondary">Top 5（低到高）</div>
+            <div class="mobile-section-title">责任人反馈及时率</div>
+            <el-segmented
+              v-model="assigneeTimelyWindow"
+              :options="[
+                { label: '近7天', value: '7d' },
+                { label: '近30天', value: '30d' },
+              ]"
+              size="small"
+            />
           </div>
           <el-empty v-if="!assigneeFeedbackTimelyRanking.length" description="暂无及时率样本" />
           <div v-else>
             <div v-for="item in assigneeFeedbackTimelyRanking" :key="`assignee-feedback-timely-${item.assigned_handler_id}`" class="mobile-exception-result-line">
               <span class="order-tag-clickable" @click="applyAssigneeRankingFilter(item)">
-                {{ getAssigneeRankingName(item) }}：{{ formatRatioPercent(item.recent_feedback_7d_timely_rate) }}（{{ Number(item.recent_feedback_7d_count || 0) }}）
+                {{ getAssigneeRankingName(item) }}：{{ formatRatioPercent(item.timely_feedback_rate) }}（{{ Number(item.timely_feedback_count || 0) }}）
               </span>
             </div>
           </div>
