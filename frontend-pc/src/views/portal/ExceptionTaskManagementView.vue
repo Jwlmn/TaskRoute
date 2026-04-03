@@ -433,6 +433,18 @@ const pendingFeedbackTimeoutCount = computed(() => {
     return gap !== null && gap >= threshold
   }).length
 })
+const feedbackTimeoutRemindableTaskIds = computed(() => {
+  const threshold = Number(filterForm.value.feedback_timeout_minutes || exceptionSummary.value?.feedback_timeout_threshold_minutes || 30)
+  return exceptionTasks.value
+    .filter((task) => task?.route_meta?.exception?.status === 'pending')
+    .filter((task) => {
+      const gap = getLastFeedbackGapMinutes(task)
+      return gap !== null && gap >= threshold
+    })
+    .filter((task) => !isTaskInReminderCooldown(task))
+    .map((task) => Number(task.id))
+    .filter((id) => id > 0)
+})
 const overtimeExceptionCount = computed(() => exceptionTasks.value.filter((task) => getPendingDurationMinutes(task) >= overtimeThresholdMinutes).length)
 const longestPendingMinutes = computed(() => {
   const durationList = exceptionTasks.value.map((task) => getPendingDurationMinutes(task))
@@ -609,6 +621,15 @@ const batchRemindSelected = async () => {
     return
   }
   await remindExceptionsByTaskIds(availableTaskIds, '请尽快处理并同步最新进展。')
+}
+const batchRemindFeedbackTimeout = async () => {
+  const taskIds = feedbackTimeoutRemindableTaskIds.value
+  if (taskIds.length === 0) {
+    ElMessage.warning('当前没有可催办的反馈超时异常')
+    return
+  }
+  const threshold = Number(filterForm.value.feedback_timeout_minutes || exceptionSummary.value?.feedback_timeout_threshold_minutes || 30)
+  await remindExceptionsByTaskIds(taskIds, `反馈已超时（>=${threshold} 分钟），请尽快同步处理进展。`)
 }
 const remindAssigneeRanking = async (item) => {
   const assigneeId = Number(item?.assigned_handler_id || 0)
@@ -1258,6 +1279,16 @@ watch(displayedExceptionTasks, (list) => {
           @click="batchRemindSelected"
         >
           批量催办（{{ selectedTaskIds.length }}）
+        </el-button>
+      </el-form-item>
+      <el-form-item v-if="filterForm.status === 'pending'">
+        <el-button
+          type="danger"
+          plain
+          :loading="remindingException"
+          @click="batchRemindFeedbackTimeout"
+        >
+          催办反馈超时（{{ feedbackTimeoutRemindableTaskIds.length }}）
         </el-button>
       </el-form-item>
     </el-form>
