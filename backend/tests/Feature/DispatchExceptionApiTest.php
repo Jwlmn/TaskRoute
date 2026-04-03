@@ -618,7 +618,9 @@ class DispatchExceptionApiTest extends TestCase
             ->assertJsonPath('summary.no_feedback', 1)
             ->assertJsonPath('summary.feedback_timeout', 0)
             ->assertJsonPath('assignee_stats.0.assigned_handler_id', $dispatcher->id)
-            ->assertJsonPath('assignee_stats.0.pending_count', 1);
+            ->assertJsonPath('assignee_stats.0.pending_count', 1)
+            ->assertJsonPath('assignee_stats.0.feedback_timeout_count', 0)
+            ->assertJsonPath('assignee_stats.0.feedback_timeout_rate', 0);
 
         $this->postJson('/api/v1/dispatch-task/exception-list', [
             'status' => 'pending',
@@ -871,5 +873,51 @@ class DispatchExceptionApiTest extends TestCase
             ->where('meta->notice_type', 'exception_manual_feedback')
             ->count();
         $this->assertSame(1, $noticeCount);
+    }
+
+    public function test_assignee_stats_contains_feedback_timeout_metrics(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $admin = User::query()->where('role', 'admin')->firstOrFail();
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $vehicle = Vehicle::query()->where('status', 'idle')->firstOrFail();
+        $order = PrePlanOrder::query()->where('status', 'pending')->firstOrFail();
+
+        Sanctum::actingAs($admin);
+        $createResponse = $this->postJson('/api/v1/dispatch/manual-create-tasks', [
+            'assignments' => [[
+                'vehicle_id' => $vehicle->id,
+                'order_ids' => [$order->id],
+            ]],
+        ]);
+        $createResponse->assertCreated();
+        $taskId = (int) $createResponse->json('created_task_ids.0');
+
+        $task = \App\Models\DispatchTask::query()->findOrFail($taskId);
+        $task->status = 'in_progress';
+        $task->route_meta = array_merge(is_array($task->route_meta) ? $task->route_meta : [], [
+            'exception' => [
+                'status' => 'pending',
+                'type' => 'traffic_jam',
+                'description' => '责任人反馈超时统计测试',
+                'reported_at' => now()->subMinutes(80)->toDateTimeString(),
+                'assigned_handler_id' => $dispatcher->id,
+                'assigned_handler_account' => $dispatcher->account,
+                'assigned_handler_name' => $dispatcher->name,
+                'last_feedback_at' => now()->subMinutes(45)->toDateTimeString(),
+                'history' => [],
+            ],
+        ]);
+        $task->save();
+
+        $this->postJson('/api/v1/dispatch-task/exception-list', [
+            'status' => 'pending',
+            'assigned_handler_id' => $dispatcher->id,
+        ])->assertOk()
+            ->assertJsonPath('assignee_stats.0.assigned_handler_id', $dispatcher->id)
+            ->assertJsonPath('assignee_stats.0.pending_count', 1)
+            ->assertJsonPath('assignee_stats.0.feedback_timeout_count', 1)
+            ->assertJsonPath('assignee_stats.0.feedback_timeout_rate', 1);
     }
 }

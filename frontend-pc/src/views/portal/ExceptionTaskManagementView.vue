@@ -447,6 +447,49 @@ const feedbackTimeoutRemindableTaskIds = computed(() => {
     .filter((id) => id > 0)
 })
 const assigneeFeedbackTimeoutRanking = computed(() => {
+  if (Array.isArray(assigneeStats.value) && assigneeStats.value.some((item) => Number(item?.feedback_timeout_count || 0) > 0)) {
+    return assigneeStats.value
+      .map((item) => {
+        const pendingCount = Number(item?.pending_count || 0)
+        const timeoutCount = Number(item?.feedback_timeout_count || 0)
+        const rateFromBackend = Number(item?.feedback_timeout_rate)
+        const timeoutRate = Number.isFinite(rateFromBackend)
+          ? rateFromBackend
+          : (pendingCount > 0 ? timeoutCount / pendingCount : 0)
+        return {
+          assigned_handler_id: Number(item?.assigned_handler_id || 0),
+          assigned_handler_name: item?.assigned_handler_name || '',
+          assigned_handler_account: item?.assigned_handler_account || '',
+          pending_count: pendingCount,
+          feedback_timeout_count: timeoutCount,
+          remindable_count: 0,
+          timeout_rate: timeoutRate,
+        }
+      })
+      .filter((item) => item.assigned_handler_id > 0 && item.feedback_timeout_count > 0)
+      .sort((a, b) => {
+        const rateGap = Number(b.timeout_rate || 0) - Number(a.timeout_rate || 0)
+        if (Math.abs(rateGap) > 0.0001) return rateGap
+        const timeoutGap = Number(b.feedback_timeout_count || 0) - Number(a.feedback_timeout_count || 0)
+        if (timeoutGap !== 0) return timeoutGap
+        return Number(b.pending_count || 0) - Number(a.pending_count || 0)
+      })
+      .slice(0, 5)
+      .map((item) => {
+        const assigneeId = Number(item.assigned_handler_id || 0)
+        const remindableCount = exceptionTasks.value
+          .filter((task) => task?.route_meta?.exception?.status === 'pending')
+          .filter((task) => Number(task?.route_meta?.exception?.assigned_handler_id || 0) === assigneeId)
+          .filter((task) => {
+            const feedbackGap = getLastFeedbackGapMinutes(task)
+            return feedbackGap !== null && feedbackGap >= feedbackTimeoutThresholdMinutes.value
+          })
+          .filter((task) => !isTaskInReminderCooldown(task))
+          .length
+        return { ...item, remindable_count: remindableCount }
+      })
+  }
+
   const threshold = feedbackTimeoutThresholdMinutes.value
   const map = new Map()
   exceptionTasks.value.forEach((task) => {

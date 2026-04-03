@@ -1109,6 +1109,7 @@ class DispatchTaskController extends Controller
 
     private function buildAssigneeStats(Collection $tasks): array
     {
+        $feedbackTimeoutThreshold = 30;
         $stats = [];
         foreach ($tasks as $task) {
             if (! $task instanceof DispatchTask) {
@@ -1131,6 +1132,8 @@ class DispatchTaskController extends Controller
                     'pending_count' => 0,
                     'overtime_count' => 0,
                     'severe_count' => 0,
+                    'feedback_timeout_count' => 0,
+                    'feedback_timeout_rate' => 0,
                 ];
             }
 
@@ -1142,12 +1145,32 @@ class DispatchTaskController extends Controller
             if (($sla['level_code'] ?? null) === 'timeout_120') {
                 $stats[$key]['severe_count']++;
             }
+            $feedbackAt = trim((string) ($exception['last_feedback_at'] ?? ''));
+            if ($feedbackAt !== '') {
+                try {
+                    $feedbackGapMinutes = \Illuminate\Support\Carbon::parse($feedbackAt)->diffInMinutes(now());
+                    if ($feedbackGapMinutes >= $feedbackTimeoutThreshold) {
+                        $stats[$key]['feedback_timeout_count']++;
+                    }
+                } catch (\Throwable) {
+                    // ignore invalid feedback time format
+                }
+            }
         }
 
-        return collect(array_values($stats))
+        $normalizedStats = collect(array_values($stats))
+            ->map(function (array $item): array {
+                $pendingCount = max(1, (int) ($item['pending_count'] ?? 0));
+                $feedbackTimeoutCount = (int) ($item['feedback_timeout_count'] ?? 0);
+                $item['feedback_timeout_rate'] = round($feedbackTimeoutCount / $pendingCount, 4);
+
+                return $item;
+            })
             ->sortByDesc('pending_count')
             ->values()
             ->take(10)
             ->all();
+
+        return $normalizedStats;
     }
 }
