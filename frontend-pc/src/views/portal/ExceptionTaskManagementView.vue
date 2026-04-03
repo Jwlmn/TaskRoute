@@ -3045,35 +3045,20 @@ watch(() => route.fullPath, async () => {
 .exception-detail-dialog :deep(.el-dialog__body) {
   flex: 1;
   min-height: 0;
-  overflow: hidden;
+  overflow-y: auto;
 }
 
 .exception-detail-tabs {
-  height: 100%;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.exception-detail-tabs :deep(.el-tabs__header) {
-  margin-bottom: 8px;
+  min-height: 100%;
 }
 
 .exception-detail-tabs :deep(.el-tabs__content) {
-  flex: 1;
-  min-height: 0;
-}
-
-.exception-detail-tabs :deep(.el-tab-pane) {
-  height: 100%;
-  overflow-y: auto;
   padding-right: 4px;
-  box-sizing: border-box;
 }
 
 .exception-order-table-section {
-  height: 100%;
-  min-height: 0;
+  height: calc(100vh - 320px);
+  min-height: 360px;
 }
 
 .ranking-card-body {
