@@ -117,6 +117,12 @@ const formatDateTime = (value) => {
   if (Number.isNaN(date.getTime())) return String(value)
   return date.toLocaleString('zh-CN', { hour12: false })
 }
+const parseDateTimeValue = (value) => {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  return date
+}
 
 const formatEntityChange = (label, beforeValue, afterValue) => `${label}：${beforeValue || '-'} -> ${afterValue || '-'}`
 const formatOperator = (name, account, id) => name || account || (id ? `#${id}` : '-')
@@ -393,6 +399,85 @@ const currentException = computed(() => selectedExceptionTask.value?.route_meta?
 const currentExceptionHistory = computed(() => {
   const history = currentException.value?.history
   return Array.isArray(history) ? [...history].reverse() : []
+})
+const feedbackSlaTrendSegments = computed(() => {
+  const exception = currentException.value
+  if (!exception) return []
+  const reportedAtDate = parseDateTimeValue(exception.reported_at)
+  if (!reportedAtDate) return []
+  const thresholdMinutes = Number.isFinite(Number(exception?.sla?.feedback_policy_minutes))
+    ? Math.max(1, Number(exception.sla.feedback_policy_minutes))
+    : 30
+  const feedbackHistory = (Array.isArray(exception.history) ? exception.history : [])
+    .filter((item) => item?.event === 'manual_feedback')
+    .map((item, index) => ({
+      index: index + 1,
+      occurred_at: item?.occurred_at || '',
+      feedback_content: item?.feedback_content || '',
+      operator: formatOperator(item?.operator_name, item?.operator_account, item?.operator_id),
+      date: parseDateTimeValue(item?.occurred_at),
+    }))
+    .filter((item) => item.date)
+    .sort((a, b) => a.date.getTime() - b.date.getTime())
+
+  const points = [
+    {
+      label: '异常上报',
+      type: 'reported',
+      date: reportedAtDate,
+      detail: exception.description || '',
+    },
+    ...feedbackHistory.map((item) => ({
+      label: `反馈 #${item.index}`,
+      type: 'feedback',
+      date: item.date,
+      detail: item.feedback_content,
+      operator: item.operator,
+    })),
+  ]
+
+  if (points.length <= 0) return []
+
+  const segments = []
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const start = points[index]
+    const end = points[index + 1]
+    const gapMinutes = Math.max(0, Math.floor((end.date.getTime() - start.date.getTime()) / 60000))
+    segments.push({
+      key: `${start.type}-${index}-to-${end.type}-${index + 1}`,
+      label: `${start.label} -> ${end.label}`,
+      start_at: start.date.toISOString(),
+      end_at: end.date.toISOString(),
+      gap_minutes: gapMinutes,
+      is_overtime: gapMinutes >= thresholdMinutes,
+      threshold_minutes: thresholdMinutes,
+      start_detail: start.detail || '',
+      end_detail: end.detail || '',
+      operator: end.operator || '',
+      stage: 'history',
+    })
+  }
+
+  if ((exception.status || '') === 'pending') {
+    const lastPoint = points[points.length - 1]
+    const nowDate = new Date()
+    const gapMinutes = Math.max(0, Math.floor((nowDate.getTime() - lastPoint.date.getTime()) / 60000))
+    segments.push({
+      key: `pending-${lastPoint.type}`,
+      label: feedbackHistory.length > 0 ? '最近反馈 -> 当前' : '异常上报 -> 当前',
+      start_at: lastPoint.date.toISOString(),
+      end_at: nowDate.toISOString(),
+      gap_minutes: gapMinutes,
+      is_overtime: gapMinutes >= thresholdMinutes,
+      threshold_minutes: thresholdMinutes,
+      start_detail: lastPoint.detail || '',
+      end_detail: feedbackHistory.length > 0 ? '等待下一次反馈' : '待首次反馈',
+      operator: '',
+      stage: 'pending',
+    })
+  }
+
+  return segments
 })
 const selectedTaskOrders = computed(() => Array.isArray(selectedExceptionTask.value?.orders) ? selectedExceptionTask.value.orders : [])
 const pagedSelectedTaskOrders = computed(() => {
@@ -1999,6 +2084,35 @@ watch(displayedExceptionTasks, (list) => {
         </el-descriptions-item>
       </el-descriptions>
 
+      <el-divider content-position="left">反馈 SLA 趋势</el-divider>
+      <el-empty v-if="!feedbackSlaTrendSegments.length" description="暂无反馈趋势数据" />
+      <el-timeline v-else>
+        <el-timeline-item
+          v-for="item in feedbackSlaTrendSegments"
+          :key="item.key"
+          :timestamp="`${formatDateTime(item.start_at)} ~ ${formatDateTime(item.end_at)}`"
+          placement="top"
+        >
+          <el-card shadow="never">
+            <div class="table-header mb-8">
+              <strong>{{ item.label }}</strong>
+              <el-space>
+                <el-tag :type="item.stage === 'pending' ? 'warning' : 'info'" effect="plain">
+                  {{ item.stage === 'pending' ? '当前时段' : '历史时段' }}
+                </el-tag>
+                <el-tag :type="item.is_overtime ? 'danger' : 'success'">
+                  {{ item.is_overtime ? '已超时' : '未超时' }}
+                </el-tag>
+              </el-space>
+            </div>
+            <div>间隔时长：{{ formatPendingDurationMinutes(Number(item.gap_minutes || 0)) }}（阈值 {{ Number(item.threshold_minutes || 0) }} 分钟）</div>
+            <div v-if="item.start_detail">起点信息：{{ item.start_detail }}</div>
+            <div v-if="item.end_detail">终点信息：{{ item.end_detail }}</div>
+            <div v-if="item.operator">反馈人：{{ item.operator }}</div>
+          </el-card>
+        </el-timeline-item>
+      </el-timeline>
+
       <el-divider content-position="left">关联订单明细</el-divider>
       <div class="page-table-section" style="height: 280px">
       <div class="page-table-wrap">
@@ -2048,6 +2162,10 @@ watch(displayedExceptionTasks, (list) => {
             <div v-if="item.handle_note">处理备注：{{ item.handle_note }}</div>
             <div v-if="item.remind_note">催办说明：{{ item.remind_note }}</div>
             <div v-if="item.feedback_content">反馈内容：{{ item.feedback_content }}</div>
+            <div v-if="item.feedback_policy_minutes">反馈SLA阈值：{{ item.feedback_policy_minutes }} 分钟</div>
+            <div v-if="item.feedback_pending_minutes || item.feedback_pending_minutes === 0">
+              触发时反馈间隔：{{ item.feedback_pending_minutes }} 分钟
+            </div>
             <div v-if="item.level_label">预警等级：{{ item.level_label }}</div>
             <div v-if="item.threshold_minutes">触发阈值：{{ item.threshold_minutes }} 分钟</div>
             <div v-if="item.assigned_handler_name || item.assigned_handler_account">
