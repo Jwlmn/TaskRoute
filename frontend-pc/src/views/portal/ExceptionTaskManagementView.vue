@@ -130,6 +130,25 @@ const formatSlaRemaining = (task) => {
   if (remaining === 0) return '已超时'
   return `${remaining} 分钟`
 }
+const formatNextReminderMinutes = (minutes) => {
+  if (!Number.isFinite(Number(minutes))) return '-'
+  const value = Math.max(0, Number(minutes))
+  if (value === 0) return '立即催办'
+  return `${value} 分钟后`
+}
+const formatNextReminder = (task) => {
+  const sla = getExceptionSla(task)
+  if (!sla) return '-'
+  return formatNextReminderMinutes(sla.next_reminder_minutes)
+}
+const getHistoryEventLabel = (event) => {
+  if (event === 'reported') return '司机上报异常'
+  if (event === 'handled') return '调度处理异常'
+  if (event === 'sla_alert') return 'SLA 升级预警'
+  if (event === 'sla_reminder') return 'SLA 超时催办'
+  if (event === 'sla_assign') return 'SLA 自动指派'
+  return '系统事件'
+}
 const getPendingDurationTagType = (task) => {
   const sla = getExceptionSla(task)
   if (sla?.level_type) return sla.level_type
@@ -829,6 +848,17 @@ watch(displayedExceptionTasks, (list) => {
           <span v-else>-</span>
         </template>
       </el-table-column>
+      <el-table-column label="下次催办" min-width="120">
+        <template #default="{ row }">
+          <el-tag
+            v-if="row.route_meta?.exception?.status === 'pending'"
+            :type="getPendingDurationTagType(row)"
+          >
+            {{ formatNextReminder(row) }}
+          </el-tag>
+          <span v-else>-</span>
+        </template>
+      </el-table-column>
       <el-table-column label="处理建议" min-width="220">
         <template #default="{ row }">
           <el-tag :type="getExceptionRecommendation(row).type">
@@ -982,6 +1012,9 @@ watch(displayedExceptionTasks, (list) => {
         <el-descriptions-item label="处理时间">{{ formatDateTime(currentException.handled_at) }}</el-descriptions-item>
         <el-descriptions-item label="SLA 阈值">{{ Number.isFinite(Number(currentException.sla?.policy_minutes)) ? `${currentException.sla.policy_minutes} 分钟` : '-' }}</el-descriptions-item>
         <el-descriptions-item label="已等待时长">{{ Number.isFinite(Number(currentException.sla?.pending_minutes)) ? formatPendingDurationMinutes(Number(currentException.sla.pending_minutes)) : '-' }}</el-descriptions-item>
+        <el-descriptions-item label="催办间隔">{{ Number.isFinite(Number(currentException.sla?.reminder_interval_minutes)) ? `${currentException.sla.reminder_interval_minutes} 分钟` : '-' }}</el-descriptions-item>
+        <el-descriptions-item label="下次催办">{{ formatNextReminderMinutes(currentException.sla?.next_reminder_minutes) }}</el-descriptions-item>
+        <el-descriptions-item label="催办次数">{{ Number.isFinite(Number(currentException.sla?.reminder_count)) ? Number(currentException.sla.reminder_count) : 0 }}</el-descriptions-item>
         <el-descriptions-item label="处理动作">
           {{ getLabel(exceptionActionLabelMap, currentException.handle_action) }}
         </el-descriptions-item>
@@ -1082,12 +1115,17 @@ watch(displayedExceptionTasks, (list) => {
         >
           <el-card shadow="never">
             <div class="mb-8">
-              <strong>{{ item.event === 'reported' ? '司机上报异常' : '调度处理异常' }}</strong>
+              <strong>{{ getHistoryEventLabel(item.event) }}</strong>
             </div>
             <div>异常类型：{{ getLabel(exceptionTypeLabelMap, item.type) }}</div>
             <div v-if="item.description">异常说明：{{ item.description }}</div>
             <div v-if="item.action">处理动作：{{ getLabel(exceptionActionLabelMap, item.action) }}</div>
             <div v-if="item.handle_note">处理备注：{{ item.handle_note }}</div>
+            <div v-if="item.level_label">预警等级：{{ item.level_label }}</div>
+            <div v-if="item.threshold_minutes">触发阈值：{{ item.threshold_minutes }} 分钟</div>
+            <div v-if="item.assigned_handler_name || item.assigned_handler_account">
+              指派责任人：{{ formatOperator(item.assigned_handler_name, item.assigned_handler_account, item.assigned_handler_id) }}
+            </div>
             <div>操作人：{{ formatOperator(item.operator_name, item.operator_account, item.operator_id) }}</div>
             <div v-if="item.previous_task_status || item.current_task_status">
               任务状态：{{ getLabel(taskStatusLabelMap, item.previous_task_status) }} -> {{ getLabel(taskStatusLabelMap, item.current_task_status) }}

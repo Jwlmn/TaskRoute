@@ -440,7 +440,11 @@ class DispatchExceptionApiTest extends TestCase
         $task->route_meta = $routeMeta;
         $task->save();
 
-        $this->postJson('/api/v1/dispatch-task/exception-list', ['status' => 'pending'])->assertOk();
+        $response = $this->postJson('/api/v1/dispatch-task/exception-list', ['status' => 'pending'])->assertOk()
+            ->assertJsonPath('data.0.route_meta.exception.sla.reminder_interval_minutes', 20);
+        $nextReminderMinutes = (int) $response->json('data.0.route_meta.exception.sla.next_reminder_minutes');
+        $this->assertGreaterThanOrEqual(0, $nextReminderMinutes);
+        $this->assertLessThanOrEqual(20, $nextReminderMinutes);
         $afterReminderCount = SystemMessage::query()
             ->where('meta->notice_type', 'exception_sla_reminder')
             ->count();
@@ -483,9 +487,13 @@ class DispatchExceptionApiTest extends TestCase
         $task->save();
 
         Sanctum::actingAs($dispatcher);
-        $this->postJson('/api/v1/dispatch-task/exception-list', ['status' => 'pending'])
+        $response = $this->postJson('/api/v1/dispatch-task/exception-list', ['status' => 'pending'])
             ->assertOk()
-            ->assertJsonPath('data.0.route_meta.exception.assigned_handler_id', $dispatcher->id);
+            ->assertJsonPath('data.0.route_meta.exception.assigned_handler_id', $dispatcher->id)
+            ->assertJsonPath('data.0.route_meta.exception.assigned_handler_account', $dispatcher->account);
+        $nextReminderMinutes = (int) $response->json('data.0.route_meta.exception.sla.next_reminder_minutes');
+        $this->assertGreaterThanOrEqual(0, $nextReminderMinutes);
+        $this->assertLessThanOrEqual(30, $nextReminderMinutes);
 
         $this->assertDatabaseHas('system_messages', [
             'user_id' => $dispatcher->id,

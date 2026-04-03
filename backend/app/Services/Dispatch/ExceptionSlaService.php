@@ -57,6 +57,7 @@ class ExceptionSlaService
                 $shouldPersist = true;
             }
         }
+        $annotatedException = $this->annotateException($annotatedException, $now);
 
         if ($shouldPersist) {
             $routeMeta['exception'] = $annotatedException;
@@ -138,6 +139,7 @@ class ExceptionSlaService
         $exceptionType = (string) ($exception['type'] ?? '');
         $policyMinutes = $this->resolvePolicyMinutes($exceptionType);
         $alertLevels = $this->resolveAlertLevels($exceptionType);
+        $reminderIntervalMinutes = $this->resolveReminderIntervalMinutes($exceptionType);
         $reportedAt = $this->parseTime($exception['reported_at'] ?? null);
         $handledAt = $this->parseTime($exception['handled_at'] ?? null);
         $status = (string) ($exception['status'] ?? '');
@@ -165,6 +167,13 @@ class ExceptionSlaService
             ->unique()
             ->values()
             ->all();
+        $nextReminderMinutes = $this->resolveNextReminderMinutes(
+            $status,
+            (string) $level['code'],
+            $currentSla,
+            $now,
+            $reminderIntervalMinutes
+        );
 
         $exception['sla'] = array_merge($currentSla, [
             'policy_minutes' => $policyMinutes,
@@ -180,6 +189,9 @@ class ExceptionSlaService
             'handled_minutes' => $handledMinutes,
             'handled_overtime' => $handledMinutes !== null ? $handledMinutes >= $policyMinutes : null,
             'alerted_levels' => $currentAlerts,
+            'reminder_interval_minutes' => $reminderIntervalMinutes,
+            'next_reminder_minutes' => $nextReminderMinutes,
+            'reminder_count' => (int) ($currentSla['reminder_count'] ?? 0),
         ]);
 
         return $exception;
@@ -449,6 +461,33 @@ class ExceptionSlaService
         }
 
         return $lastNoticeAt->diffInMinutes($now) >= $interval;
+    }
+
+    /**
+     * @param  array<string, mixed>  $sla
+     */
+    private function resolveNextReminderMinutes(
+        string $status,
+        string $levelCode,
+        array $sla,
+        CarbonImmutable $now,
+        int $interval
+    ): ?int {
+        if ($status !== 'pending' || $levelCode === '' || $levelCode === 'normal') {
+            return null;
+        }
+
+        $lastNoticeAt = $this->parseTime($sla['last_notice_at'] ?? null);
+        if (! $lastNoticeAt) {
+            return $interval;
+        }
+
+        $elapsed = max(0, $lastNoticeAt->diffInMinutes($now));
+        if ($elapsed >= $interval) {
+            return 0;
+        }
+
+        return $interval - $elapsed;
     }
 
     private function parseTime(mixed $value): ?CarbonImmutable
