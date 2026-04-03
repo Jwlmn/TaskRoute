@@ -1014,6 +1014,62 @@ class DispatchExceptionApiTest extends TestCase
         $this->assertGreaterThan($secondNoticeCount, $thirdNoticeCount);
     }
 
+    public function test_feedback_sla_reminder_can_use_type_specific_notice_template(): void
+    {
+        Config::set('dispatch.exception_sla.default.feedback_policy_minutes', 20);
+        Config::set('dispatch.exception_sla.default.feedback_reminder_interval_minutes', 15);
+        Config::set('dispatch.exception_sla.by_type.traffic_jam.notice_templates.feedback_sla_reminder', '【拥堵催办】任务{task_no}已{feedback_pending_minutes}分钟未反馈，超出{feedback_overtime_minutes}分钟。');
+
+        $this->seed(DatabaseSeeder::class);
+
+        $admin = User::query()->where('role', 'admin')->firstOrFail();
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $vehicle = Vehicle::query()->where('status', 'idle')->firstOrFail();
+        $order = PrePlanOrder::query()->where('status', 'pending')->firstOrFail();
+
+        Sanctum::actingAs($admin);
+        $createResponse = $this->postJson('/api/v1/dispatch/manual-create-tasks', [
+            'assignments' => [[
+                'vehicle_id' => $vehicle->id,
+                'order_ids' => [$order->id],
+            ]],
+        ]);
+        $createResponse->assertCreated();
+        $taskId = (int) $createResponse->json('created_task_ids.0');
+
+        $task = \App\Models\DispatchTask::query()->findOrFail($taskId);
+        $task->status = 'in_progress';
+        $task->route_meta = array_merge(is_array($task->route_meta) ? $task->route_meta : [], [
+            'exception' => [
+                'status' => 'pending',
+                'type' => 'traffic_jam',
+                'description' => '反馈催办模板测试',
+                'reported_at' => now()->subMinutes(5)->toDateTimeString(),
+                'assigned_handler_id' => $dispatcher->id,
+                'assigned_handler_account' => $dispatcher->account,
+                'assigned_handler_name' => $dispatcher->name,
+                'last_feedback_at' => now()->subMinutes(40)->toDateTimeString(),
+                'history' => [],
+            ],
+        ]);
+        $task->save();
+
+        $this->postJson('/api/v1/dispatch-task/exception-list', [
+            'status' => 'pending',
+            'task_no' => $task->task_no,
+        ])->assertOk();
+
+        $notice = SystemMessage::query()
+            ->where('meta->notice_type', 'exception_feedback_sla')
+            ->where('meta->task_id', $taskId)
+            ->latest('id')
+            ->first();
+
+        $this->assertNotNull($notice);
+        $this->assertStringContainsString('【拥堵催办】任务', (string) $notice?->content);
+        $this->assertStringContainsString($task->task_no, (string) $notice?->content);
+    }
+
     public function test_assignee_stats_contains_feedback_timeout_metrics(): void
     {
         $this->seed(DatabaseSeeder::class);

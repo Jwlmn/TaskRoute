@@ -381,7 +381,11 @@ class ExceptionSlaService
         $taskNo = (string) ($task->task_no ?? '-');
         $pendingMinutes = (int) ($sla['pending_minutes'] ?? 0);
         $levelLabel = (string) ($highestLevel['label'] ?? '异常预警');
-        $content = "任务 {$taskNo} 异常待处理 {$pendingMinutes} 分钟，当前等级：{$levelLabel}，请尽快处理。";
+        $content = $this->resolveNoticeContent((string) ($exception['type'] ?? ''), 'sla_escalation', [
+            'task_no' => $taskNo,
+            'pending_minutes' => $pendingMinutes,
+            'level_label' => $levelLabel,
+        ], "任务 {$taskNo} 异常待处理 {$pendingMinutes} 分钟，当前等级：{$levelLabel}，请尽快处理。");
 
         $recipientIds = User::query()
             ->where('status', 'active')
@@ -421,7 +425,11 @@ class ExceptionSlaService
         $levelLabel = (string) ($sla['level_label'] ?? '超时');
 
         $title = '异常任务持续超时催办';
-        $content = "任务 {$taskNo} 已持续待处理 {$pendingMinutes} 分钟（{$levelLabel}），请尽快处理。";
+        $content = $this->resolveNoticeContent((string) ($exception['type'] ?? ''), 'sla_reminder', [
+            'task_no' => $taskNo,
+            'pending_minutes' => $pendingMinutes,
+            'level_label' => $levelLabel,
+        ], "任务 {$taskNo} 已持续待处理 {$pendingMinutes} 分钟（{$levelLabel}），请尽快处理。");
 
         $recipientIds = User::query()
             ->where('status', 'active')
@@ -486,7 +494,12 @@ class ExceptionSlaService
         $overtimeMinutes = max(0, $pendingMinutes - $policyMinutes);
 
         $title = '异常反馈超时催办';
-        $content = "任务 {$taskNo} 距离上次反馈已 {$pendingMinutes} 分钟，超出反馈 SLA {$overtimeMinutes} 分钟，请尽快同步处理进展。";
+        $content = $this->resolveNoticeContent((string) ($exception['type'] ?? ''), 'feedback_sla_reminder', [
+            'task_no' => $taskNo,
+            'feedback_pending_minutes' => $pendingMinutes,
+            'feedback_overtime_minutes' => $overtimeMinutes,
+            'feedback_policy_minutes' => $policyMinutes,
+        ], "任务 {$taskNo} 距离上次反馈已 {$pendingMinutes} 分钟，超出反馈 SLA {$overtimeMinutes} 分钟，请尽快同步处理进展。");
 
         $recipientIds = collect([
             (int) ($exception['assigned_handler_id'] ?? 0),
@@ -743,6 +756,27 @@ class ExceptionSlaService
         $typed = (int) config("dispatch.exception_sla.by_type.{$exceptionType}.feedback_reminder_interval_minutes", 0);
 
         return max(5, $typed > 0 ? $typed : $default);
+    }
+
+    /**
+     * @param  array<string, int|string>  $variables
+     */
+    private function resolveNoticeContent(
+        string $exceptionType,
+        string $templateKey,
+        array $variables,
+        string $fallback
+    ): string {
+        $typedTemplate = trim((string) config("dispatch.exception_sla.by_type.{$exceptionType}.notice_templates.{$templateKey}", ''));
+        $defaultTemplate = trim((string) config("dispatch.exception_sla.default.notice_templates.{$templateKey}", ''));
+        $template = $typedTemplate !== '' ? $typedTemplate : ($defaultTemplate !== '' ? $defaultTemplate : $fallback);
+
+        $replacements = [];
+        foreach ($variables as $key => $value) {
+            $replacements['{'.$key.'}'] = (string) $value;
+        }
+
+        return strtr($template, $replacements);
     }
 
     private function resolveAssignmentTarget(DispatchTask $task, string $exceptionType): ?User
