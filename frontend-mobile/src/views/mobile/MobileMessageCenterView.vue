@@ -164,12 +164,17 @@ const focusTaskMessages = (row) => {
 const clearTaskFocus = () => {
   filterForm.task_focus = ''
 }
-const syncTaskFocusToRoute = async () => {
+const syncFiltersToRoute = async () => {
   const nextQuery = { ...route.query }
   if (filterForm.task_focus) {
     nextQuery.task_focus = String(filterForm.task_focus)
   } else {
     delete nextQuery.task_focus
+  }
+  if (filterForm.dispatch_notice_type) {
+    nextQuery.dispatch_notice_type = String(filterForm.dispatch_notice_type)
+  } else {
+    delete nextQuery.dispatch_notice_type
   }
   await router.replace({ query: nextQuery })
 }
@@ -324,6 +329,10 @@ const markRelatedTaskMessagesRead = async (taskId) => {
 
 onMounted(async () => {
   filterForm.task_focus = typeof route.query.task_focus === 'string' ? route.query.task_focus : ''
+  filterForm.dispatch_notice_type = typeof route.query.dispatch_notice_type === 'string' ? route.query.dispatch_notice_type : ''
+  if (filterForm.dispatch_notice_type && !filterForm.message_type) {
+    filterForm.message_type = 'dispatch_notice'
+  }
   await loadMessages()
 })
 
@@ -349,7 +358,14 @@ watch(
 )
 
 watch(() => filterForm.task_focus, () => {
-  syncTaskFocusToRoute()
+  syncFiltersToRoute()
+})
+
+watch(() => filterForm.dispatch_notice_type, (value) => {
+  if (value && !filterForm.message_type) {
+    filterForm.message_type = 'dispatch_notice'
+  }
+  syncFiltersToRoute()
 })
 </script>
 

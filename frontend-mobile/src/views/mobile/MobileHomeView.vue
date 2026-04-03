@@ -48,6 +48,16 @@ const recentHandledExceptionTask = computed(() => driverTasks.value
   .sort((a, b) => String(b?.route_meta?.exception?.handled_at || '').localeCompare(String(a?.route_meta?.exception?.handled_at || '')))
   [0] || null)
 const unreadMessageCount = computed(() => driverMessages.value.filter((item) => !item?.read_at).length)
+const unreadManualReminderCount = computed(() => driverMessages.value
+  .filter((item) => item?.message_type === 'dispatch_notice')
+  .filter((item) => String(item?.meta?.notice_type || '') === 'exception_manual_reminder')
+  .filter((item) => !item?.read_at)
+  .length)
+const unreadManualFeedbackCount = computed(() => driverMessages.value
+  .filter((item) => item?.message_type === 'dispatch_notice')
+  .filter((item) => String(item?.meta?.notice_type || '') === 'exception_manual_feedback')
+  .filter((item) => !item?.read_at)
+  .length)
 const recentUnreadDispatchMessage = computed(() => driverMessages.value
   .filter((item) => item?.message_type === 'dispatch_notice' && !item?.read_at)
   .sort((a, b) => String(b?.created_at || '').localeCompare(String(a?.created_at || '')))
@@ -82,6 +92,18 @@ const openRecentDispatchNotifications = async () => {
   await router.push({
     name: 'mobile-messages',
     query: taskId ? { task_focus: taskId } : {},
+  })
+}
+const openManualReminderMessages = async () => {
+  await router.push({
+    name: 'mobile-messages',
+    query: { dispatch_notice_type: 'exception_manual_reminder' },
+  })
+}
+const openManualFeedbackMessages = async () => {
+  await router.push({
+    name: 'mobile-messages',
+    query: { dispatch_notice_type: 'exception_manual_feedback' },
   })
 }
 const openHandledExceptionResult = async () => {
@@ -156,6 +178,30 @@ const driverHomeShortcuts = computed(() => {
       action: () => (recentUnreadDispatchMessage.value ? openRecentDispatchMessageTask() : router.push({ name: 'mobile-messages' })),
       secondaryActionLabel: recentUnreadDispatchMessage.value ? '只看该任务通知' : '',
       secondaryAction: () => (recentUnreadDispatchMessage.value ? openRecentDispatchNotifications() : Promise.resolve()),
+    },
+    {
+      key: 'manual-reminder',
+      title: '超时催办通知',
+      description: unreadManualReminderCount.value > 0
+        ? `你有 ${unreadManualReminderCount.value} 条待处理催办通知`
+        : '当前没有新的催办通知',
+      count: unreadManualReminderCount.value,
+      type: unreadManualReminderCount.value > 0 ? 'danger' : 'info',
+      actionLabel: '查看催办通知',
+      disabled: false,
+      action: () => openManualReminderMessages(),
+    },
+    {
+      key: 'manual-feedback',
+      title: '异常反馈通知',
+      description: unreadManualFeedbackCount.value > 0
+        ? `你有 ${unreadManualFeedbackCount.value} 条反馈通知待查看`
+        : '当前没有新的反馈通知',
+      count: unreadManualFeedbackCount.value,
+      type: unreadManualFeedbackCount.value > 0 ? 'warning' : 'info',
+      actionLabel: '查看反馈通知',
+      disabled: false,
+      action: () => openManualFeedbackMessages(),
     },
   ]
 
