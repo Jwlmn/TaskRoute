@@ -172,6 +172,13 @@ const unreadFeedbackCount = computed(() => messages.value
   .filter((item) => !item?.read_at)
   .filter((item) => getDispatchNoticeType(item) === 'exception_manual_feedback')
   .length)
+const sortedSavedFilterViews = computed(() => [...savedFilterViews.value].sort((a, b) => {
+  const pinGap = Number(b?.pinned ? 1 : 0) - Number(a?.pinned ? 1 : 0)
+  if (pinGap !== 0) return pinGap
+  const orderGap = Number(a?.sort_order || 0) - Number(b?.sort_order || 0)
+  if (orderGap !== 0) return orderGap
+  return Number(b?.updated_at || 0) - Number(a?.updated_at || 0)
+}))
 const isExpandedMessageRow = (row) => expandedMessageKeys.value.includes(row?.aggregate_key)
 const toggleExpandedMessageRow = (row) => {
   if (!row?.aggregate_key || row.aggregate_count <= 1) return
@@ -219,11 +226,24 @@ const buildCurrentFilterSnapshot = () => ({
   pinned_only: Boolean(filterForm.value.pinned_only),
   task_focus: String(filterForm.value.task_focus || ''),
 })
+const normalizeSavedFilterViews = (rawList) => {
+  const list = Array.isArray(rawList) ? rawList : []
+  return list
+    .map((item, index) => ({
+      id: Number(item?.id || Date.now() + index),
+      name: String(item?.name || '').trim().slice(0, 20),
+      snapshot: item?.snapshot && typeof item.snapshot === 'object' ? item.snapshot : {},
+      pinned: Boolean(item?.pinned),
+      sort_order: Number.isFinite(Number(item?.sort_order)) ? Number(item.sort_order) : index + 1,
+      updated_at: Number.isFinite(Number(item?.updated_at)) ? Number(item.updated_at) : Date.now(),
+    }))
+    .filter((item) => item.name !== '')
+}
 const loadSavedFilterViews = () => {
   try {
     const raw = window.localStorage.getItem(FILTER_VIEWS_STORAGE_KEY)
     const parsed = raw ? JSON.parse(raw) : []
-    savedFilterViews.value = Array.isArray(parsed) ? parsed : []
+    savedFilterViews.value = normalizeSavedFilterViews(parsed)
   } catch {
     savedFilterViews.value = []
   }
@@ -248,14 +268,19 @@ const saveCurrentFilterView = async () => {
     savedFilterViews.value[existingIndex] = {
       ...savedFilterViews.value[existingIndex],
       snapshot,
+      updated_at: Date.now(),
     }
   } else {
+    const maxSortOrder = savedFilterViews.value.reduce((max, item) => Math.max(max, Number(item?.sort_order || 0)), 0)
     savedFilterViews.value = [
       ...savedFilterViews.value,
       {
         id: Date.now(),
         name: normalizedName,
         snapshot,
+        pinned: false,
+        sort_order: maxSortOrder + 1,
+        updated_at: Date.now(),
       },
     ].slice(-10)
   }
@@ -300,10 +325,43 @@ const renameSavedFilterView = (view) => {
     return {
       ...item,
       name: normalizedName,
+      updated_at: Date.now(),
     }
   })
   persistSavedFilterViews()
   ElMessage.success('筛选视图已重命名')
+}
+const togglePinSavedFilterView = (view) => {
+  const targetId = Number(view?.id || 0)
+  savedFilterViews.value = savedFilterViews.value.map((item) => {
+    if (Number(item?.id || 0) !== targetId) return item
+    return {
+      ...item,
+      pinned: !Boolean(item?.pinned),
+      updated_at: Date.now(),
+    }
+  })
+  persistSavedFilterViews()
+}
+const moveSavedFilterView = (view, direction) => {
+  const ordered = [...sortedSavedFilterViews.value]
+  const index = ordered.findIndex((item) => Number(item?.id || 0) === Number(view?.id || 0))
+  if (index < 0) return
+  const targetIndex = direction === 'up' ? index - 1 : index + 1
+  if (targetIndex < 0 || targetIndex >= ordered.length) return
+  const current = ordered[index]
+  const target = ordered[targetIndex]
+  savedFilterViews.value = savedFilterViews.value.map((item) => {
+    const id = Number(item?.id || 0)
+    if (id === Number(current?.id || 0)) {
+      return { ...item, sort_order: Number(target?.sort_order || 0), updated_at: Date.now() }
+    }
+    if (id === Number(target?.id || 0)) {
+      return { ...item, sort_order: Number(current?.sort_order || 0), updated_at: Date.now() }
+    }
+    return item
+  })
+  persistSavedFilterViews()
 }
 const applySystemPresetReminder = async () => {
   filterForm.value.message_type = 'dispatch_notice'
@@ -738,15 +796,21 @@ watch([unreadReminderCount, unreadFeedbackCount], ([reminderCount, feedbackCount
       </el-form-item>
       <el-form-item v-if="savedFilterViews.length" label="已保存视图">
         <el-space wrap>
-          <span v-for="view in savedFilterViews" :key="`saved-filter-view-${view.id}`" class="mobile-exception-result-line">
+          <span v-for="view in sortedSavedFilterViews" :key="`saved-filter-view-${view.id}`" class="mobile-exception-result-line">
             <el-tag
               closable
               class="order-tag-clickable"
               @click="applySavedFilterView(view)"
               @close="removeSavedFilterView(view.id)"
             >
+              <span v-if="view.pinned">[置顶]</span>
               {{ view.name }}
             </el-tag>
+            <el-button size="small" link type="warning" @click="togglePinSavedFilterView(view)">
+              {{ view.pinned ? '取消置顶' : '置顶' }}
+            </el-button>
+            <el-button size="small" link @click="moveSavedFilterView(view, 'up')">上移</el-button>
+            <el-button size="small" link @click="moveSavedFilterView(view, 'down')">下移</el-button>
             <el-button size="small" link type="primary" @click="renameSavedFilterView(view)">重命名</el-button>
           </span>
         </el-space>
