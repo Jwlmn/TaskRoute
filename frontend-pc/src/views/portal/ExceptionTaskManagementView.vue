@@ -665,6 +665,24 @@ const assigneeFeedbackTimeoutRanking = computed(() => {
     })
     .slice(0, 5)
 })
+const assigneeFeedbackTimelyRanking = computed(() => {
+  if (!Array.isArray(assigneeStats.value)) return []
+  return assigneeStats.value
+    .map((item) => ({
+      assigned_handler_id: Number(item?.assigned_handler_id || 0),
+      assigned_handler_name: item?.assigned_handler_name || '',
+      assigned_handler_account: item?.assigned_handler_account || '',
+      recent_feedback_7d_count: Number(item?.recent_feedback_7d_count || 0),
+      recent_feedback_7d_timely_rate: Number(item?.recent_feedback_7d_timely_rate || 0),
+    }))
+    .filter((item) => item.assigned_handler_id > 0 && item.recent_feedback_7d_count > 0)
+    .sort((a, b) => {
+      const timelyGap = Number(a.recent_feedback_7d_timely_rate || 0) - Number(b.recent_feedback_7d_timely_rate || 0)
+      if (Math.abs(timelyGap) > 0.0001) return timelyGap
+      return Number(b.recent_feedback_7d_count || 0) - Number(a.recent_feedback_7d_count || 0)
+    })
+    .slice(0, 5)
+})
 const overtimeExceptionCount = computed(() => exceptionTasks.value.filter((task) => getPendingDurationMinutes(task) >= overtimeThresholdMinutes).length)
 const longestPendingMinutes = computed(() => {
   const durationList = exceptionTasks.value.map((task) => getPendingDurationMinutes(task))
@@ -1407,6 +1425,22 @@ watch(displayedExceptionTasks, (list) => {
       <el-col :span="6">
         <el-card shadow="never">
           <div class="table-header">
+            <div class="mobile-section-title">责任人近7天及时率</div>
+            <div class="text-secondary">Top 5（低到高）</div>
+          </div>
+          <el-empty v-if="!assigneeFeedbackTimelyRanking.length" description="暂无及时率样本" />
+          <div v-else>
+            <div v-for="item in assigneeFeedbackTimelyRanking" :key="`assignee-feedback-timely-${item.assigned_handler_id}`" class="mobile-exception-result-line">
+              <span class="order-tag-clickable" @click="applyAssigneeRankingFilter(item)">
+                {{ getAssigneeRankingName(item) }}：{{ formatRatioPercent(item.recent_feedback_7d_timely_rate) }}（{{ Number(item.recent_feedback_7d_count || 0) }}）
+              </span>
+            </div>
+          </div>
+        </el-card>
+      </el-col>
+      <el-col :span="6">
+        <el-card shadow="never">
+          <div class="table-header">
             <div class="mobile-section-title">责任人绩效分布</div>
             <div class="text-secondary">Top 5</div>
           </div>
@@ -1434,7 +1468,7 @@ watch(displayedExceptionTasks, (list) => {
           </div>
         </el-card>
       </el-col>
-      <el-col :span="6">
+      <el-col :span="3">
         <el-card shadow="never">
           <div class="table-header">
             <div class="mobile-section-title">司机异常排行</div>
@@ -1448,7 +1482,7 @@ watch(displayedExceptionTasks, (list) => {
           </div>
         </el-card>
       </el-col>
-      <el-col :span="6">
+      <el-col :span="3">
         <el-card shadow="never">
           <div class="table-header">
             <div class="mobile-section-title">装货地异常排行</div>
