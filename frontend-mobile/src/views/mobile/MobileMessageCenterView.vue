@@ -11,6 +11,13 @@ const messageTypeLabelMap = {
   audit_reminder: '审核催办',
   dispatch_notice: '调度通知',
 }
+const dispatchNoticeTypeLabelMap = {
+  exception_sla: '异常SLA预警',
+  exception_sla_reminder: '异常SLA催办',
+  exception_sla_assign: '异常自动指派',
+  exception_manual_assign: '异常人工改派',
+  exception_manual_reminder: '异常人工催办',
+}
 
 const auditStatusLabelMap = {
   pending_approval: '待审核',
@@ -40,6 +47,7 @@ const filterForm = reactive({
   keyword: '',
   read_status: 'all',
   message_type: '',
+  dispatch_notice_type: '',
   pinned_only: false,
   task_focus: '',
 })
@@ -50,6 +58,7 @@ const getLabel = (map, value) => map[value] || value || '-'
 const getNotificationOrderNo = (message) => message?.meta?.order_no || '-'
 const getNotificationAuditStatus = (message) => message?.meta?.audit_status || ''
 const getNotificationTaskNo = (message) => message?.meta?.task_no || '-'
+const getDispatchNoticeType = (message) => String(message?.meta?.notice_type || '')
 const getMessageRowIds = (row) => {
   if (Array.isArray(row?.aggregate_ids) && row.aggregate_ids.length) {
     return row.aggregate_ids.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
@@ -119,8 +128,19 @@ const displayMessages = computed(() => {
   })
 
   const list = [...grouped.values()]
-  if (!filterForm.task_focus) return list
-  return list.filter((item) => String(item?.meta?.task_id || '') === String(filterForm.task_focus))
+  const filteredByDispatchNoticeType = filterForm.dispatch_notice_type
+    ? list.filter((item) => {
+      if (item?.message_type !== 'dispatch_notice') return false
+      const aggregateItems = Array.isArray(item?.aggregate_items) ? item.aggregate_items : []
+      if (aggregateItems.length > 0) {
+        return aggregateItems.some((entry) => getDispatchNoticeType(entry) === filterForm.dispatch_notice_type)
+      }
+      return getDispatchNoticeType(item) === filterForm.dispatch_notice_type
+    })
+    : list
+
+  if (!filterForm.task_focus) return filteredByDispatchNoticeType
+  return filteredByDispatchNoticeType.filter((item) => String(item?.meta?.task_id || '') === String(filterForm.task_focus))
 })
 const isExpandedMessageRow = (row) => expandedMessageKeys.value.includes(row?.aggregate_key)
 const toggleExpandedMessageRow = (row) => {
@@ -316,7 +336,7 @@ onUnmounted(() => {
 })
 
 watch(
-  () => [filterForm.keyword, filterForm.read_status, filterForm.message_type, filterForm.pinned_only],
+  () => [filterForm.keyword, filterForm.read_status, filterForm.message_type, filterForm.pinned_only, filterForm.dispatch_notice_type],
   () => {
     if (filterDebounceTimer) {
       clearTimeout(filterDebounceTimer)
@@ -349,6 +369,14 @@ watch(() => filterForm.task_focus, () => {
         <el-option label="审核通知" value="audit_notice" />
         <el-option label="审核催办" value="audit_reminder" />
         <el-option label="调度通知" value="dispatch_notice" />
+      </el-select>
+      <el-select v-model="filterForm.dispatch_notice_type" clearable size="small" placeholder="调度场景">
+        <el-option
+          v-for="(label, value) in dispatchNoticeTypeLabelMap"
+          :key="value"
+          :label="label"
+          :value="value"
+        />
       </el-select>
       <el-select v-model="filterForm.read_status" size="small">
         <el-option label="全部" value="all" />
@@ -394,6 +422,14 @@ watch(() => filterForm.task_focus, () => {
 
         <div class="mobile-message-meta">
           <el-tag size="small" effect="plain">{{ getLabel(messageTypeLabelMap, row.message_type) }}</el-tag>
+          <el-tag
+            v-if="row.message_type === 'dispatch_notice' && getDispatchNoticeType(row)"
+            size="small"
+            effect="plain"
+            type="warning"
+          >
+            {{ getLabel(dispatchNoticeTypeLabelMap, getDispatchNoticeType(row)) }}
+          </el-tag>
           <el-tag
             v-if="getNotificationAuditStatus(row)"
             size="small"
