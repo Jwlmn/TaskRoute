@@ -61,6 +61,8 @@ const filterForm = ref({
   feedback_filter: '',
   feedback_timeout_minutes: '30',
   sort_by_feedback: '',
+  timely_rate_threshold: '70',
+  timely_low_only: false,
 })
 const currentUser = readCurrentUser()
 const overtimeThresholdMinutes = 30
@@ -501,6 +503,15 @@ const currentHandlingRecommendationNote = computed(() => {
 })
 const displayedExceptionTasks = computed(() => {
   if (filterForm.value.status !== 'pending') return exceptionTasks.value
+  const timelyRateThreshold = Math.max(0, Math.min(100, Number(filterForm.value.timely_rate_threshold || 70))) / 100
+  const use30d = assigneeTimelyWindow.value === '30d'
+  const timelyRateKey = use30d ? 'recent_feedback_30d_timely_rate' : 'recent_feedback_7d_timely_rate'
+  const assigneeTimelyRateMap = new Map(
+    (Array.isArray(assigneeStats.value) ? assigneeStats.value : []).map((item) => [
+      Number(item?.assigned_handler_id || 0),
+      Number(item?.[timelyRateKey] || 0),
+    ]),
+  )
 
   return exceptionTasks.value.filter((task) => {
     if (filterForm.value.overtime_only && getPendingDurationMinutes(task) < overtimeThresholdMinutes) {
@@ -523,6 +534,12 @@ const displayedExceptionTasks = computed(() => {
     if (filterForm.value.feedback_filter === 'feedback_timeout') {
       const threshold = Number(filterForm.value.feedback_timeout_minutes || 30)
       if (!isFeedbackTimeoutTask(task, threshold)) return false
+    }
+    if (filterForm.value.timely_low_only) {
+      const assigneeId = Number(task?.route_meta?.exception?.assigned_handler_id || 0)
+      if (assigneeId <= 0) return false
+      const assigneeRate = Number(assigneeTimelyRateMap.get(assigneeId) || 0)
+      if (assigneeRate >= timelyRateThreshold) return false
     }
     return isTaskMatchedOvertimeLevel(task)
   }).sort((a, b) => {
@@ -698,6 +715,9 @@ const assigneeFeedbackTimelyRanking = computed(() => {
       return { ...item, remindable_count: remindableCount }
     })
 })
+const timelyRateThresholdValue = computed(() => Math.max(0, Math.min(100, Number(filterForm.value.timely_rate_threshold || 70))) / 100)
+const isTimelyRateLow = (item) => Number(item?.timely_feedback_rate || 0) < timelyRateThresholdValue.value
+const timelyRateThresholdText = computed(() => `${Math.round(timelyRateThresholdValue.value * 100)}%`)
 const overtimeExceptionCount = computed(() => exceptionTasks.value.filter((task) => getPendingDurationMinutes(task) >= overtimeThresholdMinutes).length)
 const longestPendingMinutes = computed(() => {
   const durationList = exceptionTasks.value.map((task) => getPendingDurationMinutes(task))
@@ -1039,6 +1059,7 @@ watch(() => filterForm.value.status, (status) => {
     filterForm.value.assigned_handler_id = null
     filterForm.value.feedback_filter = ''
     filterForm.value.sort_by_feedback = ''
+    filterForm.value.timely_low_only = false
   }
 })
 
@@ -1457,20 +1478,40 @@ watch(displayedExceptionTasks, (list) => {
         <el-card shadow="never">
           <div class="table-header">
             <div class="mobile-section-title">责任人反馈及时率</div>
-            <el-segmented
-              v-model="assigneeTimelyWindow"
-              :options="[
-                { label: '近7天', value: '7d' },
-                { label: '近30天', value: '30d' },
-              ]"
-              size="small"
-            />
+            <el-space wrap>
+              <el-segmented
+                v-model="assigneeTimelyWindow"
+                :options="[
+                  { label: '近7天', value: '7d' },
+                  { label: '近30天', value: '30d' },
+                ]"
+                size="small"
+              />
+              <el-select v-model="filterForm.timely_rate_threshold" style="width: 120px" size="small">
+                <el-option label="阈值 60%" value="60" />
+                <el-option label="阈值 70%" value="70" />
+                <el-option label="阈值 80%" value="80" />
+                <el-option label="阈值 90%" value="90" />
+              </el-select>
+              <el-button
+                size="small"
+                plain
+                :type="filterForm.timely_low_only ? 'danger' : 'info'"
+                @click="filterForm.timely_low_only = !filterForm.timely_low_only"
+              >
+                仅看低于{{ timelyRateThresholdText }}
+              </el-button>
+            </el-space>
           </div>
           <el-empty v-if="!assigneeFeedbackTimelyRanking.length" description="暂无及时率样本" />
           <div v-else>
             <div v-for="item in assigneeFeedbackTimelyRanking" :key="`assignee-feedback-timely-${item.assigned_handler_id}`" class="mobile-exception-result-line">
               <span class="order-tag-clickable" @click="applyAssigneeRankingFilter(item)">
-                {{ getAssigneeRankingName(item) }}：{{ formatRatioPercent(item.timely_feedback_rate) }}（{{ Number(item.timely_feedback_count || 0) }}）
+                {{ getAssigneeRankingName(item) }}：
+                <el-tag size="small" :type="isTimelyRateLow(item) ? 'danger' : 'success'">
+                  {{ formatRatioPercent(item.timely_feedback_rate) }}
+                </el-tag>
+                （{{ Number(item.timely_feedback_count || 0) }}）
               </span>
               <el-button
                 size="small"
@@ -1641,6 +1682,17 @@ watch(displayedExceptionTasks, (list) => {
           <el-option label="按最近反馈时间" value="latest_feedback" />
         </el-select>
       </el-form-item>
+      <el-form-item v-if="filterForm.status === 'pending'" label="及时率筛选">
+        <el-space wrap>
+          <el-checkbox v-model="filterForm.timely_low_only">仅看低及时率责任人</el-checkbox>
+          <el-select v-model="filterForm.timely_rate_threshold" style="width: 130px">
+            <el-option label="60%" value="60" />
+            <el-option label="70%" value="70" />
+            <el-option label="80%" value="80" />
+            <el-option label="90%" value="90" />
+          </el-select>
+        </el-space>
+      </el-form-item>
       <el-form-item v-if="filterForm.status === 'pending'" label="超时分层">
         <el-select v-model="filterForm.overtime_level" clearable placeholder="全部时长" style="width: 160px">
           <el-option
@@ -1674,6 +1726,13 @@ watch(displayedExceptionTasks, (list) => {
         <el-space wrap>
           <el-tag closable @close="filterForm.feedback_filter = ''">
             {{ filterForm.feedback_filter === 'no_feedback' ? '仅看无反馈' : `仅看超时未反馈（${filterForm.feedback_timeout_minutes} 分钟）` }}
+          </el-tag>
+        </el-space>
+      </el-form-item>
+      <el-form-item v-if="filterForm.status === 'pending' && filterForm.timely_low_only" label="及时率筛选">
+        <el-space wrap>
+          <el-tag closable @close="filterForm.timely_low_only = false">
+            仅看低于{{ timelyRateThresholdText }}责任人
           </el-tag>
         </el-space>
       </el-form-item>
