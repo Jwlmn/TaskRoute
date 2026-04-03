@@ -455,6 +455,20 @@ const exceptionTypeStats = computed(() => Object.entries(exceptionTypeLabelMap).
   label,
   count: exceptionTasks.value.filter((task) => task.route_meta?.exception?.type === value).length,
 })).filter((item) => item.count > 0))
+const feedbackTimeoutTypeStats = computed(() => {
+  const threshold = Number(filterForm.value.feedback_timeout_minutes || exceptionSummary.value?.feedback_timeout_threshold_minutes || 30)
+  return Object.entries(exceptionTypeLabelMap).map(([value, label]) => ({
+    value,
+    label,
+    count: exceptionTasks.value.filter((task) => task?.route_meta?.exception?.status === 'pending')
+      .filter((task) => task?.route_meta?.exception?.type === value)
+      .filter((task) => {
+        const gap = getLastFeedbackGapMinutes(task)
+        return gap !== null && gap >= threshold
+      })
+      .length,
+  })).filter((item) => item.count > 0)
+})
 const recommendationStats = computed(() => {
   const map = new Map([
     ['reassign', { action: 'reassign', label: '建议改派', type: 'warning', count: 0 }],
@@ -553,6 +567,11 @@ const applyRecommendationFilter = async (action) => {
   }
   selectedExceptionTask.value = matchedTask
   await openHandleDialog(matchedTask)
+}
+const applyFeedbackTimeoutTypeFilter = (exceptionType) => {
+  const nextType = filterForm.value.exception_type === exceptionType ? '' : exceptionType
+  filterForm.value.feedback_filter = 'feedback_timeout'
+  filterForm.value.exception_type = nextType
 }
 const applyDriverRankingFilter = (item) => {
   filterForm.value.driver_focus = filterForm.value.driver_focus === item.account ? '' : (item.account || '')
@@ -1066,6 +1085,23 @@ watch(displayedExceptionTasks, (list) => {
           </el-card>
         </el-col>
       </el-row>
+    </el-card>
+    <el-card shadow="never" class="mb-12" v-if="filterForm.status === 'pending' && feedbackTimeoutTypeStats.length">
+      <div class="table-header">
+        <div class="mobile-section-title">反馈超时原因分布</div>
+        <div class="text-secondary">按异常类型聚合，点击可联动筛选并催办</div>
+      </div>
+      <el-space wrap>
+        <el-tag
+          v-for="item in feedbackTimeoutTypeStats"
+          :key="`feedback-timeout-${item.value}`"
+          :type="filterForm.exception_type === item.value && filterForm.feedback_filter === 'feedback_timeout' ? 'danger' : 'warning'"
+          class="order-tag-clickable"
+          @click="applyFeedbackTimeoutTypeFilter(item.value)"
+        >
+          {{ item.label }}：{{ item.count }}
+        </el-tag>
+      </el-space>
     </el-card>
     <el-row :gutter="12" class="mb-12" v-if="filterForm.status === 'pending'">
       <el-col :span="8">
