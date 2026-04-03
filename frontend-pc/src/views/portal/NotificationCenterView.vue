@@ -42,6 +42,7 @@ const filterForm = ref({
   keyword: '',
   read_status: 'all',
   message_type: '',
+  dispatch_notice_type: '',
   pinned_only: false,
   task_focus: '',
 })
@@ -51,6 +52,16 @@ const messageTypeLabelMap = {
   audit_reminder: '审核催办',
   dispatch_notice: '调度通知',
 }
+const dispatchNoticeTypeLabelMap = {
+  exception_sla: '异常SLA预警',
+  exception_sla_reminder: '异常SLA催办',
+  exception_feedback_sla: '异常反馈SLA催办',
+  exception_sla_assign: '异常自动指派',
+  exception_manual_assign: '异常人工改派',
+  exception_manual_reminder: '异常人工催办',
+  exception_manual_feedback: '异常人工反馈',
+}
+const getDispatchNoticeType = (message) => String(message?.meta?.notice_type || '')
 
 const getMessageRowIds = (row) => {
   if (Array.isArray(row?.aggregate_ids) && row.aggregate_ids.length) {
@@ -115,8 +126,18 @@ const displayMessages = computed(() => {
   })
 
   const list = [...grouped.values()]
-  if (!filterForm.value.task_focus) return list
-  return list.filter((item) => String(item?.meta?.task_id || '') === String(filterForm.value.task_focus))
+  const filteredByDispatchNoticeType = filterForm.value.dispatch_notice_type
+    ? list.filter((item) => {
+      if (item?.message_type !== 'dispatch_notice') return false
+      const aggregateItems = Array.isArray(item?.aggregate_items) ? item.aggregate_items : []
+      if (aggregateItems.length > 0) {
+        return aggregateItems.some((entry) => getDispatchNoticeType(entry) === filterForm.value.dispatch_notice_type)
+      }
+      return getDispatchNoticeType(item) === filterForm.value.dispatch_notice_type
+    })
+    : list
+  if (!filterForm.value.task_focus) return filteredByDispatchNoticeType
+  return filteredByDispatchNoticeType.filter((item) => String(item?.meta?.task_id || '') === String(filterForm.value.task_focus))
 })
 const pagedMessages = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value
@@ -144,12 +165,17 @@ const focusTaskMessages = (row) => {
 const clearTaskFocus = () => {
   filterForm.value.task_focus = ''
 }
-const syncTaskFocusToRoute = async () => {
+const syncFiltersToRoute = async () => {
   const nextQuery = { ...route.query }
   if (filterForm.value.task_focus) {
     nextQuery.task_focus = String(filterForm.value.task_focus)
   } else {
     delete nextQuery.task_focus
+  }
+  if (filterForm.value.dispatch_notice_type) {
+    nextQuery.dispatch_notice_type = String(filterForm.value.dispatch_notice_type)
+  } else {
+    delete nextQuery.dispatch_notice_type
   }
   await router.replace({ query: nextQuery })
 }
@@ -393,11 +419,22 @@ const isNotificationActionDisabled = (row) => {
 
 onMounted(async () => {
   filterForm.value.task_focus = typeof route.query.task_focus === 'string' ? route.query.task_focus : ''
+  filterForm.value.dispatch_notice_type = typeof route.query.dispatch_notice_type === 'string' ? route.query.dispatch_notice_type : ''
+  if (filterForm.value.dispatch_notice_type && !filterForm.value.message_type) {
+    filterForm.value.message_type = 'dispatch_notice'
+  }
   await loadMessages()
 })
 
 watch(() => filterForm.value.task_focus, () => {
-  syncTaskFocusToRoute()
+  syncFiltersToRoute()
+})
+
+watch(() => filterForm.value.dispatch_notice_type, (value) => {
+  if (value && !filterForm.value.message_type) {
+    filterForm.value.message_type = 'dispatch_notice'
+  }
+  syncFiltersToRoute()
 })
 
 watch(displayMessages, (list) => {
@@ -437,6 +474,16 @@ watch(displayMessages, (list) => {
           <el-option label="审核通知" value="audit_notice" />
           <el-option label="审核催办" value="audit_reminder" />
           <el-option label="调度通知" value="dispatch_notice" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="调度场景">
+        <el-select v-model="filterForm.dispatch_notice_type" clearable style="width: 200px">
+          <el-option
+            v-for="(label, value) in dispatchNoticeTypeLabelMap"
+            :key="value"
+            :label="label"
+            :value="value"
+          />
         </el-select>
       </el-form-item>
       <el-form-item>
@@ -518,6 +565,18 @@ watch(displayMessages, (list) => {
             :type="auditStatusTypeMap[getNotificationAuditStatus(row)] || 'info'"
           >
             {{ getLabel(auditStatusLabelMap, getNotificationAuditStatus(row)) }}
+          </el-tag>
+          <span v-else>-</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="调度场景" min-width="150">
+        <template #default="{ row }">
+          <el-tag
+            v-if="row.message_type === 'dispatch_notice' && getDispatchNoticeType(row)"
+            type="warning"
+            effect="plain"
+          >
+            {{ getLabel(dispatchNoticeTypeLabelMap, getDispatchNoticeType(row)) }}
           </el-tag>
           <span v-else>-</span>
         </template>
