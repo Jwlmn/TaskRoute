@@ -155,6 +155,17 @@ const formatNextReminder = (task) => {
   if (!sla) return '-'
   return formatNextReminderMinutes(sla.next_reminder_minutes)
 }
+const formatLastReminder = (task) => {
+  const exception = task?.route_meta?.exception
+  if (!exception) return '-'
+  const remindedAt = exception.last_reminded_at || exception.sla?.last_notice_at
+  return remindedAt ? formatDateTime(remindedAt) : '-'
+}
+const formatLastReminderOperator = (task) => {
+  const exception = task?.route_meta?.exception
+  if (!exception) return '-'
+  return formatOperator(exception.last_reminded_by_name, exception.last_reminded_by_account, exception.last_reminded_by)
+}
 const isTaskInReminderCooldown = (task) => {
   const sla = getExceptionSla(task)
   if (!sla) return false
@@ -1217,6 +1228,16 @@ watch(displayedExceptionTasks, (list) => {
           <span v-else>-</span>
         </template>
       </el-table-column>
+      <el-table-column label="最近催办时间" min-width="180">
+        <template #default="{ row }">
+          {{ formatLastReminder(row) }}
+        </template>
+      </el-table-column>
+      <el-table-column label="最近催办人" min-width="150">
+        <template #default="{ row }">
+          {{ formatLastReminderOperator(row) }}
+        </template>
+      </el-table-column>
       <el-table-column label="处理建议" min-width="220">
         <template #default="{ row }">
           <el-tag :type="getExceptionRecommendation(row).type">
@@ -1418,6 +1439,10 @@ watch(displayedExceptionTasks, (list) => {
         <el-descriptions-item label="催办间隔">{{ Number.isFinite(Number(currentException.sla?.reminder_interval_minutes)) ? `${currentException.sla.reminder_interval_minutes} 分钟` : '-' }}</el-descriptions-item>
         <el-descriptions-item label="下次催办">{{ formatNextReminderMinutes(currentException.sla?.next_reminder_minutes) }}</el-descriptions-item>
         <el-descriptions-item label="催办次数">{{ Number.isFinite(Number(currentException.sla?.reminder_count)) ? Number(currentException.sla.reminder_count) : 0 }}</el-descriptions-item>
+        <el-descriptions-item label="最近催办时间">{{ formatDateTime(currentException.last_reminded_at || currentException.sla?.last_notice_at) }}</el-descriptions-item>
+        <el-descriptions-item label="最近催办人">
+          {{ formatOperator(currentException.last_reminded_by_name, currentException.last_reminded_by_account, currentException.last_reminded_by) }}
+        </el-descriptions-item>
         <el-descriptions-item label="处理动作">
           {{ getLabel(exceptionActionLabelMap, currentException.handle_action) }}
         </el-descriptions-item>
