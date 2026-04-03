@@ -17,6 +17,7 @@ const dispatchNoticeTypeLabelMap = {
   exception_sla_assign: '异常自动指派',
   exception_manual_assign: '异常人工改派',
   exception_manual_reminder: '异常人工催办',
+  exception_manual_feedback: '异常人工反馈',
 }
 
 const auditStatusLabelMap = {
