@@ -57,6 +57,9 @@ const filterForm = ref({
   site_focus: '',
   assigned_to_me: false,
   assigned_handler_id: null,
+  feedback_filter: '',
+  feedback_timeout_minutes: '30',
+  sort_by_feedback: '',
 })
 const currentUser = readCurrentUser()
 const overtimeThresholdMinutes = 30
@@ -64,6 +67,11 @@ const overtimeLevelOptions = [
   { label: '超时 30 分钟', value: '30', min: 30 },
   { label: '超时 60 分钟', value: '60', min: 60 },
   { label: '超时 120 分钟', value: '120', min: 120 },
+]
+const feedbackTimeoutOptions = [
+  { label: '30 分钟未反馈', value: '30', min: 30 },
+  { label: '60 分钟未反馈', value: '60', min: 60 },
+  { label: '120 分钟未反馈', value: '120', min: 120 },
 ]
 
 const exceptionTypeLabelMap = {
@@ -166,6 +174,19 @@ const formatLastReminder = (task) => {
   if (!exception) return '-'
   const remindedAt = exception.last_reminded_at || exception.sla?.last_notice_at
   return remindedAt ? formatDateTime(remindedAt) : '-'
+}
+const getLastFeedbackAt = (task) => {
+  const exception = task?.route_meta?.exception || {}
+  const value = exception.last_feedback_at || ''
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  return date
+}
+const getLastFeedbackGapMinutes = (task) => {
+  const feedbackAt = getLastFeedbackAt(task)
+  if (!feedbackAt) return null
+  return Math.max(0, Math.floor((Date.now() - feedbackAt.getTime()) / 60000))
 }
 const formatLastReminderOperator = (task) => {
   const exception = task?.route_meta?.exception
@@ -355,7 +376,23 @@ const displayedExceptionTasks = computed(() => {
     if (filterForm.value.recommendation_action && getExceptionRecommendation(task).action !== filterForm.value.recommendation_action) {
       return false
     }
+    if (filterForm.value.feedback_filter === 'no_feedback' && getLastFeedbackAt(task)) {
+      return false
+    }
+    if (filterForm.value.feedback_filter === 'feedback_timeout') {
+      const threshold = Number(filterForm.value.feedback_timeout_minutes || 30)
+      const gap = getLastFeedbackGapMinutes(task)
+      if (gap === null || gap < threshold) return false
+    }
     return isTaskMatchedOvertimeLevel(task)
+  }).sort((a, b) => {
+    if (filterForm.value.sort_by_feedback !== 'latest_feedback') return 0
+    const aDate = getLastFeedbackAt(a)
+    const bDate = getLastFeedbackAt(b)
+    if (aDate && bDate) return bDate.getTime() - aDate.getTime()
+    if (aDate && !bDate) return -1
+    if (!aDate && bDate) return 1
+    return 0
   })
 })
 const pagedExceptionTasks = computed(() => {
@@ -634,6 +671,8 @@ watch(() => filterForm.value.status, (status) => {
     filterForm.value.recommendation_action = ''
     filterForm.value.assigned_to_me = false
     filterForm.value.assigned_handler_id = null
+    filterForm.value.feedback_filter = ''
+    filterForm.value.sort_by_feedback = ''
   }
 })
 
@@ -1117,6 +1156,27 @@ watch(displayedExceptionTasks, (list) => {
           />
         </el-select>
       </el-form-item>
+      <el-form-item v-if="filterForm.status === 'pending'" label="反馈筛选">
+        <el-select v-model="filterForm.feedback_filter" clearable placeholder="全部反馈状态" style="width: 180px">
+          <el-option label="仅看无反馈" value="no_feedback" />
+          <el-option label="仅看超时未反馈" value="feedback_timeout" />
+        </el-select>
+      </el-form-item>
+      <el-form-item v-if="filterForm.status === 'pending' && filterForm.feedback_filter === 'feedback_timeout'" label="反馈超时">
+        <el-select v-model="filterForm.feedback_timeout_minutes" style="width: 180px">
+          <el-option
+            v-for="item in feedbackTimeoutOptions"
+            :key="item.value"
+            :label="item.label"
+            :value="item.value"
+          />
+        </el-select>
+      </el-form-item>
+      <el-form-item v-if="filterForm.status === 'pending'" label="反馈排序">
+        <el-select v-model="filterForm.sort_by_feedback" clearable placeholder="默认排序" style="width: 180px">
+          <el-option label="按最近反馈时间" value="latest_feedback" />
+        </el-select>
+      </el-form-item>
       <el-form-item v-if="filterForm.status === 'pending'" label="超时分层">
         <el-select v-model="filterForm.overtime_level" clearable placeholder="全部时长" style="width: 160px">
           <el-option
@@ -1143,6 +1203,13 @@ watch(displayedExceptionTasks, (list) => {
         <el-space wrap>
           <el-tag closable @close="filterForm.recommendation_action = ''">
             {{ getLabel(exceptionActionLabelMap, filterForm.recommendation_action) }}
+          </el-tag>
+        </el-space>
+      </el-form-item>
+      <el-form-item v-if="filterForm.status === 'pending' && filterForm.feedback_filter" label="反馈筛选">
+        <el-space wrap>
+          <el-tag closable @close="filterForm.feedback_filter = ''">
+            {{ filterForm.feedback_filter === 'no_feedback' ? '仅看无反馈' : `仅看超时未反馈（${filterForm.feedback_timeout_minutes} 分钟）` }}
           </el-tag>
         </el-space>
       </el-form-item>
