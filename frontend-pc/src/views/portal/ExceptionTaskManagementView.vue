@@ -8,6 +8,7 @@ import { getLabel, taskStatusLabelMap } from '../../utils/labels'
 
 const router = useRouter()
 const route = useRoute()
+const analyticsDetailStateStorageKey = 'taskroute.exception.analytics.detail.state'
 const props = defineProps({
   pageMode: {
     type: String,
@@ -986,6 +987,52 @@ const formatAssigneeRecentTimelyStats = (item) => {
   const rate30d = formatRatioPercent(Number(item?.recent_feedback_30d_timely_rate || 0))
   return `近7天及时率 ${rate7d}（${feedback7dCount}）｜近30天及时率 ${rate30d}（${feedback30dCount}）`
 }
+const persistAnalyticsDetailState = () => {
+  if (!isAnalyticsPage.value || typeof window === 'undefined') return
+  try {
+    const payload = {
+      title: analyticsDetailTitle.value || '',
+      description: analyticsDetailDescription.value || '',
+      task_ids: [...analyticsDetailTaskIds.value],
+      filters: { ...analyticsDetailFilters.value },
+      current_page: analyticsDetailCurrentPage.value,
+      page_size: analyticsDetailPageSize.value,
+      visible: analyticsDetailDialogVisible.value,
+      updated_at: Date.now(),
+    }
+    window.sessionStorage.setItem(analyticsDetailStateStorageKey, JSON.stringify(payload))
+  } catch {
+    // ignore
+  }
+}
+const tryRestoreAnalyticsDetailState = () => {
+  if (!isAnalyticsPage.value || typeof window === 'undefined') return
+  try {
+    const raw = window.sessionStorage.getItem(analyticsDetailStateStorageKey)
+    if (!raw) return
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return
+    const updatedAt = Number(parsed.updated_at || 0)
+    if (!updatedAt || Date.now() - updatedAt > 1000 * 60 * 60) return
+    const taskIds = Array.isArray(parsed.task_ids) ? parsed.task_ids.map((id) => Number(id)).filter((id) => id > 0) : []
+    if (taskIds.length <= 0) return
+    analyticsDetailTitle.value = String(parsed.title || '异常明细')
+    analyticsDetailDescription.value = String(parsed.description || '')
+    analyticsDetailTaskIds.value = taskIds
+    analyticsDetailFilters.value = {
+      keyword: String(parsed.filters?.keyword || ''),
+      overtimeOnly: Boolean(parsed.filters?.overtimeOnly),
+      mineOnly: Boolean(parsed.filters?.mineOnly),
+      remindableOnly: Boolean(parsed.filters?.remindableOnly),
+      recommendationAction: String(parsed.filters?.recommendationAction || ''),
+    }
+    analyticsDetailCurrentPage.value = Math.max(1, Number(parsed.current_page || 1))
+    analyticsDetailPageSize.value = Math.max(1, Number(parsed.page_size || 10))
+    analyticsDetailDialogVisible.value = Boolean(parsed.visible)
+  } catch {
+    // ignore
+  }
+}
 const openAnalyticsDetailByTaskList = ({ title, description = '', tasks = [] }) => {
   const taskIds = [...new Set((Array.isArray(tasks) ? tasks : [])
     .map((task) => Number(task?.id || 0))
@@ -1006,6 +1053,7 @@ const openAnalyticsDetailByTaskList = ({ title, description = '', tasks = [] }) 
     recommendationAction: '',
   }
   analyticsDetailDialogVisible.value = true
+  persistAnalyticsDetailState()
 }
 const openAnalyticsDetailByMatcher = ({ title, description = '', matcher }) => {
   const tasks = pendingExceptionTasks.value.filter((task) => (typeof matcher === 'function' ? matcher(task) : true))
@@ -1055,11 +1103,13 @@ const applyOperationsRouteFilters = () => {
   filterForm.value.remindable_only = query.remindable_only === '1'
 }
 const jumpToOperationsPage = async () => {
+  persistAnalyticsDetailState()
   analyticsDetailDialogVisible.value = false
   await router.push({ name: 'exception-task-operations', query: buildOperationsQueryFromAnalytics() })
 }
 const jumpToOperationsTask = async (task) => {
   if (!task?.id) return
+  persistAnalyticsDetailState()
   analyticsDetailDialogVisible.value = false
   await router.push({
     name: 'exception-task-operations',
@@ -1090,6 +1140,10 @@ const focusMatchedTask = (matcher) => {
 const clearAggregationFilter = () => {
   filterForm.value.driver_focus = ''
   filterForm.value.site_focus = ''
+}
+const toggleRecommendationQuickFilter = (action = '') => {
+  filterForm.value.recommendation_action = filterForm.value.recommendation_action === action ? '' : action
+  currentPage.value = 1
 }
 const applyRecommendationFilter = async (action) => {
   const nextAction = filterForm.value.recommendation_action === action ? '' : action
@@ -1611,6 +1665,7 @@ onMounted(async () => {
   applyOperationsRouteFilters()
   await loadAssignableHandlers()
   await loadExceptionTasks()
+  tryRestoreAnalyticsDetailState()
   openExceptionDetailFromRoute()
 })
 
@@ -1626,6 +1681,25 @@ watch([filteredAnalyticsDetailTasks, analyticsDetailPageSize], () => {
     analyticsDetailCurrentPage.value = maxPage
   }
 })
+watch(
+  [
+    analyticsDetailDialogVisible,
+    analyticsDetailTitle,
+    analyticsDetailDescription,
+    analyticsDetailTaskIds,
+    analyticsDetailCurrentPage,
+    analyticsDetailPageSize,
+    () => analyticsDetailFilters.value.keyword,
+    () => analyticsDetailFilters.value.overtimeOnly,
+    () => analyticsDetailFilters.value.mineOnly,
+    () => analyticsDetailFilters.value.remindableOnly,
+    () => analyticsDetailFilters.value.recommendationAction,
+  ],
+  () => {
+    persistAnalyticsDetailState()
+  },
+  { deep: false },
+)
 watch(() => route.fullPath, async () => {
   if (!isOperationsPage.value) return
   applyOperationsRouteFilters()
@@ -2012,6 +2086,26 @@ watch(() => route.fullPath, async () => {
         <el-select v-model="filterForm.sort_by_feedback" clearable placeholder="默认排序" style="width: 180px">
           <el-option label="按最近反馈时间" value="latest_feedback" />
         </el-select>
+      </el-form-item>
+      <el-form-item v-if="filterForm.status === 'pending' && recommendationStats.length" label="建议快捷">
+        <el-space wrap>
+          <el-tag
+            :type="filterForm.recommendation_action ? 'info' : 'primary'"
+            class="order-tag-clickable"
+            @click="toggleRecommendationQuickFilter('')"
+          >
+            全部
+          </el-tag>
+          <el-tag
+            v-for="item in recommendationStats"
+            :key="`operations-recommend-${item.action}`"
+            :type="filterForm.recommendation_action === item.action ? 'primary' : item.type"
+            class="order-tag-clickable"
+            @click="toggleRecommendationQuickFilter(item.action)"
+          >
+            {{ item.label }}：{{ item.count }}
+          </el-tag>
+        </el-space>
       </el-form-item>
       <el-form-item v-if="filterForm.status === 'pending'" label="及时率筛选">
         <el-space wrap>
