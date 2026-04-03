@@ -433,6 +433,7 @@ const pendingFeedbackTimeoutCount = computed(() => {
     return gap !== null && gap >= threshold
   }).length
 })
+const feedbackTimeoutThresholdMinutes = computed(() => Number(exceptionSummary.value?.feedback_timeout_threshold_minutes || 30))
 const feedbackTimeoutRemindableTaskIds = computed(() => {
   const threshold = Number(filterForm.value.feedback_timeout_minutes || exceptionSummary.value?.feedback_timeout_threshold_minutes || 30)
   return exceptionTasks.value
@@ -444,6 +445,46 @@ const feedbackTimeoutRemindableTaskIds = computed(() => {
     .filter((task) => !isTaskInReminderCooldown(task))
     .map((task) => Number(task.id))
     .filter((id) => id > 0)
+})
+const assigneeFeedbackTimeoutRanking = computed(() => {
+  const threshold = feedbackTimeoutThresholdMinutes.value
+  const map = new Map()
+  exceptionTasks.value.forEach((task) => {
+    const exception = task?.route_meta?.exception
+    if (!exception || exception.status !== 'pending') return
+    const assigneeId = Number(exception.assigned_handler_id || 0)
+    if (assigneeId <= 0) return
+    const key = String(assigneeId)
+    const current = map.get(key) || {
+      assigned_handler_id: assigneeId,
+      assigned_handler_name: exception.assigned_handler_name || '',
+      assigned_handler_account: exception.assigned_handler_account || '',
+      pending_count: 0,
+      feedback_timeout_count: 0,
+      remindable_count: 0,
+      timeout_rate: 0,
+    }
+    current.pending_count += 1
+    const feedbackGap = getLastFeedbackGapMinutes(task)
+    if (feedbackGap !== null && feedbackGap >= threshold) {
+      current.feedback_timeout_count += 1
+      if (!isTaskInReminderCooldown(task)) {
+        current.remindable_count += 1
+      }
+    }
+    current.timeout_rate = current.pending_count > 0 ? current.feedback_timeout_count / current.pending_count : 0
+    map.set(key, current)
+  })
+  return [...map.values()]
+    .filter((item) => Number(item.feedback_timeout_count || 0) > 0)
+    .sort((a, b) => {
+      const rateGap = Number(b.timeout_rate || 0) - Number(a.timeout_rate || 0)
+      if (Math.abs(rateGap) > 0.0001) return rateGap
+      const timeoutGap = Number(b.feedback_timeout_count || 0) - Number(a.feedback_timeout_count || 0)
+      if (timeoutGap !== 0) return timeoutGap
+      return Number(b.pending_count || 0) - Number(a.pending_count || 0)
+    })
+    .slice(0, 5)
 })
 const overtimeExceptionCount = computed(() => exceptionTasks.value.filter((task) => getPendingDurationMinutes(task) >= overtimeThresholdMinutes).length)
 const longestPendingMinutes = computed(() => {
@@ -540,6 +581,7 @@ const assigneeRanking = computed(() => {
   return [...map.values()].sort((a, b) => Number(b.pending_count || 0) - Number(a.pending_count || 0)).slice(0, 5)
 })
 const getAssigneeRankingName = (item) => formatOperator(item?.assigned_handler_name, item?.assigned_handler_account, item?.assigned_handler_id)
+const formatRatioPercent = (value) => `${(Number(value || 0) * 100).toFixed(0)}%`
 const focusMatchedTask = (matcher) => {
   const matchedTask = displayedExceptionTasks.value.find(matcher)
   if (matchedTask) {
@@ -595,6 +637,13 @@ const applyAssigneeRankingFilter = (item) => {
   if (filterForm.value.assigned_handler_id) {
     focusMatchedTask((task) => Number(task?.route_meta?.exception?.assigned_handler_id || 0) === assigneeId)
   }
+}
+const applyAssigneeFeedbackTimeoutFilter = (item) => {
+  const assigneeId = Number(item?.assigned_handler_id || 0)
+  if (assigneeId <= 0) return
+  filterForm.value.assigned_handler_id = assigneeId
+  filterForm.value.feedback_filter = 'feedback_timeout'
+  focusMatchedTask((task) => Number(task?.route_meta?.exception?.assigned_handler_id || 0) === assigneeId)
 }
 const remindExceptionsByTaskIds = async (taskIds, remindNote = '') => {
   const ids = [...new Set((Array.isArray(taskIds) ? taskIds : []).map((id) => Number(id)).filter((id) => id > 0))]
@@ -682,6 +731,26 @@ const remindAssigneeRanking = async (item) => {
     return
   }
   await remindExceptionsByTaskIds(taskIds, `请优先处理你负责的异常任务（${getAssigneeRankingName(item)}）。`)
+}
+const remindAssigneeFeedbackTimeout = async (item) => {
+  const assigneeId = Number(item?.assigned_handler_id || 0)
+  if (assigneeId <= 0) return
+  const threshold = feedbackTimeoutThresholdMinutes.value
+  const taskIds = exceptionTasks.value
+    .filter((task) => task?.route_meta?.exception?.status === 'pending')
+    .filter((task) => Number(task?.route_meta?.exception?.assigned_handler_id || 0) === assigneeId)
+    .filter((task) => {
+      const feedbackGap = getLastFeedbackGapMinutes(task)
+      return feedbackGap !== null && feedbackGap >= threshold
+    })
+    .filter((task) => !isTaskInReminderCooldown(task))
+    .map((task) => Number(task.id))
+    .filter((id) => id > 0)
+  if (taskIds.length === 0) {
+    ElMessage.warning('该责任人当前没有可催办的反馈超时异常')
+    return
+  }
+  await remindExceptionsByTaskIds(taskIds, `你负责的异常反馈已超时（>=${threshold} 分钟），请优先反馈处理进展。`)
 }
 const remindSingleTask = async (task) => {
   const taskId = Number(task?.id || 0)
@@ -1131,7 +1200,33 @@ watch(displayedExceptionTasks, (list) => {
       </el-space>
     </el-card>
     <el-row :gutter="12" class="mb-12" v-if="filterForm.status === 'pending'">
-      <el-col :span="8">
+      <el-col :span="6">
+        <el-card shadow="never">
+          <div class="table-header">
+            <div class="mobile-section-title">责任人反馈超时占比</div>
+            <div class="text-secondary">Top 5</div>
+          </div>
+          <el-empty v-if="!assigneeFeedbackTimeoutRanking.length" description="暂无反馈超时排行" />
+          <div v-else>
+            <div v-for="item in assigneeFeedbackTimeoutRanking" :key="`assignee-feedback-timeout-${item.assigned_handler_id}`" class="mobile-exception-result-line">
+              <span class="order-tag-clickable" @click="applyAssigneeFeedbackTimeoutFilter(item)">
+                {{ getAssigneeRankingName(item) }}：{{ Number(item.feedback_timeout_count || 0) }}/{{ Number(item.pending_count || 0) }}（{{ formatRatioPercent(item.timeout_rate) }}）
+              </span>
+              <el-button
+                size="small"
+                link
+                type="danger"
+                :disabled="remindingException || Number(item.remindable_count || 0) <= 0"
+                :loading="remindingException"
+                @click="remindAssigneeFeedbackTimeout(item)"
+              >
+                催办
+              </el-button>
+            </div>
+          </div>
+        </el-card>
+      </el-col>
+      <el-col :span="6">
         <el-card shadow="never">
           <div class="table-header">
             <div class="mobile-section-title">责任人绩效分布</div>
@@ -1160,7 +1255,7 @@ watch(displayedExceptionTasks, (list) => {
           </div>
         </el-card>
       </el-col>
-      <el-col :span="8">
+      <el-col :span="6">
         <el-card shadow="never">
           <div class="table-header">
             <div class="mobile-section-title">司机异常排行</div>
@@ -1174,7 +1269,7 @@ watch(displayedExceptionTasks, (list) => {
           </div>
         </el-card>
       </el-col>
-      <el-col :span="8">
+      <el-col :span="6">
         <el-card shadow="never">
           <div class="table-header">
             <div class="mobile-section-title">装货地异常排行</div>
