@@ -8,6 +8,12 @@ import { getLabel, taskStatusLabelMap } from '../../utils/labels'
 
 const router = useRouter()
 const route = useRoute()
+const props = defineProps({
+  pageMode: {
+    type: String,
+    default: 'operations',
+  },
+})
 const loadingExceptions = ref(false)
 const handlingException = ref(false)
 const exceptionTasks = ref([])
@@ -95,6 +101,9 @@ const exceptionStatusTagTypeMap = {
   pending: 'danger',
   handled: 'success',
 }
+const isAnalyticsPage = computed(() => props.pageMode === 'analytics')
+const isOperationsPage = computed(() => props.pageMode === 'operations')
+const pageTitle = computed(() => (isAnalyticsPage.value ? '异常分析看板' : '异常处置工作台'))
 
 const exceptionActionLabelMap = {
   continue: '继续执行',
@@ -1315,10 +1324,11 @@ watch(displayedExceptionTasks, (list) => {
   <el-card shadow="never" class="page-card">
     <template #header>
       <div class="table-header">
-        <div class="card-title">异常任务管理</div>
+        <div class="card-title">{{ pageTitle }}</div>
         <el-button type="primary" plain @click="loadExceptionTasks">刷新异常</el-button>
       </div>
     </template>
+    <template v-if="!isOperationsPage">
     <el-row :gutter="12" class="mb-12">
       <el-col :span="8">
         <el-card shadow="never">
@@ -1586,6 +1596,8 @@ watch(displayedExceptionTasks, (list) => {
         </el-card>
       </el-col>
     </el-row>
+    </template>
+    <template v-if="!isAnalyticsPage">
     <el-form inline class="mb-12">
       <el-form-item label="处理状态">
         <el-select v-model="filterForm.status" style="width: 140px">
@@ -1964,10 +1976,12 @@ watch(displayedExceptionTasks, (list) => {
       />
     </div>
     </div>
+    </template>
   </el-card>
   </div>
 
   <el-dialog
+    v-if="!isAnalyticsPage"
     v-model="exceptionHandleDialogVisible"
     title="处理任务异常"
     width="620px"
@@ -2033,6 +2047,7 @@ watch(displayedExceptionTasks, (list) => {
   </el-dialog>
 
   <el-dialog
+    v-if="!isAnalyticsPage"
     v-model="exceptionAssignDialogVisible"
     title="改派异常责任人"
     width="560px"
@@ -2075,6 +2090,7 @@ watch(displayedExceptionTasks, (list) => {
   </el-dialog>
 
   <el-dialog
+    v-if="!isAnalyticsPage"
     v-model="exceptionFeedbackDialogVisible"
     title="提交异常反馈"
     width="560px"
@@ -2102,6 +2118,7 @@ watch(displayedExceptionTasks, (list) => {
   </el-dialog>
 
   <el-drawer
+    v-if="!isAnalyticsPage"
     v-model="exceptionDetailDialogVisible"
     title="异常处理详情"
     size="720px"
