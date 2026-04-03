@@ -2655,7 +2655,7 @@ watch(() => route.fullPath, async () => {
     v-model="exceptionDetailDialogVisible"
     title="异常处理详情"
     width="min(64vw, 920px)"
-    align-center
+    top="4vh"
     class="exception-detail-dialog"
     destroy-on-close
   >
@@ -3036,23 +3036,25 @@ watch(() => route.fullPath, async () => {
 }
 
 .exception-detail-dialog :deep(.el-dialog) {
-  height: 78vh;
-  max-height: 78vh;
+  max-height: 92vh;
   display: flex;
   flex-direction: column;
 }
 
 .exception-detail-dialog :deep(.el-dialog__body) {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
+  height: calc(92vh - 120px);
+  min-height: 560px;
+  overflow: hidden;
 }
 
 .exception-detail-tabs {
-  min-height: 100%;
+  height: 100%;
+  min-height: 0;
 }
 
 .exception-detail-tabs :deep(.el-tabs__content) {
+  height: calc(100% - 48px);
+  overflow-y: auto;
   padding-right: 4px;
 }
 
