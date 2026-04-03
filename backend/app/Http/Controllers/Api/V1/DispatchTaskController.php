@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\DispatchTask;
 use App\Models\SystemMessage;
+use App\Models\User;
 use App\Models\Vehicle;
 use App\Services\Auth\DataScopeService;
 use App\Services\Dispatch\ExceptionSlaService;
@@ -526,6 +527,101 @@ class DispatchTaskController extends Controller
             return response()->json(
                 $task->fresh(['vehicle:id,plate_number,name', 'driver:id,account,name'])
             );
+        });
+    }
+
+    public function assignExceptionHandler(Request $request): JsonResponse
+    {
+        if (! $request->user()?->hasAnyRole(['admin', 'dispatcher'])) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $payload = $request->validate([
+            'task_id' => ['required', 'integer', 'exists:dispatch_tasks,id'],
+            'assigned_handler_id' => ['required', 'integer', 'exists:users,id'],
+            'assign_note' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        return DB::transaction(function () use ($payload, $request): JsonResponse {
+            $operator = $request->user();
+            $task = $this->dataScopeService->applyDispatchTaskScope(DispatchTask::query(), $operator)
+                ->lockForUpdate()
+                ->findOrFail((int) $payload['task_id']);
+
+            $routeMeta = is_array($task->route_meta) ? $task->route_meta : [];
+            $exception = is_array($routeMeta['exception'] ?? null) ? $routeMeta['exception'] : null;
+            if (! $exception) {
+                return response()->json(['message' => '当前任务没有异常记录'], 422);
+            }
+            if (($exception['status'] ?? null) !== 'pending') {
+                return response()->json(['message' => '仅待处理异常可改派责任人'], 422);
+            }
+
+            $targetHandler = User::query()
+                ->where('id', (int) $payload['assigned_handler_id'])
+                ->where('status', 'active')
+                ->whereIn('role', ['admin', 'dispatcher'])
+                ->first();
+            if (! $targetHandler) {
+                return response()->json(['message' => '目标责任人不可用'], 422);
+            }
+            if (
+                ! $operator->hasRole('admin')
+                && $targetHandler->id !== $operator->id
+                && ! $this->dataScopeService->applyUserScope(User::query(), $operator)->where('id', $targetHandler->id)->exists()
+            ) {
+                return response()->json(['message' => '目标责任人不在当前可管理范围内'], 403);
+            }
+
+            $currentHandlerId = (int) ($exception['assigned_handler_id'] ?? 0);
+            if ($currentHandlerId === (int) $targetHandler->id) {
+                return response()->json($task->fresh(['vehicle:id,plate_number,name', 'driver:id,account,name']));
+            }
+
+            $history = is_array($exception['history'] ?? null) ? $exception['history'] : [];
+            $history[] = [
+                'event' => 'manual_assign',
+                'operator_id' => (int) $operator->id,
+                'operator_account' => $operator->account,
+                'operator_name' => $operator->name,
+                'previous_assigned_handler_id' => $currentHandlerId > 0 ? $currentHandlerId : null,
+                'assigned_handler_id' => (int) $targetHandler->id,
+                'assigned_handler_account' => $targetHandler->account,
+                'assigned_handler_name' => $targetHandler->name,
+                'assign_note' => $payload['assign_note'] ?? null,
+                'occurred_at' => now()->toDateTimeString(),
+            ];
+
+            $routeMeta['exception'] = array_merge($exception, [
+                'assigned_handler_id' => (int) $targetHandler->id,
+                'assigned_handler_account' => $targetHandler->account,
+                'assigned_handler_name' => $targetHandler->name,
+                'assigned_at' => now()->toDateTimeString(),
+                'assigned_by' => (int) $operator->id,
+                'assigned_by_account' => $operator->account,
+                'assigned_by_name' => $operator->name,
+                'assigned_reason' => 'manual_assign',
+                'assign_note' => $payload['assign_note'] ?? null,
+                'history' => $history,
+            ]);
+            $task->route_meta = $routeMeta;
+            $task->save();
+
+            SystemMessage::query()->create([
+                'user_id' => (int) $targetHandler->id,
+                'message_type' => 'dispatch_notice',
+                'title' => '异常任务已指派给你',
+                'content' => "任务 {$task->task_no} 异常已由 {$operator->name} 指派给你，请及时处理。",
+                'meta' => [
+                    'task_id' => (int) $task->id,
+                    'task_no' => (string) $task->task_no,
+                    'exception_type' => $exception['type'] ?? null,
+                    'notice_type' => 'exception_manual_assign',
+                    'assign_note' => $payload['assign_note'] ?? null,
+                ],
+            ]);
+
+            return response()->json($task->fresh(['vehicle:id,plate_number,name', 'driver:id,account,name']));
         });
     }
 

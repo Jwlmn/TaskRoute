@@ -17,13 +17,21 @@ const pageSize = ref(10)
 const detailOrderCurrentPage = ref(1)
 const detailOrderPageSize = ref(10)
 const exceptionHandleDialogVisible = ref(false)
+const exceptionAssignDialogVisible = ref(false)
 const exceptionDetailDialogVisible = ref(false)
 const handlingTask = ref(null)
+const assigningTask = ref(null)
 const selectedExceptionTask = ref(null)
+const assigningExceptionHandler = ref(false)
+const assignCandidates = ref([])
 const exceptionHandleForm = ref({
   action: 'continue',
   handle_note: '',
   reassign_vehicle_id: null,
+})
+const exceptionAssignForm = ref({
+  assigned_handler_id: null,
+  assign_note: '',
 })
 const filterForm = ref({
   status: 'pending',
@@ -147,6 +155,7 @@ const getHistoryEventLabel = (event) => {
   if (event === 'sla_alert') return 'SLA 升级预警'
   if (event === 'sla_reminder') return 'SLA 超时催办'
   if (event === 'sla_assign') return 'SLA 自动指派'
+  if (event === 'manual_assign') return '人工改派责任人'
   return '系统事件'
 }
 const getPendingDurationTagType = (task) => {
@@ -470,6 +479,18 @@ const loadVehicles = async () => {
   vehicles.value = Array.isArray(data?.data) ? data.data : []
 }
 
+const loadAssignableHandlers = async () => {
+  try {
+    const { data } = await api.post('/resource/personnel/list', {
+      status: 'active',
+    })
+    const list = Array.isArray(data?.data) ? data.data : []
+    assignCandidates.value = list.filter((item) => ['admin', 'dispatcher'].includes(item?.role))
+  } catch {
+    assignCandidates.value = []
+  }
+}
+
 const openHandleDialog = async (task) => {
   handlingTask.value = task
   const recommendation = getExceptionRecommendation(task)
@@ -486,6 +507,54 @@ const openDetailDialog = (task) => {
   selectedExceptionTask.value = task
   detailOrderCurrentPage.value = 1
   exceptionDetailDialogVisible.value = true
+}
+const openAssignDialog = async (task, useCurrentUser = false) => {
+  assigningTask.value = task
+  await loadAssignableHandlers()
+  const defaultAssignee = useCurrentUser
+    ? Number(currentUser?.id || 0)
+    : Number(task?.route_meta?.exception?.assigned_handler_id || currentUser?.id || 0)
+  exceptionAssignForm.value = {
+    assigned_handler_id: defaultAssignee > 0 ? defaultAssignee : null,
+    assign_note: useCurrentUser ? '我接管该异常任务。' : '',
+  }
+  exceptionAssignDialogVisible.value = true
+}
+const assignToMe = async (task) => {
+  if (!currentUser?.id) {
+    ElMessage.warning('当前账号信息异常，请重新登录后重试')
+    return
+  }
+  await openAssignDialog(task, true)
+}
+const submitAssignExceptionHandler = async () => {
+  if (!assigningTask.value?.id) return
+  if (!exceptionAssignForm.value.assigned_handler_id) {
+    ElMessage.warning('请选择责任人')
+    return
+  }
+
+  assigningExceptionHandler.value = true
+  try {
+    await api.post('/dispatch-task/exception-assign', {
+      task_id: assigningTask.value.id,
+      assigned_handler_id: exceptionAssignForm.value.assigned_handler_id,
+      assign_note: exceptionAssignForm.value.assign_note || null,
+    })
+    ElMessage.success('责任人已更新')
+    exceptionAssignDialogVisible.value = false
+    await loadExceptionTasks()
+    if (selectedExceptionTask.value?.id) {
+      const nextTask = exceptionTasks.value.find((item) => item.id === selectedExceptionTask.value.id)
+      if (nextTask) {
+        selectedExceptionTask.value = nextTask
+      }
+    }
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '责任人改派失败')
+  } finally {
+    assigningExceptionHandler.value = false
+  }
 }
 const applyRecommendedHandleAction = () => {
   if (!currentHandlingRecommendation.value?.action) return
@@ -900,9 +969,11 @@ watch(displayedExceptionTasks, (list) => {
           }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="160" fixed="right">
+      <el-table-column label="操作" width="240" fixed="right">
         <template #default="{ row }">
           <el-button link type="info" @click="openDetailDialog(row)">详情</el-button>
+          <el-button link type="warning" :disabled="row.route_meta?.exception?.status !== 'pending'" @click="openAssignDialog(row)">指派</el-button>
+          <el-button link type="success" :disabled="row.route_meta?.exception?.status !== 'pending'" @click="assignToMe(row)">接管</el-button>
           <el-button link type="primary" :disabled="row.route_meta?.exception?.status !== 'pending'" @click="openHandleDialog(row)">处理</el-button>
         </template>
       </el-table-column>
@@ -986,6 +1057,48 @@ watch(displayedExceptionTasks, (list) => {
     </template>
   </el-dialog>
 
+  <el-dialog
+    v-model="exceptionAssignDialogVisible"
+    title="改派异常责任人"
+    width="560px"
+    destroy-on-close
+  >
+    <el-form label-width="90px">
+      <el-form-item label="任务编号">
+        <span>{{ assigningTask?.task_no || '-' }}</span>
+      </el-form-item>
+      <el-form-item label="责任人">
+        <el-select
+          v-model="exceptionAssignForm.assigned_handler_id"
+          style="width: 100%"
+          filterable
+          placeholder="请选择责任人"
+        >
+          <el-option
+            v-for="user in assignCandidates"
+            :key="user.id"
+            :label="`${user.name || user.account}（${user.account}）`"
+            :value="user.id"
+          />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="备注">
+        <el-input
+          v-model="exceptionAssignForm.assign_note"
+          type="textarea"
+          :rows="3"
+          maxlength="500"
+          show-word-limit
+          placeholder="可选，建议记录改派原因"
+        />
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="exceptionAssignDialogVisible = false">取消</el-button>
+      <el-button type="primary" :loading="assigningExceptionHandler" @click="submitAssignExceptionHandler">确认改派</el-button>
+    </template>
+  </el-dialog>
+
   <el-drawer
     v-model="exceptionDetailDialogVisible"
     title="异常处理详情"
@@ -1036,6 +1149,22 @@ watch(displayedExceptionTasks, (list) => {
       <el-space wrap class="mb-12">
         <el-button type="primary" @click="jumpToDispatchTask">查看调度任务订单明细</el-button>
         <el-button @click="jumpToPrePlanOrder" :disabled="!primaryTaskOrder?.id">查看关联预计划单</el-button>
+        <el-button
+          v-if="currentException.status === 'pending'"
+          type="warning"
+          plain
+          @click="openAssignDialog(selectedExceptionTask)"
+        >
+          改派责任人
+        </el-button>
+        <el-button
+          v-if="currentException.status === 'pending'"
+          type="success"
+          plain
+          @click="assignToMe(selectedExceptionTask)"
+        >
+          我来接管
+        </el-button>
       </el-space>
 
       <el-divider content-position="left">处理建议</el-divider>

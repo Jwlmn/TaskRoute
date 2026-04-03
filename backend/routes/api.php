@@ -102,6 +102,7 @@ Route::prefix('v1')->group(function (): void {
             Route::post('/dispatch/manual-create-tasks', [SmartDispatchController::class, 'manualCreateTasks']);
             Route::post('/dispatch-task/exception-list', [DispatchTaskController::class, 'exceptionList']);
             Route::post('/dispatch-task/exception-handle', [DispatchTaskController::class, 'handleException']);
+            Route::post('/dispatch-task/exception-assign', [DispatchTaskController::class, 'assignExceptionHandler']);
         });
 
         Route::middleware(['role:admin|dispatcher', 'permission:mobile_tasks'])->group(function (): void {

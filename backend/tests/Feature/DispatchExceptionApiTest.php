@@ -505,4 +505,49 @@ class DispatchExceptionApiTest extends TestCase
             ->count();
         $this->assertGreaterThan(0, $assignNoticeCount);
     }
+
+    public function test_admin_can_manually_assign_exception_handler(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $admin = User::query()->where('role', 'admin')->firstOrFail();
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $driver = User::query()->where('account', 'driver')->firstOrFail();
+        $vehicle = Vehicle::query()->where('driver_id', $driver->id)->where('status', 'idle')->firstOrFail();
+        $order = PrePlanOrder::query()->where('status', 'pending')->firstOrFail();
+
+        Sanctum::actingAs($admin);
+        $createResponse = $this->postJson('/api/v1/dispatch/manual-create-tasks', [
+            'assignments' => [[
+                'vehicle_id' => $vehicle->id,
+                'order_ids' => [$order->id],
+            ]],
+        ]);
+        $createResponse->assertCreated();
+        $taskId = (int) $createResponse->json('created_task_ids.0');
+
+        Sanctum::actingAs($driver);
+        $this->postJson('/api/v1/driver-task/start', ['task_id' => $taskId])->assertOk();
+        $this->postJson('/api/v1/driver-task/report-exception', [
+            'task_id' => $taskId,
+            'exception_type' => 'traffic_jam',
+            'description' => '手动改派责任人测试',
+        ])->assertOk();
+
+        Sanctum::actingAs($admin);
+        $this->postJson('/api/v1/dispatch-task/exception-assign', [
+            'task_id' => $taskId,
+            'assigned_handler_id' => $dispatcher->id,
+            'assign_note' => '请优先跟进',
+        ])->assertOk()
+            ->assertJsonPath('route_meta.exception.assigned_handler_id', $dispatcher->id)
+            ->assertJsonPath('route_meta.exception.assigned_handler_account', $dispatcher->account)
+            ->assertJsonPath('route_meta.exception.assigned_reason', 'manual_assign');
+
+        $noticeCount = SystemMessage::query()
+            ->where('user_id', $dispatcher->id)
+            ->where('meta->notice_type', 'exception_manual_assign')
+            ->count();
+        $this->assertGreaterThan(0, $noticeCount);
+    }
 }
