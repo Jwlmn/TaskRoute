@@ -286,6 +286,22 @@ const removeSavedFilterView = (viewId) => {
   savedFilterViews.value = savedFilterViews.value.filter((item) => Number(item?.id) !== Number(viewId))
   persistSavedFilterViews()
 }
+const applySystemPresetReminder = async () => {
+  filterForm.value.message_type = 'dispatch_notice'
+  filterForm.value.dispatch_notice_type = ''
+  filterForm.value.unread_reminder_only = true
+  filterForm.value.unread_feedback_only = false
+  currentPage.value = 1
+  await loadMessages()
+}
+const applySystemPresetFeedback = async () => {
+  filterForm.value.message_type = 'dispatch_notice'
+  filterForm.value.dispatch_notice_type = 'exception_manual_feedback'
+  filterForm.value.unread_feedback_only = false
+  filterForm.value.unread_reminder_only = false
+  currentPage.value = 1
+  await loadMessages()
+}
 const syncFiltersToRoute = async () => {
   const nextQuery = { ...route.query }
   if (filterForm.value.task_focus) {
@@ -694,6 +710,12 @@ watch([unreadReminderCount, unreadFeedbackCount], ([reminderCount, feedbackCount
       </el-form-item>
       <el-form-item>
         <el-button plain @click="saveCurrentFilterView">保存当前筛选</el-button>
+      </el-form-item>
+      <el-form-item label="系统视图">
+        <el-space wrap>
+          <el-button size="small" plain type="warning" @click="applySystemPresetReminder">全部催办</el-button>
+          <el-button size="small" plain type="primary" @click="applySystemPresetFeedback">全部反馈</el-button>
+        </el-space>
       </el-form-item>
       <el-form-item v-if="savedFilterViews.length" label="已保存视图">
         <el-space wrap>
