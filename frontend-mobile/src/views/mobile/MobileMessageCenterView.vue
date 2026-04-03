@@ -49,6 +49,8 @@ const filterForm = reactive({
   read_status: 'all',
   message_type: '',
   dispatch_notice_type: '',
+  unread_manual_reminder_only: false,
+  unread_manual_feedback_only: false,
   pinned_only: false,
   task_focus: '',
 })
@@ -60,6 +62,14 @@ const getNotificationOrderNo = (message) => message?.meta?.order_no || '-'
 const getNotificationAuditStatus = (message) => message?.meta?.audit_status || ''
 const getNotificationTaskNo = (message) => message?.meta?.task_no || '-'
 const getDispatchNoticeType = (message) => String(message?.meta?.notice_type || '')
+const hasUnreadDispatchNoticeType = (row, noticeType) => {
+  if (row?.message_type !== 'dispatch_notice') return false
+  const aggregateItems = Array.isArray(row?.aggregate_items) ? row.aggregate_items : []
+  if (aggregateItems.length > 0) {
+    return aggregateItems.some((entry) => !entry?.read_at && getDispatchNoticeType(entry) === noticeType)
+  }
+  return !row?.read_at && getDispatchNoticeType(row) === noticeType
+}
 const getMessageRowIds = (row) => {
   if (Array.isArray(row?.aggregate_ids) && row.aggregate_ids.length) {
     return row.aggregate_ids.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
@@ -140,9 +150,23 @@ const displayMessages = computed(() => {
     })
     : list
 
-  if (!filterForm.task_focus) return filteredByDispatchNoticeType
-  return filteredByDispatchNoticeType.filter((item) => String(item?.meta?.task_id || '') === String(filterForm.task_focus))
+  const filteredByUnreadQuickSwitch = filteredByDispatchNoticeType
+    .filter((item) => (filterForm.unread_manual_reminder_only ? hasUnreadDispatchNoticeType(item, 'exception_manual_reminder') : true))
+    .filter((item) => (filterForm.unread_manual_feedback_only ? hasUnreadDispatchNoticeType(item, 'exception_manual_feedback') : true))
+
+  if (!filterForm.task_focus) return filteredByUnreadQuickSwitch
+  return filteredByUnreadQuickSwitch.filter((item) => String(item?.meta?.task_id || '') === String(filterForm.task_focus))
 })
+const unreadManualReminderCount = computed(() => messages.value
+  .filter((item) => item?.message_type === 'dispatch_notice')
+  .filter((item) => !item?.read_at)
+  .filter((item) => getDispatchNoticeType(item) === 'exception_manual_reminder')
+  .length)
+const unreadManualFeedbackCount = computed(() => messages.value
+  .filter((item) => item?.message_type === 'dispatch_notice')
+  .filter((item) => !item?.read_at)
+  .filter((item) => getDispatchNoticeType(item) === 'exception_manual_feedback')
+  .length)
 const isExpandedMessageRow = (row) => expandedMessageKeys.value.includes(row?.aggregate_key)
 const toggleExpandedMessageRow = (row) => {
   if (!row?.aggregate_key || row.aggregate_count <= 1) return
@@ -163,6 +187,18 @@ const focusTaskMessages = (row) => {
 }
 const clearTaskFocus = () => {
   filterForm.task_focus = ''
+}
+const toggleUnreadManualReminderOnly = () => {
+  filterForm.unread_manual_reminder_only = !filterForm.unread_manual_reminder_only
+  if (filterForm.unread_manual_reminder_only) {
+    filterForm.unread_manual_feedback_only = false
+  }
+}
+const toggleUnreadManualFeedbackOnly = () => {
+  filterForm.unread_manual_feedback_only = !filterForm.unread_manual_feedback_only
+  if (filterForm.unread_manual_feedback_only) {
+    filterForm.unread_manual_reminder_only = false
+  }
 }
 const syncFiltersToRoute = async () => {
   const nextQuery = { ...route.query }
@@ -402,6 +438,22 @@ watch(() => filterForm.dispatch_notice_type, (value) => {
       </el-select>
       <div class="mobile-message-actions">
         <el-checkbox v-model="filterForm.pinned_only">仅看置顶</el-checkbox>
+        <el-button
+          size="small"
+          plain
+          :type="filterForm.unread_manual_reminder_only ? 'warning' : 'info'"
+          @click="toggleUnreadManualReminderOnly"
+        >
+          未读催办（{{ unreadManualReminderCount }}）
+        </el-button>
+        <el-button
+          size="small"
+          plain
+          :type="filterForm.unread_manual_feedback_only ? 'warning' : 'info'"
+          @click="toggleUnreadManualFeedbackOnly"
+        >
+          未读反馈（{{ unreadManualFeedbackCount }}）
+        </el-button>
         <el-button size="small" type="primary" @click="searchMessages">查询</el-button>
         <el-button size="small" plain @click="searchMessages">刷新</el-button>
         <el-button size="small" plain @click="markReadBatch">批量已读</el-button>

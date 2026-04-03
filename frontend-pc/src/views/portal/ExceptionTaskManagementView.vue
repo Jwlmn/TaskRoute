@@ -650,6 +650,24 @@ const batchRemindFeedbackTimeout = async () => {
   const threshold = Number(filterForm.value.feedback_timeout_minutes || exceptionSummary.value?.feedback_timeout_threshold_minutes || 30)
   await remindExceptionsByTaskIds(taskIds, `反馈已超时（>=${threshold} 分钟），请尽快同步处理进展。`)
 }
+const remindFeedbackTimeoutByType = async (item) => {
+  const threshold = Number(filterForm.value.feedback_timeout_minutes || exceptionSummary.value?.feedback_timeout_threshold_minutes || 30)
+  const taskIds = exceptionTasks.value
+    .filter((task) => task?.route_meta?.exception?.status === 'pending')
+    .filter((task) => task?.route_meta?.exception?.type === item.value)
+    .filter((task) => {
+      const gap = getLastFeedbackGapMinutes(task)
+      return gap !== null && gap >= threshold
+    })
+    .filter((task) => !isTaskInReminderCooldown(task))
+    .map((task) => Number(task.id))
+    .filter((id) => id > 0)
+  if (taskIds.length === 0) {
+    ElMessage.warning(`当前没有可催办的${item.label}反馈超时异常`)
+    return
+  }
+  await remindExceptionsByTaskIds(taskIds, `${item.label}异常反馈已超时（>=${threshold} 分钟），请优先跟进。`)
+}
 const remindAssigneeRanking = async (item) => {
   const assigneeId = Number(item?.assigned_handler_id || 0)
   if (assigneeId <= 0) return
@@ -1092,15 +1110,24 @@ watch(displayedExceptionTasks, (list) => {
         <div class="text-secondary">按异常类型聚合，点击可联动筛选并催办</div>
       </div>
       <el-space wrap>
-        <el-tag
-          v-for="item in feedbackTimeoutTypeStats"
-          :key="`feedback-timeout-${item.value}`"
-          :type="filterForm.exception_type === item.value && filterForm.feedback_filter === 'feedback_timeout' ? 'danger' : 'warning'"
-          class="order-tag-clickable"
-          @click="applyFeedbackTimeoutTypeFilter(item.value)"
-        >
-          {{ item.label }}：{{ item.count }}
-        </el-tag>
+        <span v-for="item in feedbackTimeoutTypeStats" :key="`feedback-timeout-${item.value}`" class="mobile-exception-result-line">
+          <el-tag
+            :type="filterForm.exception_type === item.value && filterForm.feedback_filter === 'feedback_timeout' ? 'danger' : 'warning'"
+            class="order-tag-clickable"
+            @click="applyFeedbackTimeoutTypeFilter(item.value)"
+          >
+            {{ item.label }}：{{ item.count }}
+          </el-tag>
+          <el-button
+            size="small"
+            link
+            type="danger"
+            :loading="remindingException"
+            @click="remindFeedbackTimeoutByType(item)"
+          >
+            催办
+          </el-button>
+        </span>
       </el-space>
     </el-card>
     <el-row :gutter="12" class="mb-12" v-if="filterForm.status === 'pending'">
