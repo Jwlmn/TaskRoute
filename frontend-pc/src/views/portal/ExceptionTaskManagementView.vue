@@ -676,8 +676,10 @@ const assigneeFeedbackTimelyRanking = computed(() => {
       assigned_handler_id: Number(item?.assigned_handler_id || 0),
       assigned_handler_name: item?.assigned_handler_name || '',
       assigned_handler_account: item?.assigned_handler_account || '',
+      pending_count: Number(item?.pending_count || 0),
       timely_feedback_count: Number(item?.[countKey] || 0),
       timely_feedback_rate: Number(item?.[rateKey] || 0),
+      remindable_count: 0,
     }))
     .filter((item) => item.assigned_handler_id > 0 && item.timely_feedback_count > 0)
     .sort((a, b) => {
@@ -686,6 +688,15 @@ const assigneeFeedbackTimelyRanking = computed(() => {
       return Number(b.timely_feedback_count || 0) - Number(a.timely_feedback_count || 0)
     })
     .slice(0, 5)
+    .map((item) => {
+      const assigneeId = Number(item.assigned_handler_id || 0)
+      const remindableCount = exceptionTasks.value
+        .filter((task) => task?.route_meta?.exception?.status === 'pending')
+        .filter((task) => Number(task?.route_meta?.exception?.assigned_handler_id || 0) === assigneeId)
+        .filter((task) => !isTaskInReminderCooldown(task))
+        .length
+      return { ...item, remindable_count: remindableCount }
+    })
 })
 const overtimeExceptionCount = computed(() => exceptionTasks.value.filter((task) => getPendingDurationMinutes(task) >= overtimeThresholdMinutes).length)
 const longestPendingMinutes = computed(() => {
@@ -951,6 +962,22 @@ const remindAssigneeFeedbackTimeout = async (item) => {
     return
   }
   await remindExceptionsByTaskIds(taskIds, `你负责的异常反馈已超时（>=${threshold} 分钟），请优先反馈处理进展。`)
+}
+const remindAssigneeTimelyLow = async (item) => {
+  const assigneeId = Number(item?.assigned_handler_id || 0)
+  if (assigneeId <= 0) return
+  const taskIds = exceptionTasks.value
+    .filter((task) => task?.route_meta?.exception?.status === 'pending')
+    .filter((task) => Number(task?.route_meta?.exception?.assigned_handler_id || 0) === assigneeId)
+    .filter((task) => !isTaskInReminderCooldown(task))
+    .map((task) => Number(task.id))
+    .filter((id) => id > 0)
+  if (taskIds.length === 0) {
+    ElMessage.warning('该责任人当前异常均处于催办冷却期')
+    return
+  }
+  const windowLabel = assigneeTimelyWindow.value === '30d' ? '近30天' : '近7天'
+  await remindExceptionsByTaskIds(taskIds, `${windowLabel}反馈及时率偏低，请优先跟进并及时反馈处理进展。`)
 }
 const remindSingleTask = async (task) => {
   const taskId = Number(task?.id || 0)
@@ -1445,6 +1472,16 @@ watch(displayedExceptionTasks, (list) => {
               <span class="order-tag-clickable" @click="applyAssigneeRankingFilter(item)">
                 {{ getAssigneeRankingName(item) }}：{{ formatRatioPercent(item.timely_feedback_rate) }}（{{ Number(item.timely_feedback_count || 0) }}）
               </span>
+              <el-button
+                size="small"
+                link
+                type="warning"
+                :disabled="remindingException || Number(item.remindable_count || 0) <= 0"
+                :loading="remindingException"
+                @click="remindAssigneeTimelyLow(item)"
+              >
+                催办
+              </el-button>
             </div>
           </div>
         </el-card>
