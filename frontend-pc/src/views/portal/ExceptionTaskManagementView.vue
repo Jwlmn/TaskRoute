@@ -40,6 +40,7 @@ const analyticsDetailFilters = ref({
   overtimeOnly: false,
   mineOnly: false,
   remindableOnly: false,
+  recommendationAction: '',
 })
 const handlingTask = ref(null)
 const assigningTask = ref(null)
@@ -81,6 +82,7 @@ const filterForm = ref({
   sort_by_feedback: '',
   timely_rate_threshold: '70',
   timely_low_only: false,
+  remindable_only: false,
 })
 const currentUser = readCurrentUser()
 const overtimeThresholdMinutes = 30
@@ -538,6 +540,9 @@ const displayedExceptionTasks = computed(() => {
     if (filterForm.value.overtime_only && getPendingDurationMinutes(task) < overtimeThresholdMinutes) {
       return false
     }
+    if (filterForm.value.remindable_only && isTaskInReminderCooldown(task)) {
+      return false
+    }
     if (filterForm.value.driver_focus && (task.driver?.account || '') !== filterForm.value.driver_focus) {
       return false
     }
@@ -614,8 +619,27 @@ const filteredAnalyticsDetailTasks = computed(() => {
     if (analyticsDetailFilters.value.remindableOnly && isTaskInReminderCooldown(task)) {
       return false
     }
+    if (analyticsDetailFilters.value.recommendationAction) {
+      const action = getExceptionRecommendation(task).action
+      if (action !== analyticsDetailFilters.value.recommendationAction) {
+        return false
+      }
+    }
     return true
   })
+})
+const analyticsDetailRecommendationStats = computed(() => {
+  const map = new Map([
+    ['reassign', { action: 'reassign', label: '建议改派', type: 'warning', count: 0 }],
+    ['cancel', { action: 'cancel', label: '建议取消', type: 'danger', count: 0 }],
+    ['continue', { action: 'continue', label: '建议继续', type: 'success', count: 0 }],
+  ])
+  analyticsDetailTasks.value.forEach((task) => {
+    const recommendation = getExceptionRecommendation(task)
+    const current = map.get(recommendation.action)
+    if (current) current.count += 1
+  })
+  return [...map.values()].filter((item) => item.count > 0)
 })
 const pagedAnalyticsDetailTasks = computed(() => {
   const start = (analyticsDetailCurrentPage.value - 1) * analyticsDetailPageSize.value
@@ -979,6 +1003,7 @@ const openAnalyticsDetailByTaskList = ({ title, description = '', tasks = [] }) 
     overtimeOnly: false,
     mineOnly: false,
     remindableOnly: false,
+    recommendationAction: '',
   }
   analyticsDetailDialogVisible.value = true
 }
@@ -990,19 +1015,55 @@ const openAnalyticsDetailByMatcher = ({ title, description = '', matcher }) => {
     tasks,
   })
 }
+const buildOperationsQueryFromAnalytics = (task = null) => {
+  const query = {}
+  const keyword = String(analyticsDetailFilters.value.keyword || '').trim()
+  if (keyword) query.task_no = keyword
+  if (analyticsDetailFilters.value.overtimeOnly) query.overtime_only = '1'
+  if (analyticsDetailFilters.value.mineOnly) query.assigned_to_me = '1'
+  if (analyticsDetailFilters.value.remindableOnly) query.remindable_only = '1'
+  if (analyticsDetailFilters.value.recommendationAction) {
+    query.recommendation_action = analyticsDetailFilters.value.recommendationAction
+  } else if (filterForm.value.recommendation_action) {
+    query.recommendation_action = filterForm.value.recommendation_action
+  }
+  if (filterForm.value.exception_type) query.exception_type = filterForm.value.exception_type
+  if (filterForm.value.feedback_filter) query.feedback_filter = filterForm.value.feedback_filter
+  if (filterForm.value.feedback_filter === 'feedback_timeout') {
+    query.feedback_timeout_minutes = String(filterForm.value.feedback_timeout_minutes || '30')
+  }
+  if (task?.id) {
+    query.focus_task_id = String(task.id)
+    query.open_detail = '1'
+    if (!query.task_no && task.task_no) query.task_no = task.task_no
+  }
+  return query
+}
+const applyOperationsRouteFilters = () => {
+  if (!isOperationsPage.value) return
+  const { query } = route
+  filterForm.value.status = 'pending'
+  filterForm.value.task_no = typeof query.task_no === 'string' ? query.task_no : ''
+  filterForm.value.exception_type = typeof query.exception_type === 'string' ? query.exception_type : ''
+  filterForm.value.recommendation_action = typeof query.recommendation_action === 'string' ? query.recommendation_action : ''
+  filterForm.value.feedback_filter = typeof query.feedback_filter === 'string' ? query.feedback_filter : ''
+  filterForm.value.feedback_timeout_minutes = typeof query.feedback_timeout_minutes === 'string'
+    ? query.feedback_timeout_minutes
+    : '30'
+  filterForm.value.overtime_only = query.overtime_only === '1'
+  filterForm.value.assigned_to_me = query.assigned_to_me === '1'
+  filterForm.value.remindable_only = query.remindable_only === '1'
+}
 const jumpToOperationsPage = async () => {
-  await router.push({ name: 'exception-task-operations' })
+  analyticsDetailDialogVisible.value = false
+  await router.push({ name: 'exception-task-operations', query: buildOperationsQueryFromAnalytics() })
 }
 const jumpToOperationsTask = async (task) => {
   if (!task?.id) return
   analyticsDetailDialogVisible.value = false
   await router.push({
     name: 'exception-task-operations',
-    query: {
-      task_no: task.task_no || '',
-      focus_task_id: String(task.id),
-      open_detail: '1',
-    },
+    query: buildOperationsQueryFromAnalytics(task),
   })
 }
 const focusMatchedTask = (matcher) => {
@@ -1308,6 +1369,7 @@ watch(() => filterForm.value.status, (status) => {
     filterForm.value.feedback_filter = ''
     filterForm.value.sort_by_feedback = ''
     filterForm.value.timely_low_only = false
+    filterForm.value.remindable_only = false
   }
 })
 
@@ -1535,6 +1597,7 @@ const jumpToPrePlanOrder = async () => {
 }
 
 const openExceptionDetailFromRoute = () => {
+  if (isAnalyticsPage.value) return
   if (route.query.open_detail !== '1') return
   const focusTaskId = Number(route.query.focus_task_id || 0)
   if (!focusTaskId) return
@@ -1545,6 +1608,7 @@ const openExceptionDetailFromRoute = () => {
 }
 
 onMounted(async () => {
+  applyOperationsRouteFilters()
   await loadAssignableHandlers()
   await loadExceptionTasks()
   openExceptionDetailFromRoute()
@@ -1561,6 +1625,12 @@ watch([filteredAnalyticsDetailTasks, analyticsDetailPageSize], () => {
   if (analyticsDetailCurrentPage.value > maxPage) {
     analyticsDetailCurrentPage.value = maxPage
   }
+})
+watch(() => route.fullPath, async () => {
+  if (!isOperationsPage.value) return
+  applyOperationsRouteFilters()
+  await loadExceptionTasks()
+  openExceptionDetailFromRoute()
 })
 </script>
 
@@ -1901,6 +1971,11 @@ watch([filteredAnalyticsDetailTasks, analyticsDetailPageSize], () => {
           </span>
         </el-checkbox>
       </el-form-item>
+      <el-form-item v-if="filterForm.status === 'pending'">
+        <el-checkbox v-model="filterForm.remindable_only">
+          仅看可催办
+        </el-checkbox>
+      </el-form-item>
       <el-form-item v-if="filterForm.status === 'pending'" label="责任人">
         <el-select
           v-model="filterForm.assigned_handler_id"
@@ -1989,6 +2064,13 @@ watch([filteredAnalyticsDetailTasks, analyticsDetailPageSize], () => {
         <el-space wrap>
           <el-tag closable @close="filterForm.timely_low_only = false">
             仅看低于{{ timelyRateThresholdText }}责任人
+          </el-tag>
+        </el-space>
+      </el-form-item>
+      <el-form-item v-if="filterForm.status === 'pending' && filterForm.remindable_only" label="催办筛选">
+        <el-space wrap>
+          <el-tag closable @close="filterForm.remindable_only = false">
+            仅看可催办异常
           </el-tag>
         </el-space>
       </el-form-item>
@@ -2252,6 +2334,26 @@ watch([filteredAnalyticsDetailTasks, analyticsDetailPageSize], () => {
       </el-form-item>
       <el-form-item>
         <el-checkbox v-model="analyticsDetailFilters.remindableOnly">仅可催办</el-checkbox>
+      </el-form-item>
+      <el-form-item label="建议分组">
+        <el-space wrap>
+          <el-tag
+            :type="analyticsDetailFilters.recommendationAction ? 'info' : 'primary'"
+            class="order-tag-clickable"
+            @click="analyticsDetailFilters.recommendationAction = ''"
+          >
+            全部
+          </el-tag>
+          <el-tag
+            v-for="item in analyticsDetailRecommendationStats"
+            :key="`analytics-detail-recommend-${item.action}`"
+            :type="analyticsDetailFilters.recommendationAction === item.action ? 'primary' : item.type"
+            class="order-tag-clickable"
+            @click="analyticsDetailFilters.recommendationAction = analyticsDetailFilters.recommendationAction === item.action ? '' : item.action"
+          >
+            {{ item.label }}：{{ item.count }}
+          </el-tag>
+        </el-space>
       </el-form-item>
       <el-form-item>
         <span class="text-secondary">命中 {{ filteredAnalyticsDetailTasks.length }} 条</span>
