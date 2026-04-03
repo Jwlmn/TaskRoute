@@ -310,7 +310,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="page-content-shell">
-  <el-card shadow="never" class="page-section-card mb-12">
+  <el-card shadow="never" class="page-section-card page-section-card-fixed mb-12">
     <template #header>
       <div class="table-header">
         <div class="card-title">司机定位与轨迹回放</div>
@@ -328,6 +328,7 @@ onBeforeUnmount(() => {
       <span>当前可回放司机数：{{ latestLocations.length }}</span>
       <el-button type="primary" @click="openFirstTrajectory">打开轨迹回放</el-button>
     </div>
+    <div class="page-table-section">
     <div class="page-table-card" style="height: 320px">
     <div class="page-table-wrap">
     <el-table :data="pagedTasks" v-loading="loadingTasks" stripe height="100%" class="page-table">
@@ -368,12 +369,14 @@ onBeforeUnmount(() => {
       />
     </div>
     </div>
+    </div>
   </el-card>
 
-  <el-card shadow="never" class="page-section-card">
+  <el-card shadow="never" class="page-section-card page-section-card-fixed">
     <template #header>
       <div class="card-title">司机实时定位</div>
     </template>
+    <div class="page-table-section">
     <div class="page-table-card" style="height: 360px">
     <div class="page-table-wrap">
     <el-table :data="pagedLatestLocations" v-loading="loadingLocations" stripe height="100%" class="page-table">
@@ -410,6 +413,7 @@ onBeforeUnmount(() => {
         :page-sizes="[10, 20, 50, 100]"
         :total="locationTotal"
       />
+    </div>
     </div>
     </div>
   </el-card>

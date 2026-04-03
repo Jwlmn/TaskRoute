@@ -5,6 +5,7 @@ import { ensureAuthSession, hasPermission, readAuthToken, readCurrentUser } from
 const LoginView = () => import('../views/LoginView.vue')
 const PortalLayoutView = () => import('../views/portal/PortalLayoutView.vue')
 const DashboardHomeView = () => import('../views/portal/DashboardHomeView.vue')
+const DashboardDetailView = () => import('../views/portal/DashboardDetailView.vue')
 const DispatchWorkbenchView = () => import('../views/portal/DispatchWorkbenchView.vue')
 const ExceptionTaskManagementView = () => import('../views/portal/ExceptionTaskManagementView.vue')
 const PrePlanOrderManagementView = () => import('../views/portal/PrePlanOrderManagementView.vue')
@@ -40,6 +41,12 @@ const router = createRouter({
           path: '',
           name: 'dashboard-home',
           component: DashboardHomeView,
+          meta: { permission: 'dashboard' },
+        },
+        {
+          path: 'dashboard/detail',
+          name: 'dashboard-detail',
+          component: DashboardDetailView,
           meta: { permission: 'dashboard' },
         },
         {

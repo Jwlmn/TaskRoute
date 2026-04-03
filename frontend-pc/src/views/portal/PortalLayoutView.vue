@@ -17,6 +17,7 @@ const menuTree = computed(() => {
       label: '运营中心',
       children: [
         { index: 'dashboard-home', label: '首页概览', permission: 'dashboard' },
+        { index: 'dashboard-detail', label: '运营明细看板', permission: 'dashboard' },
         { index: 'pre-plan-order-management', label: '预计划单管理', permission: 'dispatch' },
         { index: 'settlement-management', label: '结算单管理', permission: 'settlement' },
         { index: 'dispatch-workbench', label: '调度任务管理', permission: 'dispatch' },
@@ -47,7 +48,6 @@ const menuTree = computed(() => {
       label: '客户协同',
       children: [
         { index: 'customer-pre-plan-order', label: '客户计划单', permission: 'customer_orders' },
-        { index: 'notification-center', label: '通知中心', permission: 'notifications' },
       ],
     },
   ]

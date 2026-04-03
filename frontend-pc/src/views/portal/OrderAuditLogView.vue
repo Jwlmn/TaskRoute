@@ -49,7 +49,8 @@ onMounted(loadLogs)
 </script>
 
 <template>
-  <el-card shadow="never">
+  <div class="page-content-shell">
+  <el-card shadow="never" class="page-card">
     <template #header>
       <div class="table-header">
         <div class="card-title">操作审计查询</div>
@@ -72,7 +73,9 @@ onMounted(loadLogs)
       </el-form-item>
     </el-form>
 
-    <el-table :data="logs" stripe v-loading="loading">
+    <div class="page-table-section">
+    <div class="page-table-wrap">
+    <el-table :data="logs" stripe v-loading="loading" height="100%" class="page-table">
       <el-table-column prop="at" label="时间" min-width="160" />
       <el-table-column prop="order_no" label="订单号" min-width="160" />
       <el-table-column prop="client_name" label="客户" min-width="140" />
@@ -88,8 +91,8 @@ onMounted(loadLogs)
         </template>
       </el-table-column>
     </el-table>
-
-    <div class="mt-12" style="display: flex; justify-content: flex-end">
+    </div>
+    <div class="page-pagination">
       <el-pagination
         v-model:current-page="currentPage"
         v-model:page-size="pageSize"
@@ -100,5 +103,7 @@ onMounted(loadLogs)
         @size-change="onPageSizeChange"
       />
     </div>
+    </div>
   </el-card>
+  </div>
 </template>

@@ -33,4 +33,5 @@ export const canOperateTaskDetail = (detail) =>
 export const shouldShowAcceptTaskTip = (detail) => detail?.status === 'assigned'
 
 export const buildUploadWarningMessage = (detail) =>
-  getTaskOperationBlockReason(detail) || '请先接单后再上传单据'
+  (hasPendingTaskException(detail) ? '异常处理中，暂不可上传单据' : getTaskOperationBlockReason(detail))
+  || '请先接单后再上传单据'

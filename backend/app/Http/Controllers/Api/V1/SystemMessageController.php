@@ -225,8 +225,12 @@ class SystemMessageController extends Controller
     /**
      * @return array<int, int>
      */
-    private function extractMetaIds(array $meta, string $singleKey, string $listKey): array
+    private function extractMetaIds(mixed $meta, string $singleKey, string $listKey): array
     {
+        if (! is_array($meta)) {
+            return [];
+        }
+
         $ids = [];
         if (array_key_exists($singleKey, $meta)) {
             $ids[] = (int) $meta[$singleKey];

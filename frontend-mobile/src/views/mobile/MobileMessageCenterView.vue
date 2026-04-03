@@ -199,14 +199,25 @@ const changePage = async (nextPage) => {
   await loadMessages(nextPage)
 }
 
-const changePageSize = async (nextPageSize) => {
-  pagination.per_page = nextPageSize
-  pagination.page = 1
-  await loadMessages(1)
+const isMessageRowSelected = (row) => {
+  const ids = getMessageRowIds(row)
+  if (!ids.length) return false
+  return ids.every((id) => selectedIds.value.includes(id))
 }
 
-const onSelectionChange = (rows) => {
-  selectedIds.value = [...new Set(rows.flatMap((item) => getMessageRowIds(item)))]
+const toggleMessageRowSelection = (row, checked) => {
+  const ids = getMessageRowIds(row)
+  if (!ids.length) return
+
+  const next = new Set(selectedIds.value)
+  ids.forEach((id) => {
+    if (checked) {
+      next.add(id)
+      return
+    }
+    next.delete(id)
+  })
+  selectedIds.value = [...next]
 }
 
 const markRead = async (id) => {
@@ -356,103 +367,106 @@ watch(() => filterForm.task_focus, () => {
       <el-button link type="primary" @click="clearTaskFocus">清空任务聚焦</el-button>
     </div>
 
-    <el-table
-      :data="displayMessages"
-      stripe
-      v-loading="loading"
-      class="mobile-message-table"
-      @selection-change="onSelectionChange"
-    >
-      <el-table-column type="selection" width="46" />
-      <el-table-column label="标题" min-width="180">
-        <template #default="{ row }">
-          <div class="mobile-message-title">
-            <el-tag v-if="row.is_pinned" size="small" type="warning">置顶</el-tag>
-            <el-tag v-if="!row.read_at" size="small" type="danger">未读</el-tag>
-            <el-tag v-if="row.message_type === 'dispatch_notice' && row.aggregate_count > 1" size="small" type="primary">
-              同任务 {{ row.aggregate_count }} 条
-            </el-tag>
-            <span>{{ row.title || '-' }}</span>
-          </div>
-          <div class="mobile-message-meta">
-            <el-tag size="small" effect="plain">{{ getLabel(messageTypeLabelMap, row.message_type) }}</el-tag>
-            <el-tag
-              v-if="getNotificationAuditStatus(row)"
-              size="small"
-              :type="auditStatusTypeMap[getNotificationAuditStatus(row)] || 'info'"
-              effect="plain"
-            >
-              {{ getLabel(auditStatusLabelMap, getNotificationAuditStatus(row)) }}
-            </el-tag>
-          </div>
-          <div class="mobile-message-content">{{ row.content || '-' }}</div>
-          <div
-            v-if="row.message_type === 'dispatch_notice' && row.aggregate_count > 1"
-            class="mobile-message-content text-secondary"
-          >
-            已合并同任务调度通知，进入任务时会统一批量已读。
-          </div>
-          <div v-if="row.message_type === 'dispatch_notice' && row.aggregate_count > 1" class="mobile-message-content">
-            <el-button link type="primary" @click="toggleExpandedMessageRow(row)">
-              {{ isExpandedMessageRow(row) ? '收起本组明细' : '展开本组明细' }}
-            </el-button>
-            <el-button link type="primary" @click="focusTaskMessages(row)">只看本任务通知</el-button>
-            <div v-if="isExpandedMessageRow(row)" class="text-secondary">
-              <div
-                v-for="item in getAggregateItems(row)"
-                :key="`mobile-message-detail-${item.id}`"
-                class="mobile-exception-result-line"
-              >
-                {{ formatNotificationTime(item) }}｜{{ item.title || '-' }}｜{{ item.content || '-' }}
-              </div>
+    <div v-loading="loading" class="mobile-message-list">
+      <el-empty v-if="displayMessages.length === 0" description="暂无数据" />
+
+      <div
+        v-for="row in displayMessages"
+        :key="row.aggregate_key || row.id"
+        class="mobile-message-card"
+      >
+        <div class="mobile-message-card-head">
+          <el-checkbox
+            :model-value="isMessageRowSelected(row)"
+            @change="(checked) => toggleMessageRowSelection(row, checked)"
+          />
+          <div class="mobile-message-head-main">
+            <div class="mobile-message-title">
+              <el-tag v-if="row.is_pinned" size="small" type="warning">置顶</el-tag>
+              <el-tag v-if="!row.read_at" size="small" type="danger">未读</el-tag>
+              <el-tag v-if="row.message_type === 'dispatch_notice' && row.aggregate_count > 1" size="small" type="primary">
+                同任务 {{ row.aggregate_count }} 条
+              </el-tag>
+              <span>{{ row.title || '-' }}</span>
             </div>
           </div>
-          <div class="mobile-message-extra">
-            <span v-if="row.meta?.task_id">关联任务：{{ getNotificationTaskNo(row) }}</span>
-            <span v-else>关联订单：{{ getNotificationOrderNo(row) }}</span>
-            <span>通知时间：{{ formatNotificationTime(row) }}</span>
-          </div>
-        </template>
-      </el-table-column>
-      <el-table-column label="操作" width="160" fixed="right">
-        <template #default="{ row }">
-          <div class="mobile-message-row-actions">
-            <el-button
-              v-if="row.meta?.task_id"
-              link
-              type="info"
-              @click="openTaskDetail(row)"
+        </div>
+
+        <div class="mobile-message-meta">
+          <el-tag size="small" effect="plain">{{ getLabel(messageTypeLabelMap, row.message_type) }}</el-tag>
+          <el-tag
+            v-if="getNotificationAuditStatus(row)"
+            size="small"
+            :type="auditStatusTypeMap[getNotificationAuditStatus(row)] || 'info'"
+            effect="plain"
+          >
+            {{ getLabel(auditStatusLabelMap, getNotificationAuditStatus(row)) }}
+          </el-tag>
+        </div>
+        <div class="mobile-message-content">{{ row.content || '-' }}</div>
+        <div
+          v-if="row.message_type === 'dispatch_notice' && row.aggregate_count > 1"
+          class="mobile-message-content text-secondary"
+        >
+          已合并同任务调度通知，进入任务时会统一批量已读。
+        </div>
+        <div v-if="row.message_type === 'dispatch_notice' && row.aggregate_count > 1" class="mobile-message-content">
+          <el-button link type="primary" @click="toggleExpandedMessageRow(row)">
+            {{ isExpandedMessageRow(row) ? '收起本组明细' : '展开本组明细' }}
+          </el-button>
+          <el-button link type="primary" @click="focusTaskMessages(row)">只看本任务通知</el-button>
+          <div v-if="isExpandedMessageRow(row)" class="text-secondary">
+            <div
+              v-for="item in getAggregateItems(row)"
+              :key="`mobile-message-detail-${item.id}`"
+              class="mobile-exception-result-line"
             >
-              查看任务
-            </el-button>
-            <el-button
-              v-if="row.message_type === 'dispatch_notice' && !row.read_at"
-              link
-              type="primary"
-              @click="markMessageRowRead(row)"
-            >
-              {{ row.aggregate_count > 1 ? '本组已读' : '已读本条' }}
-            </el-button>
-            <el-button link type="primary" :disabled="!!row.read_at" @click="markMessageRowRead(row)">已读</el-button>
-            <el-button link type="warning" :loading="pinningId === row.id" @click="togglePin(row)">
-              {{ row.aggregate_count > 1 ? (row.is_pinned ? '本组取消置顶' : '本组置顶') : (row.is_pinned ? '取消置顶' : '置顶') }}
-            </el-button>
+              {{ formatNotificationTime(item) }}｜{{ item.title || '-' }}｜{{ item.content || '-' }}
+            </div>
           </div>
-        </template>
-      </el-table-column>
-    </el-table>
+        </div>
+        <div class="mobile-message-extra">
+          <span v-if="row.meta?.task_id">关联任务：{{ getNotificationTaskNo(row) }}</span>
+          <span v-else>关联订单：{{ getNotificationOrderNo(row) }}</span>
+          <span>通知时间：{{ formatNotificationTime(row) }}</span>
+        </div>
+
+        <div class="mobile-message-row-actions">
+          <el-button
+            v-if="row.meta?.task_id"
+            size="small"
+            plain
+            type="primary"
+            @click="openTaskDetail(row)"
+          >
+            查看任务
+          </el-button>
+          <el-button
+            v-if="row.message_type === 'dispatch_notice' && !row.read_at"
+            size="small"
+            plain
+            type="primary"
+            @click="markMessageRowRead(row)"
+          >
+            {{ row.aggregate_count > 1 ? '本组已读' : '已读本条' }}
+          </el-button>
+          <el-button size="small" plain type="primary" :disabled="!!row.read_at" @click="markMessageRowRead(row)">已读</el-button>
+          <el-button size="small" plain type="warning" :loading="pinningId === row.id" @click="togglePin(row)">
+            {{ row.aggregate_count > 1 ? (row.is_pinned ? '本组取消置顶' : '本组置顶') : (row.is_pinned ? '取消置顶' : '置顶') }}
+          </el-button>
+        </div>
+      </div>
+    </div>
 
     <div class="mobile-message-pagination">
       <el-pagination
         small
         background
-        layout="sizes, prev, pager, next, jumper, total"
+        layout="prev, pager, next, total"
         :current-page="pagination.page"
         :page-size="pagination.per_page"
-        :page-sizes="[10, 20, 50]"
         :total="pagination.total"
         @current-change="changePage"
-        @size-change="changePageSize"
       />
     </div>
   </el-card>

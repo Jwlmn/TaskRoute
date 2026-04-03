@@ -92,14 +92,14 @@ body {
   flex: 1;
   padding: 12px;
   padding-top: 68px;
-  padding-bottom: 84px;
+  padding-bottom: calc(104px + env(safe-area-inset-bottom, 0px));
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
 }
 
 .mobile-footer {
-  height: 64px;
+  min-height: 64px;
   position: fixed;
   left: 0;
   right: 0;
@@ -110,7 +110,11 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding-bottom: env(safe-area-inset-bottom, 0);
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px));
+}
+
+.mobile-footer .el-segmented {
+  width: 100%;
 }
 
 .mobile-user-name {
@@ -370,7 +374,7 @@ body {
 
 .mobile-message-toolbar {
   display: grid;
-  grid-template-columns: 1fr 132px 120px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   margin-bottom: 10px;
 }
@@ -380,25 +384,48 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  justify-content: space-between;
+  flex-wrap: wrap;
 }
 
-.mobile-message-table .el-table__cell {
-  vertical-align: top;
+.mobile-message-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mobile-message-card {
+  border: 1px solid #e1ebfb;
+  border-radius: 10px;
+  background: #f8fbff;
+  padding: 10px;
+}
+
+.mobile-message-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.mobile-message-head-main {
+  flex: 1;
+  min-width: 0;
 }
 
 .mobile-message-title {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  flex-wrap: wrap;
   gap: 6px;
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 600;
   color: #24324b;
   margin-bottom: 4px;
+  line-height: 1.45;
 }
 
 .mobile-message-content {
   font-size: 12px;
-  color: #5f6d80;
+  color: #4f5f74;
   line-height: 1.6;
 }
 
@@ -410,25 +437,45 @@ body {
 }
 
 .mobile-message-extra {
-  margin-top: 6px;
+  margin-top: 8px;
   display: flex;
   flex-direction: column;
   gap: 4px;
   font-size: 12px;
   color: #6a7890;
+  padding-top: 6px;
+  border-top: 1px dashed #d9e6fb;
 }
 
 .mobile-message-row-actions {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
   align-items: flex-start;
-  gap: 4px;
+  gap: 8px;
+  margin-top: 10px;
 }
 
 .mobile-message-pagination {
   margin-top: 10px;
   display: flex;
-  justify-content: flex-end;
+  justify-content: flex-start;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.mobile-message-pagination .el-pagination {
+  flex-wrap: nowrap;
+}
+
+@media (max-width: 420px) {
+  .mobile-message-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .mobile-message-actions {
+    grid-column: 1;
+    align-items: flex-start;
+  }
 }
 
 .mobile-exception-result-list {

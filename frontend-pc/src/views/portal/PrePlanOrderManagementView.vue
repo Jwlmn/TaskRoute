@@ -48,6 +48,18 @@ const splitDialogVisible = ref(false)
 const editDialogVisible = ref(false)
 const manualDispatchDialogVisible = ref(false)
 const detailDialogVisible = ref(false)
+const traceDetailDialogVisible = ref(false)
+const voidDialogVisible = ref(false)
+const traceDetailLoading = ref(false)
+
+const traceDetailState = reactive({
+  orderNo: '',
+  summary: '-',
+  sourceOrderId: null,
+  splitPartNo: null,
+  mergeFromIds: [],
+  timeline: [],
+})
 
 const creating = ref(false)
 const editing = ref(false)
@@ -75,6 +87,11 @@ const importResult = ref(null)
 const splitTargetOrder = ref(null)
 const splitPartCount = ref(2)
 const splitParts = ref([])
+const voidTargetOrder = ref(null)
+
+const voidForm = reactive({
+  reason: '',
+})
 
 const createForm = reactive({
   cargo_category_id: null,
@@ -147,6 +164,7 @@ const statusTypeMap = {
 
 const editableStatusSet = new Set(['pending', 'scheduled', 'in_progress'])
 const dispatchableStatusSet = new Set(['pending', 'scheduled'])
+const voidableStatusSet = new Set(['pending', 'scheduled', 'in_progress'])
 const mergeCompareKeys = [
   { key: 'cargo_category_id', label: '货品分类' },
   { key: 'client_name', label: '客户' },
@@ -165,10 +183,26 @@ const freightSchemeLabelMap = {
   by_trip: '按趟',
 }
 
+const traceActionLabelMap = {
+  dispatcher_split_create: '拆单生成',
+  dispatcher_split_source_voided: '拆单后来源单作废',
+  dispatcher_merge_create: '并单生成',
+  dispatcher_merge_source_voided: '并单后来源单作废',
+}
+
+const traceActionSet = new Set(Object.keys(traceActionLabelMap))
+
 const freightSchemeOptions = [
   { label: '按重量（元/吨）', value: 'by_weight' },
   { label: '按体积（元/m³）', value: 'by_volume' },
   { label: '按趟（元/趟）', value: 'by_trip' },
+]
+
+const voidReasonTemplates = [
+  '客户取消需求',
+  '地址信息错误，需重新提报',
+  '货品信息错误，需重建计划单',
+  '重复创建，保留最新单据',
 ]
 
 const cargoCategoryMap = computed(() => {
@@ -600,6 +634,20 @@ const closeSplitDialog = () => {
   splitParts.value = []
 }
 
+const openVoidDialog = (row) => {
+  if (!voidableStatusSet.has(row.status) || row.is_locked || row.status === 'cancelled') {
+    ElMessage.warning('当前状态不可作废，请先确认是否已锁单或状态已变更')
+    return
+  }
+  voidTargetOrder.value = row
+  voidForm.reason = ''
+  voidDialogVisible.value = true
+}
+
+const applyVoidReasonTemplate = (template) => {
+  voidForm.reason = template
+}
+
 const fillSplitPartsByRatio = () => {
   const row = splitTargetOrder.value
   if (!row) return
@@ -964,20 +1012,92 @@ const getTraceSummary = (row) => {
   return '-'
 }
 
+const resetTraceDetailState = () => {
+  traceDetailState.orderNo = ''
+  traceDetailState.summary = '-'
+  traceDetailState.sourceOrderId = null
+  traceDetailState.splitPartNo = null
+  traceDetailState.mergeFromIds = []
+  traceDetailState.timeline = []
+}
+
+const normalizeExtra = (extra) => {
+  if (extra && typeof extra === 'object' && !Array.isArray(extra)) {
+    return extra
+  }
+  if (typeof extra === 'string') {
+    try {
+      const parsed = JSON.parse(extra)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed
+      }
+    } catch {
+      return {}
+    }
+  }
+  return {}
+}
+
+const isTraceRelatedLog = (log) => {
+  if (traceActionSet.has(log?.action)) return true
+  const extra = normalizeExtra(log?.extra)
+  return Boolean(
+    extra.split_from_id ||
+      (Array.isArray(extra.merge_from_ids) && extra.merge_from_ids.length) ||
+      extra.merged_order_id ||
+      extra.split_created_count
+  )
+}
+
+const mapTraceLog = (log) => {
+  const extra = normalizeExtra(log?.extra)
+  const action = traceActionLabelMap[log?.action] || historyActionLabelMap[log?.action] || log?.action || '未知动作'
+  const operator = log?.operator_name || log?.operator_account || (log?.operator_id ? `#${log.operator_id}` : '系统')
+  const details = []
+  if (extra.split_from_id) details.push(`来源单 #${extra.split_from_id}`)
+  if (extra.split_part_no) details.push(`分片 第${extra.split_part_no}份`)
+  if (Array.isArray(extra.merge_from_ids) && extra.merge_from_ids.length) details.push(`并自 #${extra.merge_from_ids.join('、#')}`)
+  if (extra.merged_order_no) details.push(`目标单号 ${extra.merged_order_no}`)
+  if (extra.split_created_count) details.push(`拆出 ${extra.split_created_count} 单`)
+
+  return {
+    time: formatDateTime(log?.at) || '-',
+    action,
+    operator,
+    detail: details.join('，') || '-',
+  }
+}
+
 const openTraceDetail = async (row) => {
   const meta = row?.meta || {}
-  const lines = [`当前单号：${row.order_no || '-'}`, `追溯信息：${getTraceSummary(row)}`]
-  if (meta.split_from_id) {
-    lines.push(`来源单ID：${meta.split_from_id}`)
-    if (meta.split_part_no) lines.push(`拆分分片：第 ${meta.split_part_no} 份`)
+  resetTraceDetailState()
+  traceDetailState.orderNo = row.order_no || '-'
+  traceDetailState.summary = getTraceSummary(row)
+  traceDetailState.sourceOrderId = meta.split_from_id ? Number(meta.split_from_id) : null
+  traceDetailState.splitPartNo = meta.split_part_no ? Number(meta.split_part_no) : null
+  traceDetailState.mergeFromIds = Array.isArray(meta.merge_from_ids) ? meta.merge_from_ids : []
+  traceDetailDialogVisible.value = true
+  traceDetailLoading.value = true
+
+  try {
+    const response = await api.post('/pre-plan-order/audit-log-list', {
+      keyword: row.order_no,
+      page: 1,
+      page_size: 100,
+    })
+    const logs = Array.isArray(response?.data?.data) ? response.data.data : []
+    const traceLogs = logs
+      .filter((log) => Number(log?.order_id || 0) === Number(row.id))
+      .filter(isTraceRelatedLog)
+      .sort((a, b) => String(a?.at || '').localeCompare(String(b?.at || '')))
+
+    traceDetailState.timeline = traceLogs.map(mapTraceLog)
+  } catch (error) {
+    traceDetailDialogVisible.value = false
+    ElMessage.error(error?.response?.data?.message || '获取追溯详情失败')
+  } finally {
+    traceDetailLoading.value = false
   }
-  if (Array.isArray(meta.merge_from_ids) && meta.merge_from_ids.length) {
-    lines.push(`并单来源ID：${meta.merge_from_ids.join('、')}`)
-  }
-  await ElMessageBox.alert(lines.join('\n'), '拆并追溯详情', {
-    confirmButtonText: '我知道了',
-    type: 'info',
-  })
 }
 
 const recommendMergeOrders = async () => {
@@ -1157,23 +1277,22 @@ const unlockOrder = async (row) => {
   }
 }
 
-const voidOrder = async (row) => {
-  const { value } = await ElMessageBox.prompt('请输入作废原因', '作废计划单', {
-    confirmButtonText: '确认作废',
-    cancelButtonText: '取消',
-    inputPlaceholder: '作废原因（必填）',
-    inputValidator: (v) => (String(v || '').trim().length > 0 ? true : '请输入作废原因'),
-  }).catch(() => ({ value: null }))
-
-  if (!value) return
-
+const submitVoidOrder = async () => {
+  if (!voidTargetOrder.value?.id) return
+  const reason = String(voidForm.reason || '').trim()
+  if (reason.length < 2) {
+    ElMessage.warning('请输入至少 2 个字的作废原因')
+    return
+  }
   managingOrder.value = true
   try {
     await api.post('/pre-plan-order/void', {
-      id: row.id,
-      void_remark: String(value).trim(),
+      id: voidTargetOrder.value.id,
+      void_remark: reason,
     })
     ElMessage.success('计划单已作废')
+    voidDialogVisible.value = false
+    voidTargetOrder.value = null
     await loadPrePlanOrders()
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '作废失败')
@@ -1343,6 +1462,7 @@ onUnmounted(() => {
     <el-table
       ref="tableRef"
       :data="pagedPrePlanOrders"
+      :row-key="(row) => row.id"
       stripe
       v-loading="loadingOrders"
       height="100%"
@@ -1350,21 +1470,21 @@ onUnmounted(() => {
       @selection-change="onSelectionChange"
     >
       <el-table-column type="selection" width="50" :selectable="selectableOrder" />
-      <el-table-column prop="order_no" label="预计划单号" min-width="180" />
-      <el-table-column prop="client_name" label="客户" min-width="120" />
-      <el-table-column prop="pickup_address" label="装货地" min-width="180" />
-      <el-table-column label="装货联系人" min-width="150">
+      <el-table-column prop="order_no" label="预计划单号" min-width="250" show-overflow-tooltip />
+      <el-table-column prop="client_name" label="客户" min-width="190" show-overflow-tooltip />
+      <el-table-column prop="pickup_address" label="装货地" min-width="240" show-overflow-tooltip />
+      <el-table-column label="装货联系人" min-width="210" show-overflow-tooltip>
         <template #default="{ row }">
           {{ row.pickup_contact_name || '-' }} / {{ row.pickup_contact_phone || '-' }}
         </template>
       </el-table-column>
-      <el-table-column prop="dropoff_address" label="卸货地" min-width="180" />
-      <el-table-column label="收货联系人" min-width="150">
+      <el-table-column prop="dropoff_address" label="卸货地" min-width="240" show-overflow-tooltip />
+      <el-table-column label="收货联系人" min-width="210" show-overflow-tooltip>
         <template #default="{ row }">
           {{ row.dropoff_contact_name || '-' }} / {{ row.dropoff_contact_phone || '-' }}
         </template>
       </el-table-column>
-      <el-table-column label="货品分类" min-width="130">
+      <el-table-column label="货品分类" min-width="140" show-overflow-tooltip>
         <template #default="{ row }">
           {{ cargoCategoryMap[row.cargo_category_id] || `分类#${row.cargo_category_id}` }}
         </template>
@@ -1376,7 +1496,7 @@ onUnmounted(() => {
           {{ getLabel(freightSchemeLabelMap, row.freight_calc_scheme) }}
         </template>
       </el-table-column>
-      <el-table-column label="命中模板" min-width="180">
+      <el-table-column label="命中模板" min-width="240" show-overflow-tooltip>
         <template #default="{ row }">
           <el-tag v-if="getFreightTemplateMeta(row)" type="success" effect="light">
             {{ formatFreightTemplateLabel(row) }}
@@ -1411,12 +1531,12 @@ onUnmounted(() => {
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="提交人" min-width="140">
+      <el-table-column label="提交人" min-width="180" show-overflow-tooltip>
         <template #default="{ row }">
           {{ row.submitter?.name || row.submitter?.account || (row.submitter_id ? `#${row.submitter_id}` : '-') }}
         </template>
       </el-table-column>
-      <el-table-column label="审核人" min-width="140">
+      <el-table-column label="审核人" min-width="180" show-overflow-tooltip>
         <template #default="{ row }">
           {{ row.auditor?.name || row.auditor?.account || (row.audited_by ? `#${row.audited_by}` : '-') }}
         </template>
@@ -1426,95 +1546,107 @@ onUnmounted(() => {
           <el-tag :type="row.is_locked ? 'warning' : 'info'">{{ row.is_locked ? '已锁定' : '未锁定' }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="audit_remark" label="审核备注" min-width="160" />
-      <el-table-column label="作废原因" min-width="160">
+      <el-table-column prop="audit_remark" label="审核备注" min-width="220" show-overflow-tooltip />
+      <el-table-column label="作废原因" min-width="200" show-overflow-tooltip>
         <template #default="{ row }">
           {{ row.void_remark || '-' }}
         </template>
       </el-table-column>
-      <el-table-column label="拆并追溯" min-width="160">
+      <el-table-column label="拆并追溯" min-width="200" show-overflow-tooltip>
         <template #default="{ row }">
           {{ getTraceSummary(row) }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="340" fixed="right">
+      <el-table-column label="操作" width="344" fixed="right">
         <template #default="{ row }">
-          <el-button
-            link
-            type="primary"
-            @click="openDetailDialog(row)"
-          >
-            详情
-          </el-button>
-          <el-button
-            link
-            type="primary"
-            :disabled="!editableStatusSet.has(row.status) || row.is_locked || row.status === 'cancelled'"
-            @click="openEditDialog(row)"
-          >
-            编辑
-          </el-button>
-          <el-button
-            v-if="!row.is_locked && row.status !== 'cancelled'"
-            link
-            type="warning"
-            :loading="managingOrder"
-            @click="lockOrder(row)"
-          >
-            锁单
-          </el-button>
-          <el-button
-            v-if="row.is_locked && row.status !== 'cancelled'"
-            link
-            type="success"
-            :loading="managingOrder"
-            @click="unlockOrder(row)"
-          >
-            解锁
-          </el-button>
-          <el-button
-            v-if="row.status !== 'cancelled'"
-            link
-            type="danger"
-            :loading="managingOrder"
-            @click="voidOrder(row)"
-          >
-            作废
-          </el-button>
-          <el-button
-            v-if="row.status !== 'cancelled'"
-            link
-            type="primary"
-            :loading="splitting"
-            @click="openSplitDialog(row)"
-          >
-            拆单
-          </el-button>
-          <el-button
-            link
-            type="info"
-            @click="openTraceDetail(row)"
-          >
-            追溯
-          </el-button>
-          <el-button
-            v-if="row.audit_status === 'pending_approval'"
-            link
-            type="success"
-            :loading="auditing"
-            @click="approveOrder(row)"
-          >
-            通过
-          </el-button>
-          <el-button
-            v-if="row.audit_status === 'pending_approval'"
-            link
-            type="danger"
-            :loading="auditing"
-            @click="rejectOrder(row)"
-          >
-            驳回
-          </el-button>
+          <div class="pre-plan-action-grid" :key="`${row.id}-${row.is_locked ? 1 : 0}-${row.status}-${row.audit_status}`">
+            <div class="pre-plan-action-cell">
+              <el-button link type="primary" @click="openDetailDialog(row)">详情</el-button>
+            </div>
+            <div class="pre-plan-action-cell">
+              <el-button
+                link
+                type="primary"
+                :disabled="!editableStatusSet.has(row.status) || row.is_locked || row.status === 'cancelled'"
+                @click="openEditDialog(row)"
+              >
+                编辑
+              </el-button>
+            </div>
+            <div class="pre-plan-action-cell">
+              <el-button
+                v-if="row.status !== 'cancelled'"
+                link
+                type="primary"
+                :loading="splitting"
+                @click="openSplitDialog(row)"
+              >
+                拆单
+              </el-button>
+              <span v-else class="pre-plan-action-placeholder" />
+            </div>
+            <div class="pre-plan-action-cell">
+              <el-button
+                v-if="row.audit_status === 'pending_approval'"
+                link
+                type="success"
+                :loading="auditing"
+                @click="approveOrder(row)"
+              >
+                通过
+              </el-button>
+              <span v-else class="pre-plan-action-placeholder" />
+            </div>
+
+            <div class="pre-plan-action-cell">
+              <el-button
+                v-if="!row.is_locked && row.status !== 'cancelled'"
+                link
+                type="warning"
+                :loading="managingOrder"
+                @click="lockOrder(row)"
+              >
+                锁单
+              </el-button>
+              <el-button
+                v-else-if="row.is_locked && row.status !== 'cancelled'"
+                link
+                type="success"
+                :loading="managingOrder"
+                @click="unlockOrder(row)"
+              >
+                解锁
+              </el-button>
+              <span v-else class="pre-plan-action-placeholder" />
+            </div>
+            <div class="pre-plan-action-cell">
+              <el-button
+                v-if="voidableStatusSet.has(row.status) && !row.is_locked && row.status !== 'cancelled'"
+                link
+                type="danger"
+                :loading="managingOrder"
+                @click="openVoidDialog(row)"
+              >
+                作废
+              </el-button>
+              <span v-else class="pre-plan-action-placeholder" />
+            </div>
+            <div class="pre-plan-action-cell">
+              <el-button link type="info" @click="openTraceDetail(row)">追溯</el-button>
+            </div>
+            <div class="pre-plan-action-cell">
+              <el-button
+                v-if="row.audit_status === 'pending_approval'"
+                link
+                type="danger"
+                :loading="auditing"
+                @click="rejectOrder(row)"
+              >
+                驳回
+              </el-button>
+              <span v-else class="pre-plan-action-placeholder" />
+            </div>
+          </div>
         </template>
       </el-table-column>
     </el-table>
@@ -1578,6 +1710,106 @@ onUnmounted(() => {
     />
     <template #footer>
       <el-button @click="detailDialogVisible = false">关闭</el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog v-model="traceDetailDialogVisible" title="拆并追溯详情" width="760px" destroy-on-close>
+    <div v-loading="traceDetailLoading" class="trace-detail-layout">
+      <el-card shadow="never" class="trace-detail-card">
+        <template #header>
+          <div class="trace-detail-title">基础信息</div>
+        </template>
+        <div class="trace-detail-grid">
+          <div class="trace-detail-item">
+            <span class="trace-detail-label">当前单号</span>
+            <span class="trace-detail-value">{{ traceDetailState.orderNo || '-' }}</span>
+          </div>
+          <div class="trace-detail-item">
+            <span class="trace-detail-label">追溯摘要</span>
+            <span class="trace-detail-value">{{ traceDetailState.summary || '-' }}</span>
+          </div>
+        </div>
+      </el-card>
+
+      <el-card shadow="never" class="trace-detail-card mt-12">
+        <template #header>
+          <div class="trace-detail-title">来源信息</div>
+        </template>
+        <div class="trace-detail-grid">
+          <div class="trace-detail-item">
+            <span class="trace-detail-label">来源单ID</span>
+            <span class="trace-detail-value">{{ traceDetailState.sourceOrderId || '-' }}</span>
+          </div>
+          <div class="trace-detail-item">
+            <span class="trace-detail-label">拆分分片</span>
+            <span class="trace-detail-value">{{ traceDetailState.splitPartNo ? `第${traceDetailState.splitPartNo}份` : '-' }}</span>
+          </div>
+          <div class="trace-detail-item trace-detail-item-full">
+            <span class="trace-detail-label">并单来源ID</span>
+            <span class="trace-detail-value">
+              {{ traceDetailState.mergeFromIds.length ? traceDetailState.mergeFromIds.join('、') : '-' }}
+            </span>
+          </div>
+        </div>
+      </el-card>
+
+      <el-card shadow="never" class="trace-detail-card mt-12">
+        <template #header>
+          <div class="trace-detail-title">追溯时间线</div>
+        </template>
+        <el-table
+          v-if="traceDetailState.timeline.length"
+          :data="traceDetailState.timeline"
+          size="small"
+          border
+          class="trace-detail-table"
+        >
+          <el-table-column type="index" label="#" width="56" />
+          <el-table-column prop="time" label="时间" width="170" />
+          <el-table-column prop="action" label="动作" width="160" show-overflow-tooltip />
+          <el-table-column prop="detail" label="明细" min-width="220" show-overflow-tooltip />
+          <el-table-column prop="operator" label="操作人" width="120" show-overflow-tooltip />
+        </el-table>
+        <el-empty v-else description="暂无拆并追溯日志" :image-size="64" />
+      </el-card>
+    </div>
+    <template #footer>
+      <el-button type="primary" @click="traceDetailDialogVisible = false">关闭</el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog v-model="voidDialogVisible" title="作废计划单" width="520px" destroy-on-close>
+    <el-alert
+      type="warning"
+      :closable="false"
+      show-icon
+      class="mb-12"
+      :title="`确认作废：${voidTargetOrder?.order_no || '-'}`"
+      description="作废后该计划单不可继续派单，请先确认没有进行中的业务依赖。"
+    />
+    <div class="void-reason-title mb-12">快捷原因</div>
+    <div class="void-reason-templates mb-12">
+      <el-button
+        v-for="item in voidReasonTemplates"
+        :key="item"
+        size="small"
+        plain
+        @click="applyVoidReasonTemplate(item)"
+      >
+        {{ item }}
+      </el-button>
+    </div>
+    <el-input
+      v-model="voidForm.reason"
+      type="textarea"
+      :rows="4"
+      maxlength="255"
+      show-word-limit
+      placeholder="请输入作废原因（必填，最多255字）"
+    />
+    <template #footer>
+      <el-button @click="voidDialogVisible = false">取消</el-button>
+      <el-button type="danger" :loading="managingOrder" @click="submitVoidOrder">确认作废</el-button>
     </template>
   </el-dialog>
 

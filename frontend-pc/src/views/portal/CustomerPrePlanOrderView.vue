@@ -386,7 +386,7 @@ onUnmounted(() => {
 
 <template>
   <div class="page-content-shell">
-  <el-card shadow="never" class="page-section-card">
+  <el-card shadow="never" class="page-section-card page-section-card-fixed">
     <template #header>
       <div class="table-header">
         <div class="card-title">客户计划单</div>
@@ -397,6 +397,7 @@ onUnmounted(() => {
       </div>
     </template>
 
+    <div class="page-table-section">
     <div class="page-table-card">
     <div class="page-table-wrap">
     <el-table :data="pagedOrders" stripe v-loading="loading" height="100%" class="page-table">
@@ -474,9 +475,10 @@ onUnmounted(() => {
       />
     </div>
     </div>
+    </div>
   </el-card>
 
-  <el-card shadow="never" class="page-section-card mt-12">
+  <el-card shadow="never" class="page-section-card page-section-card-fixed mt-12">
     <template #header>
       <div class="table-header">
         <div class="card-title">审核通知</div>
@@ -511,6 +513,7 @@ onUnmounted(() => {
       </el-form-item>
     </el-form>
 
+    <div class="page-table-section">
     <div class="page-table-card" style="height: 420px">
     <div class="page-table-wrap">
     <el-table :data="pagedMessages" stripe v-loading="loadingMessages" height="100%" class="page-table">
@@ -594,6 +597,7 @@ onUnmounted(() => {
         :page-sizes="[10, 20, 50, 100]"
         :total="messageTotal"
       />
+    </div>
     </div>
     </div>
   </el-card>

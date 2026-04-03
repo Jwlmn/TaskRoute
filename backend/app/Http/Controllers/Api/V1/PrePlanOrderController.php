@@ -104,7 +104,7 @@ class PrePlanOrderController extends Controller
                 })
                 ->when($payload['expected_pickup_from'] ?? null, fn ($query, $from) => $query->where('expected_pickup_at', '>=', $from))
                 ->when($payload['expected_pickup_to'] ?? null, fn ($query, $to) => $query->where('expected_pickup_at', '<=', $to))
-                ->latest()
+                ->orderByDesc('id')
                 ->paginate(20)
         );
     }
@@ -354,7 +354,7 @@ class PrePlanOrderController extends Controller
             $this->scopedOrderQuery($request)
                 ->where('submitter_id', (int) $request->user()->id)
                 ->when($payload['audit_status'] ?? null, fn ($query, $auditStatus) => $query->where('audit_status', $auditStatus))
-                ->latest()
+                ->orderByDesc('id')
                 ->paginate(20)
         );
     }
@@ -462,7 +462,7 @@ class PrePlanOrderController extends Controller
                 ->when($payload['audit_status'] ?? null, fn ($query, $auditStatus) => $query->where('audit_status', $auditStatus))
                 ->when($payload['submitter_id'] ?? null, fn ($query, $submitterId) => $query->where('submitter_id', $submitterId))
                 ->when(array_key_exists('is_locked', $payload), fn ($query) => $query->where('is_locked', (bool) $payload['is_locked']))
-                ->latest()
+                ->orderByDesc('id')
                 ->paginate(20)
         );
     }
