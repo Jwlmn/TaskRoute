@@ -1454,8 +1454,8 @@ watch(displayedExceptionTasks, (list) => {
             <div class="mobile-section-title">责任人反馈超时占比</div>
             <div class="text-secondary">Top 5</div>
           </div>
-          <el-empty v-if="!assigneeFeedbackTimeoutRanking.length" description="暂无反馈超时排行" />
-          <div v-else>
+          <el-empty v-if="!assigneeFeedbackTimeoutRanking.length" :image-size="52" description="暂无反馈超时排行" />
+          <div v-else class="ranking-card-body">
             <div v-for="item in assigneeFeedbackTimeoutRanking" :key="`assignee-feedback-timeout-${item.assigned_handler_id}`" class="mobile-exception-result-line">
               <span class="order-tag-clickable" @click="applyAssigneeFeedbackTimeoutFilter(item)">
                 {{ getAssigneeRankingName(item) }}：{{ Number(item.feedback_timeout_count || 0) }}/{{ Number(item.pending_count || 0) }}（{{ formatRatioPercent(item.timeout_rate) }}）
@@ -1503,8 +1503,8 @@ watch(displayedExceptionTasks, (list) => {
               </el-button>
             </el-space>
           </div>
-          <el-empty v-if="!assigneeFeedbackTimelyRanking.length" description="暂无及时率样本" />
-          <div v-else>
+          <el-empty v-if="!assigneeFeedbackTimelyRanking.length" :image-size="52" description="暂无及时率样本" />
+          <div v-else class="ranking-card-body">
             <div v-for="item in assigneeFeedbackTimelyRanking" :key="`assignee-feedback-timely-${item.assigned_handler_id}`" class="mobile-exception-result-line">
               <span class="order-tag-clickable" @click="applyAssigneeRankingFilter(item)">
                 {{ getAssigneeRankingName(item) }}：
@@ -1533,8 +1533,8 @@ watch(displayedExceptionTasks, (list) => {
             <div class="mobile-section-title">责任人绩效分布</div>
             <div class="text-secondary">Top 5</div>
           </div>
-          <el-empty v-if="!assigneeRanking.length" description="暂无责任人数据" />
-          <div v-else>
+          <el-empty v-if="!assigneeRanking.length" :image-size="52" description="暂无责任人数据" />
+          <div v-else class="ranking-card-body">
             <div v-for="item in assigneeRanking" :key="`assignee-rank-${item.assigned_handler_id}`" class="mobile-exception-result-line">
               <span class="order-tag-clickable" @click="applyAssigneeRankingFilter(item)">
                 {{ getAssigneeRankingName(item) }}：待处理 {{ Number(item.pending_count || 0) }} 条
@@ -1563,8 +1563,8 @@ watch(displayedExceptionTasks, (list) => {
             <div class="mobile-section-title">司机异常排行</div>
             <div class="text-secondary">Top 5</div>
           </div>
-          <el-empty v-if="!driverExceptionRanking.length" description="暂无异常数据" />
-          <div v-else>
+          <el-empty v-if="!driverExceptionRanking.length" :image-size="52" description="暂无异常数据" />
+          <div v-else class="ranking-card-body">
             <div v-for="item in driverExceptionRanking" :key="`driver-rank-${item.key}`" class="mobile-exception-result-line">
               <span class="order-tag-clickable" @click="applyDriverRankingFilter(item)">{{ item.name }}：{{ item.count }} 次</span>
             </div>
@@ -1577,8 +1577,8 @@ watch(displayedExceptionTasks, (list) => {
             <div class="mobile-section-title">装货地异常排行</div>
             <div class="text-secondary">Top 5</div>
           </div>
-          <el-empty v-if="!siteExceptionRanking.length" description="暂无异常数据" />
-          <div v-else>
+          <el-empty v-if="!siteExceptionRanking.length" :image-size="52" description="暂无异常数据" />
+          <div v-else class="ranking-card-body">
             <div v-for="item in siteExceptionRanking" :key="`site-rank-${item.key}`" class="mobile-exception-result-line">
               <span class="order-tag-clickable" @click="applySiteRankingFilter(item)">{{ item.name }}：{{ item.count }} 次</span>
             </div>
@@ -2346,3 +2346,11 @@ watch(displayedExceptionTasks, (list) => {
     <el-empty v-else description="暂无异常详情" />
   </el-drawer>
 </template>
+
+<style scoped>
+.ranking-card-body {
+  max-height: 170px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+</style>
