@@ -11,6 +11,7 @@ use App\Services\Auth\DataScopeService;
 use App\Services\Dispatch\ExceptionSlaService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -243,6 +244,7 @@ class DispatchTaskController extends Controller
             'handled_by_keyword' => ['nullable', 'string', 'max:100'],
             'handled_by_me' => ['nullable', 'boolean'],
             'assigned_to_me' => ['nullable', 'boolean'],
+            'assigned_handler_id' => ['nullable', 'integer', 'exists:users,id'],
         ]);
 
         $targetStatus = $payload['status'] ?? 'pending';
@@ -252,6 +254,7 @@ class DispatchTaskController extends Controller
         $handledByKeyword = trim((string) ($payload['handled_by_keyword'] ?? ''));
         $handledByMe = (bool) ($payload['handled_by_me'] ?? false);
         $assignedToMe = (bool) ($payload['assigned_to_me'] ?? false);
+        $assignedHandlerId = isset($payload['assigned_handler_id']) ? (int) $payload['assigned_handler_id'] : null;
         $currentUserId = (int) ($request->user()?->id ?? 0);
 
         $tasks = $this->dataScopeService->applyDispatchTaskScope(DispatchTask::query(), $request->user())
@@ -266,7 +269,7 @@ class DispatchTaskController extends Controller
                 $syncSla = $targetStatus === 'pending';
                 return $this->exceptionSlaService->syncTaskExceptionSla($task, $syncSla);
             })
-            ->filter(function (DispatchTask $task) use ($targetStatus, $keyword, $exceptionType, $handleAction, $handledByKeyword, $handledByMe, $assignedToMe, $currentUserId): bool {
+            ->filter(function (DispatchTask $task) use ($targetStatus, $keyword, $exceptionType, $handleAction, $handledByKeyword, $handledByMe, $assignedToMe, $assignedHandlerId, $currentUserId): bool {
                 if ($keyword !== '' && ! str_contains((string) $task->task_no, $keyword)) {
                     return false;
                 }
@@ -289,6 +292,9 @@ class DispatchTaskController extends Controller
                 if ($assignedToMe && (int) ($exception['assigned_handler_id'] ?? 0) !== $currentUserId) {
                     return false;
                 }
+                if ($assignedHandlerId !== null && (int) ($exception['assigned_handler_id'] ?? 0) !== $assignedHandlerId) {
+                    return false;
+                }
                 if ($handledByKeyword !== '') {
                     $handledByName = (string) ($exception['handled_by_name'] ?? '');
                     $handledByAccount = (string) ($exception['handled_by_account'] ?? '');
@@ -301,9 +307,18 @@ class DispatchTaskController extends Controller
             })
             ->values();
 
+        $summary = null;
+        $assigneeStats = [];
+        if ($targetStatus === 'pending') {
+            $summary = $this->buildPendingExceptionSummary($tasks, $currentUserId);
+            $assigneeStats = $this->buildAssigneeStats($tasks);
+        }
+
         return response()->json([
             'data' => $tasks,
             'total' => $tasks->count(),
+            'summary' => $summary,
+            'assignee_stats' => $assigneeStats,
         ]);
     }
 
@@ -829,5 +844,76 @@ class DispatchTaskController extends Controller
         return ! $dispatchTask->waypoints()
             ->whereIn('status', ['arrived', 'completed'])
             ->exists();
+    }
+
+    private function buildPendingExceptionSummary(Collection $tasks, int $currentUserId): array
+    {
+        $assignedPending = $tasks->filter(function (DispatchTask $task): bool {
+            $exception = is_array($task->route_meta) ? ($task->route_meta['exception'] ?? null) : null;
+            return is_array($exception) && (int) ($exception['assigned_handler_id'] ?? 0) > 0;
+        })->count();
+
+        $myPending = $tasks->filter(function (DispatchTask $task) use ($currentUserId): bool {
+            $exception = is_array($task->route_meta) ? ($task->route_meta['exception'] ?? null) : null;
+            return is_array($exception) && (int) ($exception['assigned_handler_id'] ?? 0) === $currentUserId;
+        })->count();
+
+        $overtimePending = $tasks->filter(function (DispatchTask $task): bool {
+            $exception = is_array($task->route_meta) ? ($task->route_meta['exception'] ?? null) : null;
+            $sla = is_array($exception['sla'] ?? null) ? $exception['sla'] : [];
+            return (bool) ($sla['is_overtime'] ?? false);
+        })->count();
+
+        return [
+            'total' => $tasks->count(),
+            'assigned' => $assignedPending,
+            'unassigned' => max(0, $tasks->count() - $assignedPending),
+            'my' => $myPending,
+            'overtime' => $overtimePending,
+        ];
+    }
+
+    private function buildAssigneeStats(Collection $tasks): array
+    {
+        $stats = [];
+        foreach ($tasks as $task) {
+            if (! $task instanceof DispatchTask) {
+                continue;
+            }
+            $exception = is_array($task->route_meta) ? ($task->route_meta['exception'] ?? null) : null;
+            if (! is_array($exception)) {
+                continue;
+            }
+            $assigneeId = (int) ($exception['assigned_handler_id'] ?? 0);
+            if ($assigneeId <= 0) {
+                continue;
+            }
+            $key = (string) $assigneeId;
+            if (! array_key_exists($key, $stats)) {
+                $stats[$key] = [
+                    'assigned_handler_id' => $assigneeId,
+                    'assigned_handler_name' => (string) ($exception['assigned_handler_name'] ?? ''),
+                    'assigned_handler_account' => (string) ($exception['assigned_handler_account'] ?? ''),
+                    'pending_count' => 0,
+                    'overtime_count' => 0,
+                    'severe_count' => 0,
+                ];
+            }
+
+            $stats[$key]['pending_count']++;
+            $sla = is_array($exception['sla'] ?? null) ? $exception['sla'] : [];
+            if ((bool) ($sla['is_overtime'] ?? false)) {
+                $stats[$key]['overtime_count']++;
+            }
+            if (($sla['level_code'] ?? null) === 'timeout_120') {
+                $stats[$key]['severe_count']++;
+            }
+        }
+
+        return collect(array_values($stats))
+            ->sortByDesc('pending_count')
+            ->values()
+            ->take(10)
+            ->all();
     }
 }

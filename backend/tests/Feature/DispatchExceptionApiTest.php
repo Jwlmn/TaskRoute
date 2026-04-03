@@ -53,7 +53,12 @@ class DispatchExceptionApiTest extends TestCase
             ->assertJsonPath('total', 1)
             ->assertJsonPath('data.0.id', $taskId)
             ->assertJsonPath('data.0.route_meta.exception.description', '高架拥堵，预计延后30分钟')
-            ->assertJsonPath('data.0.route_meta.exception.sla.policy_minutes', 30);
+            ->assertJsonPath('data.0.route_meta.exception.sla.policy_minutes', 30)
+            ->assertJsonPath('summary.total', 1)
+            ->assertJsonPath('summary.assigned', 0)
+            ->assertJsonPath('summary.unassigned', 1)
+            ->assertJsonPath('summary.my', 0)
+            ->assertJsonPath('assignee_stats', []);
 
         $this->assertIsString((string) $listResponse->json('data.0.route_meta.exception.sla.level_code'));
     }
@@ -601,6 +606,19 @@ class DispatchExceptionApiTest extends TestCase
         $this->postJson('/api/v1/dispatch-task/exception-list', [
             'status' => 'pending',
             'assigned_to_me' => true,
+        ])->assertOk()
+            ->assertJsonPath('total', 1)
+            ->assertJsonPath('data.0.id', $taskIds[0])
+            ->assertJsonPath('summary.total', 1)
+            ->assertJsonPath('summary.assigned', 1)
+            ->assertJsonPath('summary.unassigned', 0)
+            ->assertJsonPath('summary.my', 1)
+            ->assertJsonPath('assignee_stats.0.assigned_handler_id', $dispatcher->id)
+            ->assertJsonPath('assignee_stats.0.pending_count', 1);
+
+        $this->postJson('/api/v1/dispatch-task/exception-list', [
+            'status' => 'pending',
+            'assigned_handler_id' => $dispatcher->id,
         ])->assertOk()
             ->assertJsonPath('total', 1)
             ->assertJsonPath('data.0.id', $taskIds[0]);

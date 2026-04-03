@@ -12,6 +12,8 @@ const loadingExceptions = ref(false)
 const handlingException = ref(false)
 const exceptionTasks = ref([])
 const vehicles = ref([])
+const exceptionSummary = ref(null)
+const assigneeStats = ref([])
 const currentPage = ref(1)
 const pageSize = ref(10)
 const selectedTaskIds = ref([])
@@ -47,6 +49,7 @@ const filterForm = ref({
   driver_focus: '',
   site_focus: '',
   assigned_to_me: false,
+  assigned_handler_id: null,
 })
 const currentUser = readCurrentUser()
 const overtimeThresholdMinutes = 30
@@ -341,6 +344,21 @@ const aggregationMatchedCount = computed(() => {
   return displayedExceptionTasks.value.length
 })
 const pendingExceptionCount = computed(() => exceptionTasks.value.filter((task) => task.route_meta?.exception?.status === 'pending').length)
+const pendingTotalCount = computed(() => Number(exceptionSummary.value?.total ?? pendingExceptionCount.value))
+const pendingAssignedCount = computed(() => {
+  if (Number.isFinite(Number(exceptionSummary.value?.assigned))) return Number(exceptionSummary.value.assigned)
+  return exceptionTasks.value.filter((task) => Number(task?.route_meta?.exception?.assigned_handler_id || 0) > 0).length
+})
+const pendingUnassignedCount = computed(() => {
+  if (Number.isFinite(Number(exceptionSummary.value?.unassigned))) return Number(exceptionSummary.value.unassigned)
+  return Math.max(0, pendingTotalCount.value - pendingAssignedCount.value)
+})
+const pendingMyCount = computed(() => {
+  if (Number.isFinite(Number(exceptionSummary.value?.my))) return Number(exceptionSummary.value.my)
+  const currentUserId = Number(currentUser?.id || 0)
+  if (!currentUserId) return 0
+  return exceptionTasks.value.filter((task) => Number(task?.route_meta?.exception?.assigned_handler_id || 0) === currentUserId).length
+})
 const overtimeExceptionCount = computed(() => exceptionTasks.value.filter((task) => getPendingDurationMinutes(task) >= overtimeThresholdMinutes).length)
 const longestPendingMinutes = computed(() => {
   const durationList = exceptionTasks.value.map((task) => getPendingDurationMinutes(task))
@@ -393,6 +411,35 @@ const siteExceptionRanking = computed(() => {
   })
   return [...map.values()].sort((a, b) => b.count - a.count).slice(0, 5)
 })
+const assigneeRanking = computed(() => {
+  if (Array.isArray(assigneeStats.value) && assigneeStats.value.length > 0) {
+    return assigneeStats.value.slice(0, 5)
+  }
+
+  const map = new Map()
+  exceptionTasks.value.forEach((task) => {
+    const exception = task?.route_meta?.exception
+    if (!exception || exception.status !== 'pending') return
+    const assigneeId = Number(exception.assigned_handler_id || 0)
+    if (assigneeId <= 0) return
+    const key = String(assigneeId)
+    const current = map.get(key) || {
+      assigned_handler_id: assigneeId,
+      assigned_handler_name: exception.assigned_handler_name || '',
+      assigned_handler_account: exception.assigned_handler_account || '',
+      pending_count: 0,
+      overtime_count: 0,
+      severe_count: 0,
+    }
+    current.pending_count += 1
+    const pendingMinutes = getPendingDurationMinutes(task)
+    if (pendingMinutes >= overtimeThresholdMinutes) current.overtime_count += 1
+    if (pendingMinutes >= 120) current.severe_count += 1
+    map.set(key, current)
+  })
+  return [...map.values()].sort((a, b) => Number(b.pending_count || 0) - Number(a.pending_count || 0)).slice(0, 5)
+})
+const getAssigneeRankingName = (item) => formatOperator(item?.assigned_handler_name, item?.assigned_handler_account, item?.assigned_handler_id)
 const focusMatchedTask = (matcher) => {
   const matchedTask = displayedExceptionTasks.value.find(matcher)
   if (matchedTask) {
@@ -436,6 +483,14 @@ const applySiteRankingFilter = (item) => {
     })
   }
 }
+const applyAssigneeRankingFilter = (item) => {
+  const assigneeId = Number(item?.assigned_handler_id || 0)
+  if (assigneeId <= 0) return
+  filterForm.value.assigned_handler_id = filterForm.value.assigned_handler_id === assigneeId ? null : assigneeId
+  if (filterForm.value.assigned_handler_id) {
+    focusMatchedTask((task) => Number(task?.route_meta?.exception?.assigned_handler_id || 0) === assigneeId)
+  }
+}
 
 watch(() => filterForm.value.status, (status) => {
   if (status !== 'handled') {
@@ -447,6 +502,7 @@ watch(() => filterForm.value.status, (status) => {
     filterForm.value.overtime_level = ''
     filterForm.value.recommendation_action = ''
     filterForm.value.assigned_to_me = false
+    filterForm.value.assigned_handler_id = null
   }
 })
 
@@ -468,9 +524,14 @@ const loadExceptionTasks = async () => {
     if (payload.status === 'pending' && filterForm.value.assigned_to_me) {
       payload.assigned_to_me = true
     }
+    if (payload.status === 'pending' && Number(filterForm.value.assigned_handler_id || 0) > 0) {
+      payload.assigned_handler_id = Number(filterForm.value.assigned_handler_id)
+    }
 
     const { data } = await api.post('/dispatch-task/exception-list', payload)
     exceptionTasks.value = Array.isArray(data?.data) ? data.data : []
+    exceptionSummary.value = data?.summary && typeof data.summary === 'object' ? data.summary : null
+    assigneeStats.value = Array.isArray(data?.assignee_stats) ? data.assignee_stats : []
     selectedTaskIds.value = []
     const maxPage = Math.max(1, Math.ceil(displayedExceptionTasks.value.length / pageSize.value))
     if (currentPage.value > maxPage) currentPage.value = maxPage
@@ -679,6 +740,7 @@ const openExceptionDetailFromRoute = () => {
 }
 
 onMounted(async () => {
+  await loadAssignableHandlers()
   await loadExceptionTasks()
   openExceptionDetailFromRoute()
 })
@@ -719,6 +781,32 @@ watch(displayedExceptionTasks, (list) => {
           <div class="text-secondary mb-8">最长待处理时长</div>
           <div class="card-title">{{ longestPendingMinutes > 0 ? formatPendingDurationMinutes(longestPendingMinutes) : '-' }}</div>
           <div class="text-secondary">待处理 {{ pendingExceptionCount }} 条</div>
+        </el-card>
+      </el-col>
+    </el-row>
+    <el-row :gutter="12" class="mb-12" v-if="filterForm.status === 'pending'">
+      <el-col :span="6">
+        <el-card shadow="never">
+          <div class="text-secondary mb-8">待处理总量</div>
+          <div class="card-title">{{ pendingTotalCount }}</div>
+        </el-card>
+      </el-col>
+      <el-col :span="6">
+        <el-card shadow="never">
+          <div class="text-secondary mb-8">已指派责任人</div>
+          <div class="card-title">{{ pendingAssignedCount }}</div>
+        </el-card>
+      </el-col>
+      <el-col :span="6">
+        <el-card shadow="never">
+          <div class="text-secondary mb-8">未指派责任人</div>
+          <div class="card-title">{{ pendingUnassignedCount }}</div>
+        </el-card>
+      </el-col>
+      <el-col :span="6">
+        <el-card shadow="never">
+          <div class="text-secondary mb-8">我负责的异常</div>
+          <div class="card-title">{{ pendingMyCount }}</div>
         </el-card>
       </el-col>
     </el-row>
@@ -765,7 +853,26 @@ watch(displayedExceptionTasks, (list) => {
       </el-row>
     </el-card>
     <el-row :gutter="12" class="mb-12" v-if="filterForm.status === 'pending'">
-      <el-col :span="12">
+      <el-col :span="8">
+        <el-card shadow="never">
+          <div class="table-header">
+            <div class="mobile-section-title">责任人绩效分布</div>
+            <div class="text-secondary">Top 5</div>
+          </div>
+          <el-empty v-if="!assigneeRanking.length" description="暂无责任人数据" />
+          <div v-else>
+            <div v-for="item in assigneeRanking" :key="`assignee-rank-${item.assigned_handler_id}`" class="mobile-exception-result-line">
+              <span class="order-tag-clickable" @click="applyAssigneeRankingFilter(item)">
+                {{ getAssigneeRankingName(item) }}：待处理 {{ Number(item.pending_count || 0) }} 条
+              </span>
+              <span class="text-secondary">
+                （超时 {{ Number(item.overtime_count || 0) }}，严重 {{ Number(item.severe_count || 0) }}）
+              </span>
+            </div>
+          </div>
+        </el-card>
+      </el-col>
+      <el-col :span="8">
         <el-card shadow="never">
           <div class="table-header">
             <div class="mobile-section-title">司机异常排行</div>
@@ -779,7 +886,7 @@ watch(displayedExceptionTasks, (list) => {
           </div>
         </el-card>
       </el-col>
-      <el-col :span="12">
+      <el-col :span="8">
         <el-card shadow="never">
           <div class="table-header">
             <div class="mobile-section-title">装货地异常排行</div>
@@ -852,6 +959,22 @@ watch(displayedExceptionTasks, (list) => {
             （{{ currentUser?.name || currentUser?.account }}）
           </span>
         </el-checkbox>
+      </el-form-item>
+      <el-form-item v-if="filterForm.status === 'pending'" label="责任人">
+        <el-select
+          v-model="filterForm.assigned_handler_id"
+          clearable
+          filterable
+          placeholder="全部责任人"
+          style="width: 200px"
+        >
+          <el-option
+            v-for="user in assignCandidates"
+            :key="user.id"
+            :label="`${user.name || user.account}（${user.account}）`"
+            :value="user.id"
+          />
+        </el-select>
       </el-form-item>
       <el-form-item v-if="filterForm.status === 'pending'" label="超时分层">
         <el-select v-model="filterForm.overtime_level" clearable placeholder="全部时长" style="width: 160px">
