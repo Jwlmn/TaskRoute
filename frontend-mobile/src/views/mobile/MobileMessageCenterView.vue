@@ -200,6 +200,10 @@ const toggleUnreadManualFeedbackOnly = () => {
     filterForm.unread_manual_reminder_only = false
   }
 }
+const clearUnreadQuickFilters = () => {
+  filterForm.unread_manual_reminder_only = false
+  filterForm.unread_manual_feedback_only = false
+}
 const syncFiltersToRoute = async () => {
   const nextQuery = { ...route.query }
   if (filterForm.task_focus) {
@@ -299,11 +303,13 @@ const markMessageRowRead = async (row) => {
   if (!ids.length) return
   if (ids.length === 1) {
     await markRead(ids[0])
+    clearUnreadQuickFilters()
     return
   }
   try {
     await api.post('/message/read-batch', { ids })
     ElMessage.success('批量已读成功')
+    clearUnreadQuickFilters()
     await loadMessages(pagination.page)
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '批量已读失败')
@@ -318,6 +324,7 @@ const markReadBatch = async () => {
   try {
     await api.post('/message/read-batch', { ids: selectedIds.value })
     ElMessage.success('批量已读成功')
+    clearUnreadQuickFilters()
     await loadMessages(pagination.page)
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '批量已读失败')
@@ -353,10 +360,12 @@ const markRelatedTaskMessagesRead = async (taskId) => {
   if (!ids.length) return
   if (ids.length === 1) {
     await markRead(ids[0])
+    clearUnreadQuickFilters()
     return
   }
   try {
     await api.post('/message/read-batch', { ids })
+    clearUnreadQuickFilters()
     await loadMessages(pagination.page)
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '批量已读失败')
