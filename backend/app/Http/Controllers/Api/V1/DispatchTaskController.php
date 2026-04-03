@@ -242,6 +242,7 @@ class DispatchTaskController extends Controller
             'handle_action' => ['nullable', 'in:continue,cancel,reassign'],
             'handled_by_keyword' => ['nullable', 'string', 'max:100'],
             'handled_by_me' => ['nullable', 'boolean'],
+            'assigned_to_me' => ['nullable', 'boolean'],
         ]);
 
         $targetStatus = $payload['status'] ?? 'pending';
@@ -250,6 +251,7 @@ class DispatchTaskController extends Controller
         $handleAction = $payload['handle_action'] ?? null;
         $handledByKeyword = trim((string) ($payload['handled_by_keyword'] ?? ''));
         $handledByMe = (bool) ($payload['handled_by_me'] ?? false);
+        $assignedToMe = (bool) ($payload['assigned_to_me'] ?? false);
         $currentUserId = (int) ($request->user()?->id ?? 0);
 
         $tasks = $this->dataScopeService->applyDispatchTaskScope(DispatchTask::query(), $request->user())
@@ -264,7 +266,7 @@ class DispatchTaskController extends Controller
                 $syncSla = $targetStatus === 'pending';
                 return $this->exceptionSlaService->syncTaskExceptionSla($task, $syncSla);
             })
-            ->filter(function (DispatchTask $task) use ($targetStatus, $keyword, $exceptionType, $handleAction, $handledByKeyword, $handledByMe, $currentUserId): bool {
+            ->filter(function (DispatchTask $task) use ($targetStatus, $keyword, $exceptionType, $handleAction, $handledByKeyword, $handledByMe, $assignedToMe, $currentUserId): bool {
                 if ($keyword !== '' && ! str_contains((string) $task->task_no, $keyword)) {
                     return false;
                 }
@@ -282,6 +284,9 @@ class DispatchTaskController extends Controller
                     return false;
                 }
                 if ($handledByMe && ($exception['handled_by'] ?? null) !== $currentUserId) {
+                    return false;
+                }
+                if ($assignedToMe && (int) ($exception['assigned_handler_id'] ?? 0) !== $currentUserId) {
                     return false;
                 }
                 if ($handledByKeyword !== '') {
@@ -573,56 +578,156 @@ class DispatchTaskController extends Controller
                 return response()->json(['message' => '目标责任人不在当前可管理范围内'], 403);
             }
 
-            $currentHandlerId = (int) ($exception['assigned_handler_id'] ?? 0);
-            if ($currentHandlerId === (int) $targetHandler->id) {
-                return response()->json($task->fresh(['vehicle:id,plate_number,name', 'driver:id,account,name']));
-            }
-
-            $history = is_array($exception['history'] ?? null) ? $exception['history'] : [];
-            $history[] = [
-                'event' => 'manual_assign',
-                'operator_id' => (int) $operator->id,
-                'operator_account' => $operator->account,
-                'operator_name' => $operator->name,
-                'previous_assigned_handler_id' => $currentHandlerId > 0 ? $currentHandlerId : null,
-                'assigned_handler_id' => (int) $targetHandler->id,
-                'assigned_handler_account' => $targetHandler->account,
-                'assigned_handler_name' => $targetHandler->name,
-                'assign_note' => $payload['assign_note'] ?? null,
-                'occurred_at' => now()->toDateTimeString(),
-            ];
-
-            $routeMeta['exception'] = array_merge($exception, [
-                'assigned_handler_id' => (int) $targetHandler->id,
-                'assigned_handler_account' => $targetHandler->account,
-                'assigned_handler_name' => $targetHandler->name,
-                'assigned_at' => now()->toDateTimeString(),
-                'assigned_by' => (int) $operator->id,
-                'assigned_by_account' => $operator->account,
-                'assigned_by_name' => $operator->name,
-                'assigned_reason' => 'manual_assign',
-                'assign_note' => $payload['assign_note'] ?? null,
-                'history' => $history,
-            ]);
-            $task->route_meta = $routeMeta;
-            $task->save();
-
-            SystemMessage::query()->create([
-                'user_id' => (int) $targetHandler->id,
-                'message_type' => 'dispatch_notice',
-                'title' => '异常任务已指派给你',
-                'content' => "任务 {$task->task_no} 异常已由 {$operator->name} 指派给你，请及时处理。",
-                'meta' => [
-                    'task_id' => (int) $task->id,
-                    'task_no' => (string) $task->task_no,
-                    'exception_type' => $exception['type'] ?? null,
-                    'notice_type' => 'exception_manual_assign',
-                    'assign_note' => $payload['assign_note'] ?? null,
-                ],
-            ]);
+            $this->applyManualExceptionAssignment(
+                task: $task,
+                operator: $operator,
+                targetHandler: $targetHandler,
+                assignNote: $payload['assign_note'] ?? null,
+            );
 
             return response()->json($task->fresh(['vehicle:id,plate_number,name', 'driver:id,account,name']));
         });
+    }
+
+    public function assignExceptionHandlerBatch(Request $request): JsonResponse
+    {
+        if (! $request->user()?->hasAnyRole(['admin', 'dispatcher'])) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $payload = $request->validate([
+            'task_ids' => ['required', 'array', 'min:1', 'max:200'],
+            'task_ids.*' => ['integer', 'exists:dispatch_tasks,id'],
+            'assigned_handler_id' => ['required', 'integer', 'exists:users,id'],
+            'assign_note' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        return DB::transaction(function () use ($payload, $request): JsonResponse {
+            $operator = $request->user();
+            $taskIds = collect($payload['task_ids'])->map(fn ($id) => (int) $id)->unique()->values();
+            $tasks = $this->dataScopeService->applyDispatchTaskScope(DispatchTask::query(), $operator)
+                ->whereIn('id', $taskIds->all())
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('id');
+            if ($tasks->count() !== $taskIds->count()) {
+                return response()->json(['message' => '存在超出当前账号可管理范围的异常任务'], 403);
+            }
+
+            $targetHandler = User::query()
+                ->where('id', (int) $payload['assigned_handler_id'])
+                ->where('status', 'active')
+                ->whereIn('role', ['admin', 'dispatcher'])
+                ->first();
+            if (! $targetHandler) {
+                return response()->json(['message' => '目标责任人不可用'], 422);
+            }
+            if (
+                ! $operator->hasRole('admin')
+                && $targetHandler->id !== $operator->id
+                && ! $this->dataScopeService->applyUserScope(User::query(), $operator)->where('id', $targetHandler->id)->exists()
+            ) {
+                return response()->json(['message' => '目标责任人不在当前可管理范围内'], 403);
+            }
+
+            $updatedCount = 0;
+            $skippedCount = 0;
+
+            foreach ($taskIds as $taskId) {
+                /** @var DispatchTask|null $task */
+                $task = $tasks->get((int) $taskId);
+                if (! $task) {
+                    $skippedCount++;
+                    continue;
+                }
+                $routeMeta = is_array($task->route_meta) ? $task->route_meta : [];
+                $exception = is_array($routeMeta['exception'] ?? null) ? $routeMeta['exception'] : null;
+                if (! $exception || ($exception['status'] ?? null) !== 'pending') {
+                    $skippedCount++;
+                    continue;
+                }
+
+                $changed = $this->applyManualExceptionAssignment(
+                    task: $task,
+                    operator: $operator,
+                    targetHandler: $targetHandler,
+                    assignNote: $payload['assign_note'] ?? null,
+                );
+                if ($changed) {
+                    $updatedCount++;
+                } else {
+                    $skippedCount++;
+                }
+            }
+
+            return response()->json([
+                'updated_count' => $updatedCount,
+                'skipped_count' => $skippedCount,
+            ]);
+        });
+    }
+
+    private function applyManualExceptionAssignment(
+        DispatchTask $task,
+        User $operator,
+        User $targetHandler,
+        ?string $assignNote = null,
+    ): bool {
+        $routeMeta = is_array($task->route_meta) ? $task->route_meta : [];
+        $exception = is_array($routeMeta['exception'] ?? null) ? $routeMeta['exception'] : null;
+        if (! $exception || ($exception['status'] ?? null) !== 'pending') {
+            return false;
+        }
+
+        $currentHandlerId = (int) ($exception['assigned_handler_id'] ?? 0);
+        if ($currentHandlerId === (int) $targetHandler->id) {
+            return false;
+        }
+
+        $history = is_array($exception['history'] ?? null) ? $exception['history'] : [];
+        $history[] = [
+            'event' => 'manual_assign',
+            'operator_id' => (int) $operator->id,
+            'operator_account' => $operator->account,
+            'operator_name' => $operator->name,
+            'previous_assigned_handler_id' => $currentHandlerId > 0 ? $currentHandlerId : null,
+            'assigned_handler_id' => (int) $targetHandler->id,
+            'assigned_handler_account' => $targetHandler->account,
+            'assigned_handler_name' => $targetHandler->name,
+            'assign_note' => $assignNote,
+            'occurred_at' => now()->toDateTimeString(),
+        ];
+
+        $routeMeta['exception'] = array_merge($exception, [
+            'assigned_handler_id' => (int) $targetHandler->id,
+            'assigned_handler_account' => $targetHandler->account,
+            'assigned_handler_name' => $targetHandler->name,
+            'assigned_at' => now()->toDateTimeString(),
+            'assigned_by' => (int) $operator->id,
+            'assigned_by_account' => $operator->account,
+            'assigned_by_name' => $operator->name,
+            'assigned_reason' => 'manual_assign',
+            'assign_note' => $assignNote,
+            'history' => $history,
+        ]);
+        $task->route_meta = $routeMeta;
+        $task->save();
+
+        SystemMessage::query()->create([
+            'user_id' => (int) $targetHandler->id,
+            'message_type' => 'dispatch_notice',
+            'title' => '异常任务已指派给你',
+            'content' => "任务 {$task->task_no} 异常已由 {$operator->name} 指派给你，请及时处理。",
+            'meta' => [
+                'task_id' => (int) $task->id,
+                'task_no' => (string) $task->task_no,
+                'exception_type' => $exception['type'] ?? null,
+                'notice_type' => 'exception_manual_assign',
+                'assign_note' => $assignNote,
+            ],
+        ]);
+
+        return true;
     }
 
     private function notifyDriversForHandledException(

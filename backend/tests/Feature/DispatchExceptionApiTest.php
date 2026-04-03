@@ -550,4 +550,114 @@ class DispatchExceptionApiTest extends TestCase
             ->count();
         $this->assertGreaterThan(0, $noticeCount);
     }
+
+    public function test_exception_list_can_filter_assigned_to_me(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $admin = User::query()->where('role', 'admin')->firstOrFail();
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $driver = User::query()->where('account', 'driver')->firstOrFail();
+        $vehicles = Vehicle::query()->where('status', 'idle')->limit(2)->get();
+        $orders = PrePlanOrder::query()->where('status', 'pending')->limit(2)->get();
+        $this->assertCount(2, $vehicles);
+        $this->assertCount(2, $orders);
+
+        Sanctum::actingAs($admin);
+        $taskIds = [];
+        foreach ($orders as $index => $order) {
+            $resp = $this->postJson('/api/v1/dispatch/manual-create-tasks', [
+                'assignments' => [[
+                    'vehicle_id' => $vehicles[$index]->id,
+                    'order_ids' => [$order->id],
+                ]],
+            ]);
+            $resp->assertCreated();
+            $taskIds[] = (int) $resp->json('created_task_ids.0');
+        }
+
+        foreach ($taskIds as $taskId) {
+            $task = \App\Models\DispatchTask::query()->findOrFail($taskId);
+            $task->status = 'in_progress';
+            $task->route_meta = array_merge(is_array($task->route_meta) ? $task->route_meta : [], [
+                'exception' => [
+                    'status' => 'pending',
+                    'type' => 'traffic_jam',
+                    'description' => '负责人筛选测试',
+                    'reported_at' => now()->toDateTimeString(),
+                    'history' => [],
+                ],
+            ]);
+            $task->save();
+        }
+
+        Sanctum::actingAs($admin);
+        $this->postJson('/api/v1/dispatch-task/exception-assign', [
+            'task_id' => $taskIds[0],
+            'assigned_handler_id' => $dispatcher->id,
+        ])->assertOk();
+
+        Sanctum::actingAs($dispatcher);
+        $this->postJson('/api/v1/dispatch-task/exception-list', [
+            'status' => 'pending',
+            'assigned_to_me' => true,
+        ])->assertOk()
+            ->assertJsonPath('total', 1)
+            ->assertJsonPath('data.0.id', $taskIds[0]);
+    }
+
+    public function test_admin_can_batch_assign_exception_handler(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $admin = User::query()->where('role', 'admin')->firstOrFail();
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $driver = User::query()->where('account', 'driver')->firstOrFail();
+        $vehicles = Vehicle::query()->where('status', 'idle')->limit(2)->get();
+        $orders = PrePlanOrder::query()->where('status', 'pending')->limit(2)->get();
+        $this->assertCount(2, $vehicles);
+        $this->assertCount(2, $orders);
+
+        Sanctum::actingAs($admin);
+        $taskIds = [];
+        foreach ($orders as $index => $order) {
+            $resp = $this->postJson('/api/v1/dispatch/manual-create-tasks', [
+                'assignments' => [[
+                    'vehicle_id' => $vehicles[$index]->id,
+                    'order_ids' => [$order->id],
+                ]],
+            ]);
+            $resp->assertCreated();
+            $taskIds[] = (int) $resp->json('created_task_ids.0');
+        }
+
+        foreach ($taskIds as $taskId) {
+            $task = \App\Models\DispatchTask::query()->findOrFail($taskId);
+            $task->status = 'in_progress';
+            $task->route_meta = array_merge(is_array($task->route_meta) ? $task->route_meta : [], [
+                'exception' => [
+                    'status' => 'pending',
+                    'type' => 'traffic_jam',
+                    'description' => '批量改派责任人测试',
+                    'reported_at' => now()->toDateTimeString(),
+                    'history' => [],
+                ],
+            ]);
+            $task->save();
+        }
+
+        Sanctum::actingAs($admin);
+        $this->postJson('/api/v1/dispatch-task/exception-assign-batch', [
+            'task_ids' => $taskIds,
+            'assigned_handler_id' => $dispatcher->id,
+            'assign_note' => '批量接管',
+        ])->assertOk()
+            ->assertJsonPath('updated_count', 2)
+            ->assertJsonPath('skipped_count', 0);
+
+        foreach ($taskIds as $taskId) {
+            $task = \App\Models\DispatchTask::query()->findOrFail($taskId);
+            $this->assertSame($dispatcher->id, data_get($task->route_meta, 'exception.assigned_handler_id'));
+        }
+    }
 }

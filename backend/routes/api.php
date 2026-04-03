@@ -103,6 +103,7 @@ Route::prefix('v1')->group(function (): void {
             Route::post('/dispatch-task/exception-list', [DispatchTaskController::class, 'exceptionList']);
             Route::post('/dispatch-task/exception-handle', [DispatchTaskController::class, 'handleException']);
             Route::post('/dispatch-task/exception-assign', [DispatchTaskController::class, 'assignExceptionHandler']);
+            Route::post('/dispatch-task/exception-assign-batch', [DispatchTaskController::class, 'assignExceptionHandlerBatch']);
         });
 
         Route::middleware(['role:admin|dispatcher', 'permission:mobile_tasks'])->group(function (): void {

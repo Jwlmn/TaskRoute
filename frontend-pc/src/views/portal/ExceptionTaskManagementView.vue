@@ -14,6 +14,7 @@ const exceptionTasks = ref([])
 const vehicles = ref([])
 const currentPage = ref(1)
 const pageSize = ref(10)
+const selectedTaskIds = ref([])
 const detailOrderCurrentPage = ref(1)
 const detailOrderPageSize = ref(10)
 const exceptionHandleDialogVisible = ref(false)
@@ -45,6 +46,7 @@ const filterForm = ref({
   overtime_level: '',
   driver_focus: '',
   site_focus: '',
+  assigned_to_me: false,
 })
 const currentUser = readCurrentUser()
 const overtimeThresholdMinutes = 30
@@ -444,6 +446,7 @@ watch(() => filterForm.value.status, (status) => {
     filterForm.value.overtime_only = false
     filterForm.value.overtime_level = ''
     filterForm.value.recommendation_action = ''
+    filterForm.value.assigned_to_me = false
   }
 })
 
@@ -462,9 +465,13 @@ const loadExceptionTasks = async () => {
     if (payload.status === 'handled' && filterForm.value.handled_by_me) {
       payload.handled_by_me = true
     }
+    if (payload.status === 'pending' && filterForm.value.assigned_to_me) {
+      payload.assigned_to_me = true
+    }
 
     const { data } = await api.post('/dispatch-task/exception-list', payload)
     exceptionTasks.value = Array.isArray(data?.data) ? data.data : []
+    selectedTaskIds.value = []
     const maxPage = Math.max(1, Math.ceil(displayedExceptionTasks.value.length / pageSize.value))
     if (currentPage.value > maxPage) currentPage.value = maxPage
   } catch (error) {
@@ -526,6 +533,34 @@ const assignToMe = async (task) => {
     return
   }
   await openAssignDialog(task, true)
+}
+const handleSelectionChange = (rows) => {
+  selectedTaskIds.value = (Array.isArray(rows) ? rows : []).map((item) => Number(item?.id || 0)).filter((id) => id > 0)
+}
+const batchAssignToMe = async () => {
+  if (!currentUser?.id) {
+    ElMessage.warning('当前账号信息异常，请重新登录后重试')
+    return
+  }
+  if (selectedTaskIds.value.length === 0) {
+    ElMessage.warning('请先勾选异常任务')
+    return
+  }
+
+  assigningExceptionHandler.value = true
+  try {
+    const { data } = await api.post('/dispatch-task/exception-assign-batch', {
+      task_ids: selectedTaskIds.value,
+      assigned_handler_id: Number(currentUser.id),
+      assign_note: '批量接管异常任务',
+    })
+    ElMessage.success(`批量接管完成：成功 ${Number(data?.updated_count || 0)} 条，跳过 ${Number(data?.skipped_count || 0)} 条`)
+    await loadExceptionTasks()
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '批量接管失败')
+  } finally {
+    assigningExceptionHandler.value = false
+  }
 }
 const submitAssignExceptionHandler = async () => {
   if (!assigningTask.value?.id) return
@@ -810,6 +845,14 @@ watch(displayedExceptionTasks, (list) => {
           仅看超时异常（>{{ overtimeThresholdMinutes }} 分钟）
         </el-checkbox>
       </el-form-item>
+      <el-form-item v-if="filterForm.status === 'pending'">
+        <el-checkbox v-model="filterForm.assigned_to_me">
+          仅看我负责
+          <span v-if="currentUser?.name || currentUser?.account">
+            （{{ currentUser?.name || currentUser?.account }}）
+          </span>
+        </el-checkbox>
+      </el-form-item>
       <el-form-item v-if="filterForm.status === 'pending'" label="超时分层">
         <el-select v-model="filterForm.overtime_level" clearable placeholder="全部时长" style="width: 160px">
           <el-option
@@ -842,10 +885,29 @@ watch(displayedExceptionTasks, (list) => {
       <el-form-item>
         <el-button type="primary" @click="currentPage = 1; loadExceptionTasks()">查询</el-button>
       </el-form-item>
+      <el-form-item v-if="filterForm.status === 'pending'">
+        <el-button
+          type="success"
+          plain
+          :loading="assigningExceptionHandler"
+          @click="batchAssignToMe"
+        >
+          批量接管（{{ selectedTaskIds.length }}）
+        </el-button>
+      </el-form-item>
     </el-form>
     <div class="page-table-section">
     <div class="page-table-wrap">
-    <el-table :data="pagedExceptionTasks" stripe v-loading="loadingExceptions" height="100%" class="page-table">
+    <el-table
+      :data="pagedExceptionTasks"
+      stripe
+      v-loading="loadingExceptions"
+      height="100%"
+      class="page-table"
+      row-key="id"
+      @selection-change="handleSelectionChange"
+    >
+      <el-table-column type="selection" width="48" :selectable="(row) => row.route_meta?.exception?.status === 'pending'" />
       <el-table-column prop="task_no" label="任务编号" min-width="180" />
       <el-table-column label="当前状态" min-width="110">
         <template #default="{ row }">
