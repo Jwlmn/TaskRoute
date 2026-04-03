@@ -859,6 +859,17 @@ watch(displayedExceptionTasks, (list) => {
           }}
         </template>
       </el-table-column>
+      <el-table-column label="当前责任人" min-width="170">
+        <template #default="{ row }">
+          {{
+            formatOperator(
+              row.route_meta?.exception?.assigned_handler_name,
+              row.route_meta?.exception?.assigned_handler_account,
+              row.route_meta?.exception?.assigned_handler_id,
+            )
+          }}
+        </template>
+      </el-table-column>
       <el-table-column label="操作" width="160" fixed="right">
         <template #default="{ row }">
           <el-button link type="info" @click="openDetailDialog(row)">详情</el-button>
@@ -979,6 +990,9 @@ watch(displayedExceptionTasks, (list) => {
         </el-descriptions-item>
         <el-descriptions-item label="处理人">
           {{ formatOperator(currentException.handled_by_name, currentException.handled_by_account, currentException.handled_by) }}
+        </el-descriptions-item>
+        <el-descriptions-item label="当前责任人">
+          {{ formatOperator(currentException.assigned_handler_name, currentException.assigned_handler_account, currentException.assigned_handler_id) }}
         </el-descriptions-item>
         <el-descriptions-item label="关联节点">{{ currentException.waypoint_id || '-' }}</el-descriptions-item>
         <el-descriptions-item label="异常说明" :span="2">{{ currentException.description || '-' }}</el-descriptions-item>

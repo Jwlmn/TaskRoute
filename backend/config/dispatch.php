@@ -5,6 +5,7 @@ return [
         'default' => [
             'policy_minutes' => 30,
             'reminder_interval_minutes' => 30,
+            'assign_accounts' => [],
             'alert_levels' => [
                 ['minutes' => 30, 'code' => 'timeout_30', 'label' => '临近超时', 'type' => 'primary'],
                 ['minutes' => 60, 'code' => 'timeout_60', 'label' => '高优先级', 'type' => 'warning'],
@@ -15,6 +16,7 @@ return [
             // 示例（按异常类型覆盖阈值）：
             // 'vehicle_breakdown' => [
             //     'policy_minutes' => 20,
+            //     'assign_accounts' => ['dispatcher'],
             //     'alert_levels' => [
             //         ['minutes' => 20, 'label' => '车辆故障临近超时', 'type' => 'warning'],
             //         ['minutes' => 45, 'label' => '车辆故障高优先级', 'type' => 'danger'],

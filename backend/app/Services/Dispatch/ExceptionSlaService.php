@@ -3,6 +3,7 @@
 namespace App\Services\Dispatch;
 
 use App\Models\DispatchTask;
+use App\Models\LogisticsSite;
 use App\Models\SystemMessage;
 use App\Models\User;
 use Carbon\CarbonImmutable;
@@ -31,6 +32,7 @@ class ExceptionSlaService
         $now = CarbonImmutable::now();
         $alertLevels = $this->resolveAlertLevels((string) ($exception['type'] ?? ''));
         $annotatedException = $this->annotateException($exception, $now);
+        $assignedUser = null;
         $newAlertLevels = [];
         $shouldSendReminder = false;
         $shouldPersist = false;
@@ -46,6 +48,13 @@ class ExceptionSlaService
                     $annotatedException = $this->appendReminderHistory($annotatedException, $now);
                     $shouldPersist = true;
                 }
+            }
+        }
+
+        if (($annotatedException['status'] ?? null) === 'pending') {
+            [$annotatedException, $assignedUser, $assignedChanged] = $this->ensureAssignedHandler($task, $annotatedException, $now);
+            if ($assignedChanged) {
+                $shouldPersist = true;
             }
         }
 
@@ -65,8 +74,59 @@ class ExceptionSlaService
         if ($notifyOnEscalation && $shouldSendReminder) {
             $this->notifyReminder($task, $annotatedException);
         }
+        if ($notifyOnEscalation && $assignedUser instanceof User) {
+            $this->notifyAssignedHandler($task, $annotatedException, $assignedUser);
+        }
 
         return $task;
+    }
+
+    /**
+     * @param  array<string, mixed>  $exception
+     * @return array{0:array<string,mixed>,1:?User,2:bool}
+     */
+    private function ensureAssignedHandler(DispatchTask $task, array $exception, CarbonImmutable $now): array
+    {
+        $sla = is_array($exception['sla'] ?? null) ? $exception['sla'] : [];
+        $levelCode = (string) ($sla['level_code'] ?? 'normal');
+        if ($levelCode === '' || $levelCode === 'normal') {
+            return [$exception, null, false];
+        }
+
+        $currentAssignedId = (int) ($exception['assigned_handler_id'] ?? 0);
+        if ($currentAssignedId > 0) {
+            $existing = User::query()->where('id', $currentAssignedId)->where('status', 'active')->first();
+            if ($existing instanceof User) {
+                return [$exception, null, false];
+            }
+        }
+
+        $target = $this->resolveAssignmentTarget($task, (string) ($exception['type'] ?? ''));
+        if (! $target) {
+            return [$exception, null, false];
+        }
+
+        $history = is_array($exception['history'] ?? null) ? $exception['history'] : [];
+        $history[] = [
+            'event' => 'sla_assign',
+            'operator_id' => null,
+            'operator_account' => 'system',
+            'operator_name' => '系统',
+            'assigned_handler_id' => (int) $target->id,
+            'assigned_handler_account' => $target->account,
+            'assigned_handler_name' => $target->name,
+            'reason' => 'exception_sla_auto_assign',
+            'occurred_at' => $now->toDateTimeString(),
+        ];
+
+        $exception['history'] = $history;
+        $exception['assigned_handler_id'] = (int) $target->id;
+        $exception['assigned_handler_account'] = $target->account;
+        $exception['assigned_handler_name'] = $target->name;
+        $exception['assigned_at'] = $now->toDateTimeString();
+        $exception['assigned_reason'] = 'exception_sla_auto_assign';
+
+        return [$exception, $target, true];
     }
 
     /**
@@ -307,6 +367,31 @@ class ExceptionSlaService
     }
 
     /**
+     * @param  array<string, mixed>  $exception
+     */
+    private function notifyAssignedHandler(DispatchTask $task, array $exception, User $assignedUser): void
+    {
+        $sla = is_array($exception['sla'] ?? null) ? $exception['sla'] : [];
+        $taskNo = (string) ($task->task_no ?? '-');
+        $levelLabel = (string) ($sla['level_label'] ?? '超时');
+
+        SystemMessage::query()->create([
+            'user_id' => (int) $assignedUser->id,
+            'message_type' => 'dispatch_notice',
+            'title' => '异常任务已自动指派给你',
+            'content' => "任务 {$taskNo} 当前等级 {$levelLabel}，系统已自动指派你跟进处理。",
+            'meta' => [
+                'task_id' => (int) $task->id,
+                'task_no' => $taskNo,
+                'exception_type' => $exception['type'] ?? null,
+                'sla_level_code' => $sla['level_code'] ?? null,
+                'sla_level_label' => $levelLabel,
+                'notice_type' => 'exception_sla_assign',
+            ],
+        ]);
+    }
+
+    /**
      * @return array{code:string,label:string,type:string}
      */
     private function resolveLevelByMinutes(int $pendingMinutes, array $alertLevels): array
@@ -429,6 +514,83 @@ class ExceptionSlaService
         $typed = (int) config("dispatch.exception_sla.by_type.{$exceptionType}.reminder_interval_minutes", 0);
 
         return max(5, $typed > 0 ? $typed : $default);
+    }
+
+    private function resolveAssignmentTarget(DispatchTask $task, string $exceptionType): ?User
+    {
+        $preferredAccounts = config("dispatch.exception_sla.by_type.{$exceptionType}.assign_accounts");
+        if (! is_array($preferredAccounts) || $preferredAccounts === []) {
+            $preferredAccounts = config('dispatch.exception_sla.default.assign_accounts', []);
+        }
+
+        $normalizedAccounts = collect($preferredAccounts)
+            ->map(fn ($account) => trim((string) $account))
+            ->filter()
+            ->values()
+            ->all();
+        if ($normalizedAccounts !== []) {
+            $candidates = User::query()
+                ->whereIn('account', $normalizedAccounts)
+                ->where('status', 'active')
+                ->get()
+                ->keyBy('account');
+
+            foreach ($normalizedAccounts as $account) {
+                $candidate = $candidates->get($account);
+                if ($candidate instanceof User) {
+                    return $candidate;
+                }
+            }
+        }
+
+        if ($task->dispatcher_id) {
+            $dispatcher = User::query()
+                ->where('id', (int) $task->dispatcher_id)
+                ->where('status', 'active')
+                ->first();
+            if ($dispatcher instanceof User) {
+                return $dispatcher;
+            }
+        }
+
+        $siteId = $task->vehicle?->site_id;
+        if (! $siteId && $task->vehicle_id) {
+            $siteId = $task->vehicle()->value('site_id');
+        }
+        $regionCode = null;
+        if ($siteId) {
+            $regionCode = LogisticsSite::query()->where('id', (int) $siteId)->value('region_code');
+        }
+
+        $candidate = User::query()
+            ->where('status', 'active')
+            ->whereIn('role', ['dispatcher', 'admin'])
+            ->orderBy('id')
+            ->get()
+            ->first(function (User $user) use ($siteId, $regionCode): bool {
+                if ($user->role === 'admin') {
+                    return true;
+                }
+
+                if ($siteId === null && $regionCode === null) {
+                    return true;
+                }
+
+                $scope = $user->resolveDataScope();
+                if (($scope['type'] ?? 'all') === 'all') {
+                    return true;
+                }
+                if ($siteId && in_array((int) $siteId, $scope['site_ids'] ?? [], true)) {
+                    return true;
+                }
+                if ($regionCode && in_array((string) $regionCode, $scope['region_codes'] ?? [], true)) {
+                    return true;
+                }
+
+                return false;
+            });
+
+        return $candidate instanceof User ? $candidate : null;
     }
 
     private function resolveDefaultLabel(int $minutes): string
