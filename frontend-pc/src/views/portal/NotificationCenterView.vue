@@ -43,6 +43,8 @@ const filterForm = ref({
   read_status: 'all',
   message_type: '',
   dispatch_notice_type: '',
+  unread_reminder_only: false,
+  unread_feedback_only: false,
   pinned_only: false,
   task_focus: '',
 })
@@ -62,6 +64,17 @@ const dispatchNoticeTypeLabelMap = {
   exception_manual_feedback: '异常人工反馈',
 }
 const getDispatchNoticeType = (message) => String(message?.meta?.notice_type || '')
+const reminderNoticeTypes = ['exception_manual_reminder', 'exception_sla_reminder', 'exception_feedback_sla']
+const hasUnreadDispatchNoticeTypes = (row, noticeTypes) => {
+  if (row?.message_type !== 'dispatch_notice') return false
+  const typeSet = new Set((Array.isArray(noticeTypes) ? noticeTypes : []).map((item) => String(item)))
+  if (!typeSet.size) return false
+  const aggregateItems = Array.isArray(row?.aggregate_items) ? row.aggregate_items : []
+  if (aggregateItems.length > 0) {
+    return aggregateItems.some((entry) => !entry?.read_at && typeSet.has(getDispatchNoticeType(entry)))
+  }
+  return !row?.read_at && typeSet.has(getDispatchNoticeType(row))
+}
 
 const getMessageRowIds = (row) => {
   if (Array.isArray(row?.aggregate_ids) && row.aggregate_ids.length) {
@@ -136,14 +149,27 @@ const displayMessages = computed(() => {
       return getDispatchNoticeType(item) === filterForm.value.dispatch_notice_type
     })
     : list
-  if (!filterForm.value.task_focus) return filteredByDispatchNoticeType
-  return filteredByDispatchNoticeType.filter((item) => String(item?.meta?.task_id || '') === String(filterForm.value.task_focus))
+  const filteredByQuickSwitch = filteredByDispatchNoticeType
+    .filter((item) => (filterForm.value.unread_reminder_only ? hasUnreadDispatchNoticeTypes(item, reminderNoticeTypes) : true))
+    .filter((item) => (filterForm.value.unread_feedback_only ? hasUnreadDispatchNoticeTypes(item, ['exception_manual_feedback']) : true))
+  if (!filterForm.value.task_focus) return filteredByQuickSwitch
+  return filteredByQuickSwitch.filter((item) => String(item?.meta?.task_id || '') === String(filterForm.value.task_focus))
 })
 const pagedMessages = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value
   return displayMessages.value.slice(start, start + pageSize.value)
 })
 const totalMessages = computed(() => displayMessages.value.length)
+const unreadReminderCount = computed(() => messages.value
+  .filter((item) => item?.message_type === 'dispatch_notice')
+  .filter((item) => !item?.read_at)
+  .filter((item) => reminderNoticeTypes.includes(getDispatchNoticeType(item)))
+  .length)
+const unreadFeedbackCount = computed(() => messages.value
+  .filter((item) => item?.message_type === 'dispatch_notice')
+  .filter((item) => !item?.read_at)
+  .filter((item) => getDispatchNoticeType(item) === 'exception_manual_feedback')
+  .length)
 const isExpandedMessageRow = (row) => expandedMessageKeys.value.includes(row?.aggregate_key)
 const toggleExpandedMessageRow = (row) => {
   if (!row?.aggregate_key || row.aggregate_count <= 1) return
@@ -164,6 +190,22 @@ const focusTaskMessages = (row) => {
 }
 const clearTaskFocus = () => {
   filterForm.value.task_focus = ''
+}
+const toggleUnreadReminderOnly = () => {
+  filterForm.value.unread_reminder_only = !filterForm.value.unread_reminder_only
+  if (filterForm.value.unread_reminder_only) {
+    filterForm.value.unread_feedback_only = false
+  }
+}
+const toggleUnreadFeedbackOnly = () => {
+  filterForm.value.unread_feedback_only = !filterForm.value.unread_feedback_only
+  if (filterForm.value.unread_feedback_only) {
+    filterForm.value.unread_reminder_only = false
+  }
+}
+const clearUnreadQuickFilters = () => {
+  filterForm.value.unread_reminder_only = false
+  filterForm.value.unread_feedback_only = false
 }
 const syncFiltersToRoute = async () => {
   const nextQuery = { ...route.query }
@@ -243,11 +285,13 @@ const markMessageRowRead = async (row) => {
   if (!ids.length) return
   if (ids.length === 1) {
     await markRead(ids[0])
+    clearUnreadQuickFilters()
     return
   }
   try {
     await api.post('/message/read-batch', { ids })
     ElMessage.success('批量已读成功')
+    clearUnreadQuickFilters()
     await loadMessages()
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '批量已读失败')
@@ -262,6 +306,7 @@ const markReadBatch = async () => {
   try {
     await api.post('/message/read-batch', { ids: selectedIds.value })
     ElMessage.success('批量已读成功')
+    clearUnreadQuickFilters()
     await loadMessages()
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '批量已读失败')
@@ -443,6 +488,15 @@ watch(displayMessages, (list) => {
     currentPage.value = maxPage
   }
 })
+
+watch([unreadReminderCount, unreadFeedbackCount], ([reminderCount, feedbackCount]) => {
+  if (filterForm.value.unread_reminder_only && reminderCount <= 0) {
+    filterForm.value.unread_reminder_only = false
+  }
+  if (filterForm.value.unread_feedback_only && feedbackCount <= 0) {
+    filterForm.value.unread_feedback_only = false
+  }
+})
 </script>
 
 <template>
@@ -488,6 +542,26 @@ watch(displayMessages, (list) => {
       </el-form-item>
       <el-form-item>
         <el-checkbox v-model="filterForm.pinned_only">仅看置顶</el-checkbox>
+      </el-form-item>
+      <el-form-item>
+        <el-button
+          size="small"
+          plain
+          :type="filterForm.unread_reminder_only ? 'warning' : 'info'"
+          @click="toggleUnreadReminderOnly"
+        >
+          未读催办（{{ unreadReminderCount }}）
+        </el-button>
+      </el-form-item>
+      <el-form-item>
+        <el-button
+          size="small"
+          plain
+          :type="filterForm.unread_feedback_only ? 'warning' : 'info'"
+          @click="toggleUnreadFeedbackOnly"
+        >
+          未读反馈（{{ unreadFeedbackCount }}）
+        </el-button>
       </el-form-item>
       <el-form-item v-if="filterForm.task_focus" label="任务聚焦">
         <el-space wrap>
