@@ -286,6 +286,25 @@ const removeSavedFilterView = (viewId) => {
   savedFilterViews.value = savedFilterViews.value.filter((item) => Number(item?.id) !== Number(viewId))
   persistSavedFilterViews()
 }
+const renameSavedFilterView = (view) => {
+  const currentName = String(view?.name || '')
+  const name = window.prompt('请输入新的筛选视图名称（最多20字）', currentName)
+  const normalizedName = String(name || '').trim().slice(0, 20)
+  if (!normalizedName) {
+    ElMessage.info('已取消重命名')
+    return
+  }
+  const targetId = Number(view?.id || 0)
+  savedFilterViews.value = savedFilterViews.value.map((item) => {
+    if (Number(item?.id || 0) !== targetId) return item
+    return {
+      ...item,
+      name: normalizedName,
+    }
+  })
+  persistSavedFilterViews()
+  ElMessage.success('筛选视图已重命名')
+}
 const applySystemPresetReminder = async () => {
   filterForm.value.message_type = 'dispatch_notice'
   filterForm.value.dispatch_notice_type = ''
@@ -719,16 +738,17 @@ watch([unreadReminderCount, unreadFeedbackCount], ([reminderCount, feedbackCount
       </el-form-item>
       <el-form-item v-if="savedFilterViews.length" label="已保存视图">
         <el-space wrap>
-          <el-tag
-            v-for="view in savedFilterViews"
-            :key="`saved-filter-view-${view.id}`"
-            closable
-            class="order-tag-clickable"
-            @click="applySavedFilterView(view)"
-            @close="removeSavedFilterView(view.id)"
-          >
-            {{ view.name }}
-          </el-tag>
+          <span v-for="view in savedFilterViews" :key="`saved-filter-view-${view.id}`" class="mobile-exception-result-line">
+            <el-tag
+              closable
+              class="order-tag-clickable"
+              @click="applySavedFilterView(view)"
+              @close="removeSavedFilterView(view.id)"
+            >
+              {{ view.name }}
+            </el-tag>
+            <el-button size="small" link type="primary" @click="renameSavedFilterView(view)">重命名</el-button>
+          </span>
         </el-space>
       </el-form-item>
     </el-form>
