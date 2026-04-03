@@ -58,6 +58,8 @@ class DispatchExceptionApiTest extends TestCase
             ->assertJsonPath('summary.assigned', 0)
             ->assertJsonPath('summary.unassigned', 1)
             ->assertJsonPath('summary.my', 0)
+            ->assertJsonPath('summary.no_feedback', 1)
+            ->assertJsonPath('summary.feedback_timeout', 0)
             ->assertJsonPath('assignee_stats', []);
 
         $this->assertIsString((string) $listResponse->json('data.0.route_meta.exception.sla.level_code'));
@@ -613,6 +615,8 @@ class DispatchExceptionApiTest extends TestCase
             ->assertJsonPath('summary.assigned', 1)
             ->assertJsonPath('summary.unassigned', 0)
             ->assertJsonPath('summary.my', 1)
+            ->assertJsonPath('summary.no_feedback', 1)
+            ->assertJsonPath('summary.feedback_timeout', 0)
             ->assertJsonPath('assignee_stats.0.assigned_handler_id', $dispatcher->id)
             ->assertJsonPath('assignee_stats.0.pending_count', 1);
 

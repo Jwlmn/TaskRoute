@@ -421,6 +421,18 @@ const pendingMyCount = computed(() => {
   if (!currentUserId) return 0
   return exceptionTasks.value.filter((task) => Number(task?.route_meta?.exception?.assigned_handler_id || 0) === currentUserId).length
 })
+const pendingNoFeedbackCount = computed(() => {
+  if (Number.isFinite(Number(exceptionSummary.value?.no_feedback))) return Number(exceptionSummary.value.no_feedback)
+  return exceptionTasks.value.filter((task) => !getLastFeedbackAt(task)).length
+})
+const pendingFeedbackTimeoutCount = computed(() => {
+  if (Number.isFinite(Number(exceptionSummary.value?.feedback_timeout))) return Number(exceptionSummary.value.feedback_timeout)
+  const threshold = Number(exceptionSummary.value?.feedback_timeout_threshold_minutes || 30)
+  return exceptionTasks.value.filter((task) => {
+    const gap = getLastFeedbackGapMinutes(task)
+    return gap !== null && gap >= threshold
+  }).length
+})
 const overtimeExceptionCount = computed(() => exceptionTasks.value.filter((task) => getPendingDurationMinutes(task) >= overtimeThresholdMinutes).length)
 const longestPendingMinutes = computed(() => {
   const durationList = exceptionTasks.value.map((task) => getPendingDurationMinutes(task))
@@ -955,28 +967,40 @@ watch(displayedExceptionTasks, (list) => {
       </el-col>
     </el-row>
     <el-row :gutter="12" class="mb-12" v-if="filterForm.status === 'pending'">
-      <el-col :span="6">
+      <el-col :span="4">
         <el-card shadow="never">
           <div class="text-secondary mb-8">待处理总量</div>
           <div class="card-title">{{ pendingTotalCount }}</div>
         </el-card>
       </el-col>
-      <el-col :span="6">
+      <el-col :span="4">
         <el-card shadow="never">
           <div class="text-secondary mb-8">已指派责任人</div>
           <div class="card-title">{{ pendingAssignedCount }}</div>
         </el-card>
       </el-col>
-      <el-col :span="6">
+      <el-col :span="4">
         <el-card shadow="never">
           <div class="text-secondary mb-8">未指派责任人</div>
           <div class="card-title">{{ pendingUnassignedCount }}</div>
         </el-card>
       </el-col>
-      <el-col :span="6">
+      <el-col :span="4">
         <el-card shadow="never">
           <div class="text-secondary mb-8">我负责的异常</div>
           <div class="card-title">{{ pendingMyCount }}</div>
+        </el-card>
+      </el-col>
+      <el-col :span="4">
+        <el-card shadow="never">
+          <div class="text-secondary mb-8">无反馈异常</div>
+          <div class="card-title">{{ pendingNoFeedbackCount }}</div>
+        </el-card>
+      </el-col>
+      <el-col :span="4">
+        <el-card shadow="never">
+          <div class="text-secondary mb-8">反馈超时异常</div>
+          <div class="card-title">{{ pendingFeedbackTimeoutCount }}</div>
         </el-card>
       </el-col>
     </el-row>

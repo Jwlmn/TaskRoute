@@ -1073,6 +1073,27 @@ class DispatchTaskController extends Controller
             $sla = is_array($exception['sla'] ?? null) ? $exception['sla'] : [];
             return (bool) ($sla['is_overtime'] ?? false);
         })->count();
+        $feedbackTimeoutThreshold = 30;
+        $noFeedbackPending = $tasks->filter(function (DispatchTask $task): bool {
+            $exception = is_array($task->route_meta) ? ($task->route_meta['exception'] ?? null) : null;
+            return is_array($exception) && trim((string) ($exception['last_feedback_at'] ?? '')) === '';
+        })->count();
+        $feedbackTimeoutPending = $tasks->filter(function (DispatchTask $task) use ($feedbackTimeoutThreshold): bool {
+            $exception = is_array($task->route_meta) ? ($task->route_meta['exception'] ?? null) : null;
+            if (! is_array($exception)) {
+                return false;
+            }
+            $feedbackAt = trim((string) ($exception['last_feedback_at'] ?? ''));
+            if ($feedbackAt === '') {
+                return false;
+            }
+            try {
+                $minutes = \Illuminate\Support\Carbon::parse($feedbackAt)->diffInMinutes(now());
+                return $minutes >= $feedbackTimeoutThreshold;
+            } catch (\Throwable) {
+                return false;
+            }
+        })->count();
 
         return [
             'total' => $tasks->count(),
@@ -1080,6 +1101,9 @@ class DispatchTaskController extends Controller
             'unassigned' => max(0, $tasks->count() - $assignedPending),
             'my' => $myPending,
             'overtime' => $overtimePending,
+            'no_feedback' => $noFeedbackPending,
+            'feedback_timeout' => $feedbackTimeoutPending,
+            'feedback_timeout_threshold_minutes' => $feedbackTimeoutThreshold,
         ];
     }
 
