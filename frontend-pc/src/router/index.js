@@ -76,7 +76,7 @@ const router = createRouter({
         {
           path: 'dispatch/exceptions',
           name: 'exception-task-management',
-          redirect: { name: 'exception-task-operations' },
+          redirect: { name: 'exception-task-analytics' },
           meta: { permission: 'dispatch' },
         },
         {

@@ -35,6 +35,12 @@ const analyticsDetailDescription = ref('')
 const analyticsDetailTaskIds = ref([])
 const analyticsDetailCurrentPage = ref(1)
 const analyticsDetailPageSize = ref(10)
+const analyticsDetailFilters = ref({
+  keyword: '',
+  overtimeOnly: false,
+  mineOnly: false,
+  remindableOnly: false,
+})
 const handlingTask = ref(null)
 const assigningTask = ref(null)
 const feedbackTask = ref(null)
@@ -585,9 +591,35 @@ const analyticsDetailTasks = computed(() => {
     .filter((task) => orderMap.has(Number(task?.id || 0)))
     .sort((a, b) => Number(orderMap.get(Number(a?.id || 0))) - Number(orderMap.get(Number(b?.id || 0))))
 })
+const filteredAnalyticsDetailTasks = computed(() => {
+  const keyword = String(analyticsDetailFilters.value.keyword || '').trim().toLowerCase()
+  const currentUserId = Number(currentUser?.id || 0)
+  return analyticsDetailTasks.value.filter((task) => {
+    if (keyword) {
+      const taskNo = String(task?.task_no || '').toLowerCase()
+      const driverName = String(task?.driver?.name || '').toLowerCase()
+      const driverAccount = String(task?.driver?.account || '').toLowerCase()
+      if (!taskNo.includes(keyword) && !driverName.includes(keyword) && !driverAccount.includes(keyword)) {
+        return false
+      }
+    }
+    if (analyticsDetailFilters.value.overtimeOnly && getPendingDurationMinutes(task) < overtimeThresholdMinutes) {
+      return false
+    }
+    if (analyticsDetailFilters.value.mineOnly) {
+      if (!currentUserId || Number(task?.route_meta?.exception?.assigned_handler_id || 0) !== currentUserId) {
+        return false
+      }
+    }
+    if (analyticsDetailFilters.value.remindableOnly && isTaskInReminderCooldown(task)) {
+      return false
+    }
+    return true
+  })
+})
 const pagedAnalyticsDetailTasks = computed(() => {
   const start = (analyticsDetailCurrentPage.value - 1) * analyticsDetailPageSize.value
-  return analyticsDetailTasks.value.slice(start, start + analyticsDetailPageSize.value)
+  return filteredAnalyticsDetailTasks.value.slice(start, start + analyticsDetailPageSize.value)
 })
 const hasAggregationFilter = computed(() => Boolean(filterForm.value.driver_focus || filterForm.value.site_focus))
 const aggregationMatchedCount = computed(() => {
@@ -942,6 +974,12 @@ const openAnalyticsDetailByTaskList = ({ title, description = '', tasks = [] }) 
   analyticsDetailDescription.value = description || ''
   analyticsDetailTaskIds.value = taskIds
   analyticsDetailCurrentPage.value = 1
+  analyticsDetailFilters.value = {
+    keyword: '',
+    overtimeOnly: false,
+    mineOnly: false,
+    remindableOnly: false,
+  }
   analyticsDetailDialogVisible.value = true
 }
 const openAnalyticsDetailByMatcher = ({ title, description = '', matcher }) => {
@@ -1518,8 +1556,8 @@ watch(displayedExceptionTasks, (list) => {
     currentPage.value = maxPage
   }
 })
-watch([analyticsDetailTasks, analyticsDetailPageSize], () => {
-  const maxPage = Math.max(1, Math.ceil(analyticsDetailTasks.value.length / analyticsDetailPageSize.value))
+watch([filteredAnalyticsDetailTasks, analyticsDetailPageSize], () => {
+  const maxPage = Math.max(1, Math.ceil(filteredAnalyticsDetailTasks.value.length / analyticsDetailPageSize.value))
   if (analyticsDetailCurrentPage.value > maxPage) {
     analyticsDetailCurrentPage.value = maxPage
   }
@@ -2197,6 +2235,28 @@ watch([analyticsDetailTasks, analyticsDetailPageSize], () => {
       <span class="text-secondary">{{ analyticsDetailDescription || '点击指标后自动筛选出的异常任务明细。' }}</span>
       <el-button type="primary" plain @click="jumpToOperationsPage">进入处置工作台</el-button>
     </div>
+    <el-form inline class="mb-12">
+      <el-form-item label="关键词">
+        <el-input
+          v-model="analyticsDetailFilters.keyword"
+          clearable
+          placeholder="任务号/司机姓名/账号"
+          style="width: 220px"
+        />
+      </el-form-item>
+      <el-form-item>
+        <el-checkbox v-model="analyticsDetailFilters.overtimeOnly">仅超时</el-checkbox>
+      </el-form-item>
+      <el-form-item>
+        <el-checkbox v-model="analyticsDetailFilters.mineOnly">仅我负责</el-checkbox>
+      </el-form-item>
+      <el-form-item>
+        <el-checkbox v-model="analyticsDetailFilters.remindableOnly">仅可催办</el-checkbox>
+      </el-form-item>
+      <el-form-item>
+        <span class="text-secondary">命中 {{ filteredAnalyticsDetailTasks.length }} 条</span>
+      </el-form-item>
+    </el-form>
     <div class="page-table-section" style="height: 520px">
       <div class="page-table-wrap">
         <el-table :data="pagedAnalyticsDetailTasks" stripe height="100%" class="page-table">
@@ -2248,7 +2308,7 @@ watch([analyticsDetailTasks, analyticsDetailPageSize], () => {
           v-model:page-size="analyticsDetailPageSize"
           layout="sizes, prev, pager, next, jumper, total"
           :page-sizes="[10, 20, 50, 100]"
-          :total="analyticsDetailTasks.length"
+          :total="filteredAnalyticsDetailTasks.length"
         />
       </div>
     </div>
@@ -2756,6 +2816,7 @@ watch([analyticsDetailTasks, analyticsDetailPageSize], () => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .ranking-card-body {
