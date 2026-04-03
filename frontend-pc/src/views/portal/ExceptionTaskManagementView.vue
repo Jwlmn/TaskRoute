@@ -29,6 +29,12 @@ const exceptionHandleDialogVisible = ref(false)
 const exceptionAssignDialogVisible = ref(false)
 const exceptionFeedbackDialogVisible = ref(false)
 const exceptionDetailDialogVisible = ref(false)
+const analyticsDetailDialogVisible = ref(false)
+const analyticsDetailTitle = ref('')
+const analyticsDetailDescription = ref('')
+const analyticsDetailTaskIds = ref([])
+const analyticsDetailCurrentPage = ref(1)
+const analyticsDetailPageSize = ref(10)
 const handlingTask = ref(null)
 const assigningTask = ref(null)
 const feedbackTask = ref(null)
@@ -566,12 +572,29 @@ const pagedExceptionTasks = computed(() => {
   return displayedExceptionTasks.value.slice(start, start + pageSize.value)
 })
 const exceptionTaskTotal = computed(() => displayedExceptionTasks.value.length)
+const pendingExceptionTasks = computed(() => {
+  return exceptionTasks.value.filter((task) => task?.route_meta?.exception?.status === 'pending')
+})
+const analyticsDetailTasks = computed(() => {
+  const ids = [...new Set((Array.isArray(analyticsDetailTaskIds.value) ? analyticsDetailTaskIds.value : [])
+    .map((id) => Number(id))
+    .filter((id) => id > 0))]
+  if (ids.length <= 0) return []
+  const orderMap = new Map(ids.map((id, index) => [id, index]))
+  return exceptionTasks.value
+    .filter((task) => orderMap.has(Number(task?.id || 0)))
+    .sort((a, b) => Number(orderMap.get(Number(a?.id || 0))) - Number(orderMap.get(Number(b?.id || 0))))
+})
+const pagedAnalyticsDetailTasks = computed(() => {
+  const start = (analyticsDetailCurrentPage.value - 1) * analyticsDetailPageSize.value
+  return analyticsDetailTasks.value.slice(start, start + analyticsDetailPageSize.value)
+})
 const hasAggregationFilter = computed(() => Boolean(filterForm.value.driver_focus || filterForm.value.site_focus))
 const aggregationMatchedCount = computed(() => {
   if (filterForm.value.status !== 'pending' || !hasAggregationFilter.value) return 0
   return displayedExceptionTasks.value.length
 })
-const pendingExceptionCount = computed(() => exceptionTasks.value.filter((task) => task.route_meta?.exception?.status === 'pending').length)
+const pendingExceptionCount = computed(() => pendingExceptionTasks.value.length)
 const pendingTotalCount = computed(() => Number(exceptionSummary.value?.total ?? pendingExceptionCount.value))
 const pendingAssignedCount = computed(() => {
   if (Number.isFinite(Number(exceptionSummary.value?.assigned))) return Number(exceptionSummary.value.assigned)
@@ -732,6 +755,85 @@ const longestPendingMinutes = computed(() => {
   const durationList = exceptionTasks.value.map((task) => getPendingDurationMinutes(task))
   return durationList.length ? Math.max(...durationList) : 0
 })
+const openSummaryDetail = (key) => {
+  if (key === 'all') {
+    openAnalyticsDetailByTaskList({
+      title: '异常总量明细',
+      description: '当前异常池全部任务。',
+      tasks: exceptionTasks.value,
+    })
+    return
+  }
+  if (key === 'overtime') {
+    openAnalyticsDetailByMatcher({
+      title: '超时异常明细',
+      description: `待处理时长超过 ${overtimeThresholdMinutes} 分钟的任务。`,
+      matcher: (task) => getPendingDurationMinutes(task) >= overtimeThresholdMinutes,
+    })
+    return
+  }
+  if (key === 'longest') {
+    openAnalyticsDetailByMatcher({
+      title: '最长待处理任务明细',
+      description: '按待处理时长定位当前最久未处置任务。',
+      matcher: (task) => getPendingDurationMinutes(task) === longestPendingMinutes.value,
+    })
+    return
+  }
+  if (key === 'pending_total') {
+    openAnalyticsDetailByTaskList({
+      title: '待处理异常明细',
+      description: '当前待处理异常任务列表。',
+      tasks: pendingExceptionTasks.value,
+    })
+    return
+  }
+  if (key === 'assigned') {
+    openAnalyticsDetailByMatcher({
+      title: '已指派责任人异常明细',
+      description: '已分配责任人的待处理异常任务。',
+      matcher: (task) => Number(task?.route_meta?.exception?.assigned_handler_id || 0) > 0,
+    })
+    return
+  }
+  if (key === 'unassigned') {
+    openAnalyticsDetailByMatcher({
+      title: '未指派责任人异常明细',
+      description: '尚未分配责任人的待处理异常任务。',
+      matcher: (task) => Number(task?.route_meta?.exception?.assigned_handler_id || 0) <= 0,
+    })
+    return
+  }
+  if (key === 'mine') {
+    const currentUserId = Number(currentUser?.id || 0)
+    if (!currentUserId) {
+      ElMessage.info('当前账号未识别到责任人信息')
+      return
+    }
+    openAnalyticsDetailByMatcher({
+      title: '我负责的异常明细',
+      description: '当前账号负责的待处理异常任务。',
+      matcher: (task) => Number(task?.route_meta?.exception?.assigned_handler_id || 0) === currentUserId,
+    })
+    return
+  }
+  if (key === 'no_feedback') {
+    openAnalyticsDetailByMatcher({
+      title: '无反馈异常明细',
+      description: '尚未提交反馈的待处理异常任务。',
+      matcher: (task) => !getLastFeedbackAt(task),
+    })
+    return
+  }
+  if (key === 'feedback_timeout') {
+    const threshold = Number(exceptionSummary.value?.feedback_timeout_threshold_minutes || 30)
+    openAnalyticsDetailByMatcher({
+      title: '反馈超时异常明细',
+      description: `距上次反馈超过 ${threshold} 分钟的待处理异常任务。`,
+      matcher: (task) => isFeedbackTimeoutTask(task, threshold),
+    })
+  }
+}
 const exceptionTypeStats = computed(() => Object.entries(exceptionTypeLabelMap).map(([value, label]) => ({
   value,
   label,
@@ -828,15 +930,62 @@ const formatAssigneeRecentTimelyStats = (item) => {
   const rate30d = formatRatioPercent(Number(item?.recent_feedback_30d_timely_rate || 0))
   return `近7天及时率 ${rate7d}（${feedback7dCount}）｜近30天及时率 ${rate30d}（${feedback30dCount}）`
 }
+const openAnalyticsDetailByTaskList = ({ title, description = '', tasks = [] }) => {
+  const taskIds = [...new Set((Array.isArray(tasks) ? tasks : [])
+    .map((task) => Number(task?.id || 0))
+    .filter((id) => id > 0))]
+  if (taskIds.length <= 0) {
+    ElMessage.info('当前条件下暂无可查看的异常任务')
+    return
+  }
+  analyticsDetailTitle.value = title || '异常明细'
+  analyticsDetailDescription.value = description || ''
+  analyticsDetailTaskIds.value = taskIds
+  analyticsDetailCurrentPage.value = 1
+  analyticsDetailDialogVisible.value = true
+}
+const openAnalyticsDetailByMatcher = ({ title, description = '', matcher }) => {
+  const tasks = pendingExceptionTasks.value.filter((task) => (typeof matcher === 'function' ? matcher(task) : true))
+  openAnalyticsDetailByTaskList({
+    title,
+    description,
+    tasks,
+  })
+}
+const jumpToOperationsPage = async () => {
+  await router.push({ name: 'exception-task-operations' })
+}
+const jumpToOperationsTask = async (task) => {
+  if (!task?.id) return
+  analyticsDetailDialogVisible.value = false
+  await router.push({
+    name: 'exception-task-operations',
+    query: {
+      task_no: task.task_no || '',
+      focus_task_id: String(task.id),
+      open_detail: '1',
+    },
+  })
+}
 const focusMatchedTask = (matcher) => {
   const matchedTask = displayedExceptionTasks.value.find(matcher)
   if (matchedTask) {
-    selectedExceptionTask.value = matchedTask
-    exceptionDetailDialogVisible.value = true
+    if (isAnalyticsPage.value) {
+      openAnalyticsDetailByTaskList({
+        title: '异常任务明细',
+        description: '已按当前点击项匹配任务，可继续跳转到处置工作台。',
+        tasks: [matchedTask],
+      })
+    } else {
+      selectedExceptionTask.value = matchedTask
+      exceptionDetailDialogVisible.value = true
+    }
     return
   }
-  selectedExceptionTask.value = null
-  exceptionDetailDialogVisible.value = false
+  if (!isAnalyticsPage.value) {
+    selectedExceptionTask.value = null
+    exceptionDetailDialogVisible.value = false
+  }
   ElMessage.info('当前筛选条件下暂无命中的异常任务')
 }
 const clearAggregationFilter = () => {
@@ -848,9 +997,18 @@ const applyRecommendationFilter = async (action) => {
   filterForm.value.recommendation_action = nextAction
   if (!nextAction) return
   await nextTick()
-  const matchedTask = displayedExceptionTasks.value[0]
-  if (!matchedTask) {
+  const matchedTasks = displayedExceptionTasks.value.filter((task) => getExceptionRecommendation(task).action === nextAction)
+  const matchedTask = matchedTasks[0]
+  if (!matchedTask || matchedTasks.length <= 0) {
     ElMessage.info('当前建议动作下暂无命中的异常任务')
+    return
+  }
+  if (isAnalyticsPage.value) {
+    openAnalyticsDetailByTaskList({
+      title: `建议动作明细：${getLabel(exceptionActionLabelMap, nextAction)}`,
+      description: '可在明细中查看任务并跳转到处置工作台继续处理。',
+      tasks: matchedTasks,
+    })
     return
   }
   selectedExceptionTask.value = matchedTask
@@ -860,20 +1018,44 @@ const applyFeedbackTimeoutTypeFilter = (exceptionType) => {
   const nextType = filterForm.value.exception_type === exceptionType ? '' : exceptionType
   filterForm.value.feedback_filter = 'feedback_timeout'
   filterForm.value.exception_type = nextType
+  if (!isAnalyticsPage.value || !nextType) return
+  openAnalyticsDetailByMatcher({
+    title: `反馈超时明细：${getLabel(exceptionTypeLabelMap, nextType)}`,
+    description: `按反馈超时阈值 ${filterForm.value.feedback_timeout_minutes} 分钟筛选。`,
+    matcher: (task) => task?.route_meta?.exception?.type === nextType
+      && isFeedbackTimeoutTask(task, Number(filterForm.value.feedback_timeout_minutes || 30)),
+  })
 }
 const applyDriverRankingFilter = (item) => {
   filterForm.value.driver_focus = filterForm.value.driver_focus === item.account ? '' : (item.account || '')
   if (filterForm.value.driver_focus) {
-    focusMatchedTask((task) => (task.driver?.account || '') === filterForm.value.driver_focus)
+    if (isAnalyticsPage.value) {
+      openAnalyticsDetailByMatcher({
+        title: `司机异常明细：${item.name || filterForm.value.driver_focus}`,
+        description: '按司机聚合后的异常任务列表。',
+        matcher: (task) => (task.driver?.account || '') === filterForm.value.driver_focus,
+      })
+    } else {
+      focusMatchedTask((task) => (task.driver?.account || '') === filterForm.value.driver_focus)
+    }
   }
 }
 const applySiteRankingFilter = (item) => {
   filterForm.value.site_focus = filterForm.value.site_focus === item.name ? '' : (item.name || '')
   if (filterForm.value.site_focus) {
-    focusMatchedTask((task) => {
+    const matcher = (task) => {
       const orders = Array.isArray(task.orders) ? task.orders : []
       return orders.some((order) => (order.pickup_address || '') === filterForm.value.site_focus)
-    })
+    }
+    if (isAnalyticsPage.value) {
+      openAnalyticsDetailByMatcher({
+        title: `装货地异常明细：${item.name || filterForm.value.site_focus}`,
+        description: '按装货地聚合后的异常任务列表。',
+        matcher,
+      })
+    } else {
+      focusMatchedTask(matcher)
+    }
   }
 }
 const applyAssigneeRankingFilter = (item) => {
@@ -881,7 +1063,16 @@ const applyAssigneeRankingFilter = (item) => {
   if (assigneeId <= 0) return
   filterForm.value.assigned_handler_id = filterForm.value.assigned_handler_id === assigneeId ? null : assigneeId
   if (filterForm.value.assigned_handler_id) {
-    focusMatchedTask((task) => Number(task?.route_meta?.exception?.assigned_handler_id || 0) === assigneeId)
+    const matcher = (task) => Number(task?.route_meta?.exception?.assigned_handler_id || 0) === assigneeId
+    if (isAnalyticsPage.value) {
+      openAnalyticsDetailByMatcher({
+        title: `责任人异常明细：${getAssigneeRankingName(item)}`,
+        description: '按责任人聚合后的异常任务列表。',
+        matcher,
+      })
+    } else {
+      focusMatchedTask(matcher)
+    }
   }
 }
 const applyAssigneeFeedbackTimeoutFilter = (item) => {
@@ -889,7 +1080,17 @@ const applyAssigneeFeedbackTimeoutFilter = (item) => {
   if (assigneeId <= 0) return
   filterForm.value.assigned_handler_id = assigneeId
   filterForm.value.feedback_filter = 'feedback_timeout'
-  focusMatchedTask((task) => Number(task?.route_meta?.exception?.assigned_handler_id || 0) === assigneeId)
+  const matcher = (task) => Number(task?.route_meta?.exception?.assigned_handler_id || 0) === assigneeId
+    && isFeedbackTimeoutTask(task, Number(filterForm.value.feedback_timeout_minutes || 30))
+  if (isAnalyticsPage.value) {
+    openAnalyticsDetailByMatcher({
+      title: `责任人反馈超时明细：${getAssigneeRankingName(item)}`,
+      description: `按反馈超时阈值 ${filterForm.value.feedback_timeout_minutes} 分钟筛选。`,
+      matcher,
+    })
+  } else {
+    focusMatchedTask(matcher)
+  }
 }
 const remindExceptionsByTaskIds = async (taskIds, remindNote = '') => {
   const ids = [...new Set((Array.isArray(taskIds) ? taskIds : []).map((id) => Number(id)).filter((id) => id > 0))]
@@ -1317,6 +1518,12 @@ watch(displayedExceptionTasks, (list) => {
     currentPage.value = maxPage
   }
 })
+watch([analyticsDetailTasks, analyticsDetailPageSize], () => {
+  const maxPage = Math.max(1, Math.ceil(analyticsDetailTasks.value.length / analyticsDetailPageSize.value))
+  if (analyticsDetailCurrentPage.value > maxPage) {
+    analyticsDetailCurrentPage.value = maxPage
+  }
+})
 </script>
 
 <template>
@@ -1331,16 +1538,16 @@ watch(displayedExceptionTasks, (list) => {
     <template v-if="!isOperationsPage">
     <div class="analytics-layout">
       <div class="analytics-summary-grid">
-        <el-card shadow="never" class="analytics-summary-card">
+        <el-card shadow="never" class="analytics-summary-card analytics-card-clickable" @click="openSummaryDetail('all')">
           <div class="analytics-kpi-label">当前异常总量</div>
           <div class="analytics-kpi-value">{{ exceptionTasks.length }}</div>
         </el-card>
-        <el-card shadow="never" class="analytics-summary-card">
+        <el-card shadow="never" class="analytics-summary-card analytics-card-clickable" @click="openSummaryDetail('overtime')">
           <div class="analytics-kpi-label">超时异常数</div>
           <div class="analytics-kpi-value">{{ overtimeExceptionCount }}</div>
           <div class="text-secondary">阈值 {{ overtimeThresholdMinutes }} 分钟</div>
         </el-card>
-        <el-card shadow="never" class="analytics-summary-card">
+        <el-card shadow="never" class="analytics-summary-card analytics-card-clickable" @click="openSummaryDetail('longest')">
           <div class="analytics-kpi-label">最长待处理时长</div>
           <div class="analytics-kpi-value">{{ longestPendingMinutes > 0 ? formatPendingDurationMinutes(longestPendingMinutes) : '-' }}</div>
           <div class="text-secondary">待处理 {{ pendingExceptionCount }} 条</div>
@@ -1348,27 +1555,27 @@ watch(displayedExceptionTasks, (list) => {
       </div>
 
       <div v-if="filterForm.status === 'pending'" class="analytics-sub-summary-grid">
-        <el-card shadow="never" class="analytics-sub-summary-card">
+        <el-card shadow="never" class="analytics-sub-summary-card analytics-card-clickable" @click="openSummaryDetail('pending_total')">
           <div class="analytics-kpi-label">待处理总量</div>
           <div class="analytics-sub-value">{{ pendingTotalCount }}</div>
         </el-card>
-        <el-card shadow="never" class="analytics-sub-summary-card">
+        <el-card shadow="never" class="analytics-sub-summary-card analytics-card-clickable" @click="openSummaryDetail('assigned')">
           <div class="analytics-kpi-label">已指派责任人</div>
           <div class="analytics-sub-value">{{ pendingAssignedCount }}</div>
         </el-card>
-        <el-card shadow="never" class="analytics-sub-summary-card">
+        <el-card shadow="never" class="analytics-sub-summary-card analytics-card-clickable" @click="openSummaryDetail('unassigned')">
           <div class="analytics-kpi-label">未指派责任人</div>
           <div class="analytics-sub-value">{{ pendingUnassignedCount }}</div>
         </el-card>
-        <el-card shadow="never" class="analytics-sub-summary-card">
+        <el-card shadow="never" class="analytics-sub-summary-card analytics-card-clickable" @click="openSummaryDetail('mine')">
           <div class="analytics-kpi-label">我负责的异常</div>
           <div class="analytics-sub-value">{{ pendingMyCount }}</div>
         </el-card>
-        <el-card shadow="never" class="analytics-sub-summary-card">
+        <el-card shadow="never" class="analytics-sub-summary-card analytics-card-clickable" @click="openSummaryDetail('no_feedback')">
           <div class="analytics-kpi-label">无反馈异常</div>
           <div class="analytics-sub-value">{{ pendingNoFeedbackCount }}</div>
         </el-card>
-        <el-card shadow="never" class="analytics-sub-summary-card">
+        <el-card shadow="never" class="analytics-sub-summary-card analytics-card-clickable" @click="openSummaryDetail('feedback_timeout')">
           <div class="analytics-kpi-label">反馈超时异常</div>
           <div class="analytics-sub-value">{{ pendingFeedbackTimeoutCount }}</div>
         </el-card>
@@ -1980,6 +2187,74 @@ watch(displayedExceptionTasks, (list) => {
   </div>
 
   <el-dialog
+    v-if="isAnalyticsPage"
+    v-model="analyticsDetailDialogVisible"
+    :title="analyticsDetailTitle || '异常明细弹窗'"
+    width="1100px"
+    destroy-on-close
+  >
+    <div class="analytics-detail-toolbar mb-12">
+      <span class="text-secondary">{{ analyticsDetailDescription || '点击指标后自动筛选出的异常任务明细。' }}</span>
+      <el-button type="primary" plain @click="jumpToOperationsPage">进入处置工作台</el-button>
+    </div>
+    <div class="page-table-section" style="height: 520px">
+      <div class="page-table-wrap">
+        <el-table :data="pagedAnalyticsDetailTasks" stripe height="100%" class="page-table">
+          <el-table-column prop="task_no" label="任务编号" min-width="170" />
+          <el-table-column label="异常类型" min-width="120">
+            <template #default="{ row }">
+              {{ getLabel(exceptionTypeLabelMap, row.route_meta?.exception?.type) }}
+            </template>
+          </el-table-column>
+          <el-table-column label="司机" min-width="150">
+            <template #default="{ row }">
+              {{ row.driver?.name || '-' }}（{{ row.driver?.account || '-' }}）
+            </template>
+          </el-table-column>
+          <el-table-column label="车辆" min-width="160">
+            <template #default="{ row }">
+              {{ row.vehicle?.plate_number || '-' }} {{ row.vehicle?.name || '' }}
+            </template>
+          </el-table-column>
+          <el-table-column label="上报时间" min-width="170">
+            <template #default="{ row }">
+              {{ formatDateTime(row.route_meta?.exception?.reported_at) }}
+            </template>
+          </el-table-column>
+          <el-table-column label="待处理时长" min-width="120">
+            <template #default="{ row }">
+              <el-tag :type="getPendingDurationTagType(row)">
+                {{ formatPendingDuration(row) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="建议动作" min-width="130">
+            <template #default="{ row }">
+              <el-tag :type="getExceptionRecommendation(row).type">
+                {{ getExceptionRecommendation(row).label }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="150" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="primary" @click="jumpToOperationsTask(row)">去处置</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+      <div class="page-pagination">
+        <el-pagination
+          v-model:current-page="analyticsDetailCurrentPage"
+          v-model:page-size="analyticsDetailPageSize"
+          layout="sizes, prev, pager, next, jumper, total"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="analyticsDetailTasks.length"
+        />
+      </div>
+    </div>
+  </el-dialog>
+
+  <el-dialog
     v-if="!isAnalyticsPage"
     v-model="exceptionHandleDialogVisible"
     title="处理任务异常"
@@ -2380,6 +2655,15 @@ watch(displayedExceptionTasks, (list) => {
   border-color: #e5ebf5;
 }
 
+.analytics-card-clickable {
+  cursor: pointer;
+}
+
+.analytics-card-clickable:hover {
+  border-color: #c8daf9;
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.08);
+}
+
 .analytics-kpi-label {
   color: #6b7280;
   font-size: 12px;
@@ -2465,6 +2749,13 @@ watch(displayedExceptionTasks, (list) => {
   justify-content: space-between;
   gap: 8px;
   padding: 2px 0;
+}
+
+.analytics-detail-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .ranking-card-body {
