@@ -219,6 +219,16 @@ const syncFiltersToRoute = async () => {
   } else {
     delete nextQuery.dispatch_notice_type
   }
+  if (filterForm.value.unread_reminder_only) {
+    nextQuery.unread_reminder_only = '1'
+  } else {
+    delete nextQuery.unread_reminder_only
+  }
+  if (filterForm.value.unread_feedback_only) {
+    nextQuery.unread_feedback_only = '1'
+  } else {
+    delete nextQuery.unread_feedback_only
+  }
   await router.replace({ query: nextQuery })
 }
 
@@ -465,6 +475,14 @@ const isNotificationActionDisabled = (row) => {
 onMounted(async () => {
   filterForm.value.task_focus = typeof route.query.task_focus === 'string' ? route.query.task_focus : ''
   filterForm.value.dispatch_notice_type = typeof route.query.dispatch_notice_type === 'string' ? route.query.dispatch_notice_type : ''
+  filterForm.value.unread_reminder_only = route.query.unread_reminder_only === '1'
+  filterForm.value.unread_feedback_only = route.query.unread_feedback_only === '1'
+  if (filterForm.value.unread_reminder_only && filterForm.value.unread_feedback_only) {
+    filterForm.value.unread_feedback_only = false
+  }
+  if ((filterForm.value.unread_reminder_only || filterForm.value.unread_feedback_only) && !filterForm.value.message_type) {
+    filterForm.value.message_type = 'dispatch_notice'
+  }
   if (filterForm.value.dispatch_notice_type && !filterForm.value.message_type) {
     filterForm.value.message_type = 'dispatch_notice'
   }
@@ -477,6 +495,26 @@ watch(() => filterForm.value.task_focus, () => {
 
 watch(() => filterForm.value.dispatch_notice_type, (value) => {
   if (value && !filterForm.value.message_type) {
+    filterForm.value.message_type = 'dispatch_notice'
+  }
+  syncFiltersToRoute()
+})
+
+watch(() => filterForm.value.unread_reminder_only, (value) => {
+  if (value) {
+    filterForm.value.unread_feedback_only = false
+  }
+  if ((value || filterForm.value.unread_feedback_only) && !filterForm.value.message_type) {
+    filterForm.value.message_type = 'dispatch_notice'
+  }
+  syncFiltersToRoute()
+})
+
+watch(() => filterForm.value.unread_feedback_only, (value) => {
+  if (value) {
+    filterForm.value.unread_reminder_only = false
+  }
+  if ((value || filterForm.value.unread_reminder_only) && !filterForm.value.message_type) {
     filterForm.value.message_type = 'dispatch_notice'
   }
   syncFiltersToRoute()
