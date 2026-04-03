@@ -1073,7 +1073,7 @@ class DispatchTaskController extends Controller
             $sla = is_array($exception['sla'] ?? null) ? $exception['sla'] : [];
             return (bool) ($sla['is_overtime'] ?? false);
         })->count();
-        $feedbackTimeoutThreshold = 30;
+        $feedbackTimeoutThreshold = max(1, (int) config('dispatch.exception_sla.default.feedback_policy_minutes', 30));
         $noFeedbackPending = $tasks->filter(function (DispatchTask $task): bool {
             $exception = is_array($task->route_meta) ? ($task->route_meta['exception'] ?? null) : null;
             return is_array($exception) && trim((string) ($exception['last_feedback_at'] ?? '')) === '';
@@ -1082,6 +1082,10 @@ class DispatchTaskController extends Controller
             $exception = is_array($task->route_meta) ? ($task->route_meta['exception'] ?? null) : null;
             if (! is_array($exception)) {
                 return false;
+            }
+            $sla = is_array($exception['sla'] ?? null) ? $exception['sla'] : [];
+            if (array_key_exists('feedback_is_overtime', $sla)) {
+                return (bool) ($sla['feedback_is_overtime'] ?? false);
             }
             $feedbackAt = trim((string) ($exception['last_feedback_at'] ?? ''));
             if ($feedbackAt === '') {
@@ -1109,7 +1113,7 @@ class DispatchTaskController extends Controller
 
     private function buildAssigneeStats(Collection $tasks): array
     {
-        $feedbackTimeoutThreshold = 30;
+        $feedbackTimeoutThreshold = max(1, (int) config('dispatch.exception_sla.default.feedback_policy_minutes', 30));
         $stats = [];
         foreach ($tasks as $task) {
             if (! $task instanceof DispatchTask) {
@@ -1145,15 +1149,21 @@ class DispatchTaskController extends Controller
             if (($sla['level_code'] ?? null) === 'timeout_120') {
                 $stats[$key]['severe_count']++;
             }
-            $feedbackAt = trim((string) ($exception['last_feedback_at'] ?? ''));
-            if ($feedbackAt !== '') {
-                try {
-                    $feedbackGapMinutes = \Illuminate\Support\Carbon::parse($feedbackAt)->diffInMinutes(now());
-                    if ($feedbackGapMinutes >= $feedbackTimeoutThreshold) {
-                        $stats[$key]['feedback_timeout_count']++;
+            if (array_key_exists('feedback_is_overtime', $sla)) {
+                if ((bool) ($sla['feedback_is_overtime'] ?? false)) {
+                    $stats[$key]['feedback_timeout_count']++;
+                }
+            } else {
+                $feedbackAt = trim((string) ($exception['last_feedback_at'] ?? ''));
+                if ($feedbackAt !== '') {
+                    try {
+                        $feedbackGapMinutes = \Illuminate\Support\Carbon::parse($feedbackAt)->diffInMinutes(now());
+                        if ($feedbackGapMinutes >= $feedbackTimeoutThreshold) {
+                            $stats[$key]['feedback_timeout_count']++;
+                        }
+                    } catch (\Throwable) {
+                        // ignore invalid feedback time format
                     }
-                } catch (\Throwable) {
-                    // ignore invalid feedback time format
                 }
             }
         }

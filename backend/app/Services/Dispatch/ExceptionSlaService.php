@@ -11,6 +11,8 @@ use Carbon\CarbonImmutable;
 class ExceptionSlaService
 {
     private const POLICY_MINUTES = 30;
+    private const FEEDBACK_POLICY_MINUTES = 30;
+    private const FEEDBACK_REMINDER_INTERVAL_MINUTES = 30;
 
     /**
      * @var array<int, array{minutes:int,code:string,label:string,type:string}>
@@ -35,6 +37,7 @@ class ExceptionSlaService
         $assignedUser = null;
         $newAlertLevels = [];
         $shouldSendReminder = false;
+        $shouldSendFeedbackReminder = false;
         $shouldPersist = false;
 
         if (($annotatedException['status'] ?? null) === 'pending') {
@@ -48,6 +51,12 @@ class ExceptionSlaService
                     $annotatedException = $this->appendReminderHistory($annotatedException, $now);
                     $shouldPersist = true;
                 }
+            }
+
+            $shouldSendFeedbackReminder = $this->shouldSendFeedbackReminder($annotatedException, $now);
+            if ($shouldSendFeedbackReminder) {
+                $annotatedException = $this->appendFeedbackReminderHistory($annotatedException, $now);
+                $shouldPersist = true;
             }
         }
 
@@ -74,6 +83,9 @@ class ExceptionSlaService
         }
         if ($notifyOnEscalation && $shouldSendReminder) {
             $this->notifyReminder($task, $annotatedException);
+        }
+        if ($notifyOnEscalation && $shouldSendFeedbackReminder) {
+            $this->notifyFeedbackReminder($task, $annotatedException);
         }
         if ($notifyOnEscalation && $assignedUser instanceof User) {
             $this->notifyAssignedHandler($task, $annotatedException, $assignedUser);
@@ -140,14 +152,17 @@ class ExceptionSlaService
         $policyMinutes = $this->resolvePolicyMinutes($exceptionType);
         $alertLevels = $this->resolveAlertLevels($exceptionType);
         $reminderIntervalMinutes = $this->resolveReminderIntervalMinutes($exceptionType);
+        $feedbackPolicyMinutes = $this->resolveFeedbackPolicyMinutes($exceptionType);
+        $feedbackReminderIntervalMinutes = $this->resolveFeedbackReminderIntervalMinutes($exceptionType);
         $reportedAt = $this->parseTime($exception['reported_at'] ?? null);
         $handledAt = $this->parseTime($exception['handled_at'] ?? null);
+        $lastFeedbackAt = $this->parseTime($exception['last_feedback_at'] ?? null);
         $status = (string) ($exception['status'] ?? '');
 
         $pendingMinutes = 0;
         if ($reportedAt) {
             $pendingEnd = $status === 'handled' && $handledAt ? $handledAt : $now;
-            $pendingMinutes = max(0, $reportedAt->diffInMinutes($pendingEnd));
+            $pendingMinutes = (int) floor(max(0, $reportedAt->diffInMinutes($pendingEnd)));
         }
 
         $deadlineAt = $reportedAt?->addMinutes($policyMinutes);
@@ -157,8 +172,21 @@ class ExceptionSlaService
         $nextEscalationMinute = $this->resolveNextEscalationMinute($pendingMinutes, $alertLevels);
         $handledMinutes = null;
         if ($status === 'handled' && $reportedAt && $handledAt) {
-            $handledMinutes = max(0, $reportedAt->diffInMinutes($handledAt));
+            $handledMinutes = (int) floor(max(0, $reportedAt->diffInMinutes($handledAt)));
         }
+
+        $feedbackPendingMinutes = null;
+        if ($lastFeedbackAt) {
+            $feedbackEnd = $status === 'handled' && $handledAt ? $handledAt : $now;
+            $feedbackPendingMinutes = (int) floor(max(0, $lastFeedbackAt->diffInMinutes($feedbackEnd)));
+        }
+        $feedbackRemainingMinutes = $feedbackPendingMinutes !== null
+            ? max(0, $feedbackPolicyMinutes - $feedbackPendingMinutes)
+            : null;
+        $feedbackIsOvertime = $feedbackPendingMinutes !== null
+            ? $feedbackPendingMinutes >= $feedbackPolicyMinutes
+            : false;
+        $feedbackDeadlineAt = $lastFeedbackAt?->addMinutes($feedbackPolicyMinutes);
 
         $currentSla = is_array($exception['sla'] ?? null) ? $exception['sla'] : [];
         $currentAlerts = collect($currentSla['alerted_levels'] ?? [])
@@ -173,6 +201,13 @@ class ExceptionSlaService
             $currentSla,
             $now,
             $reminderIntervalMinutes
+        );
+        $feedbackNextReminderMinutes = $this->resolveFeedbackNextReminderMinutes(
+            $status,
+            $feedbackIsOvertime,
+            $currentSla,
+            $now,
+            $feedbackReminderIntervalMinutes
         );
 
         $exception['sla'] = array_merge($currentSla, [
@@ -192,6 +227,14 @@ class ExceptionSlaService
             'reminder_interval_minutes' => $reminderIntervalMinutes,
             'next_reminder_minutes' => $nextReminderMinutes,
             'reminder_count' => (int) ($currentSla['reminder_count'] ?? 0),
+            'feedback_policy_minutes' => $feedbackPolicyMinutes,
+            'feedback_pending_minutes' => $feedbackPendingMinutes,
+            'feedback_remaining_minutes' => $feedbackRemainingMinutes,
+            'feedback_is_overtime' => $feedbackIsOvertime,
+            'feedback_deadline_at' => $feedbackDeadlineAt?->toDateTimeString(),
+            'feedback_reminder_interval_minutes' => $feedbackReminderIntervalMinutes,
+            'feedback_next_reminder_minutes' => $feedbackNextReminderMinutes,
+            'feedback_reminder_count' => (int) ($currentSla['feedback_reminder_count'] ?? 0),
         ]);
 
         return $exception;
@@ -284,6 +327,34 @@ class ExceptionSlaService
         $exception['sla'] = array_merge($sla, [
             'last_notice_at' => $now->toDateTimeString(),
             'reminder_count' => (int) ($sla['reminder_count'] ?? 0) + 1,
+        ]);
+
+        return $exception;
+    }
+
+    /**
+     * @param  array<string, mixed>  $exception
+     * @return array<string, mixed>
+     */
+    private function appendFeedbackReminderHistory(array $exception, CarbonImmutable $now): array
+    {
+        $sla = is_array($exception['sla'] ?? null) ? $exception['sla'] : [];
+        $history = is_array($exception['history'] ?? null) ? $exception['history'] : [];
+
+        $history[] = [
+            'event' => 'feedback_sla_reminder',
+            'feedback_policy_minutes' => (int) ($sla['feedback_policy_minutes'] ?? self::FEEDBACK_POLICY_MINUTES),
+            'feedback_pending_minutes' => (int) ($sla['feedback_pending_minutes'] ?? 0),
+            'occurred_at' => $now->toDateTimeString(),
+            'operator_id' => null,
+            'operator_account' => 'system',
+            'operator_name' => '系统',
+        ];
+
+        $exception['history'] = $history;
+        $exception['sla'] = array_merge($sla, [
+            'feedback_last_notice_at' => $now->toDateTimeString(),
+            'feedback_reminder_count' => (int) ($sla['feedback_reminder_count'] ?? 0) + 1,
         ]);
 
         return $exception;
@@ -404,6 +475,55 @@ class ExceptionSlaService
     }
 
     /**
+     * @param  array<string, mixed>  $exception
+     */
+    private function notifyFeedbackReminder(DispatchTask $task, array $exception): void
+    {
+        $sla = is_array($exception['sla'] ?? null) ? $exception['sla'] : [];
+        $taskNo = (string) ($task->task_no ?? '-');
+        $pendingMinutes = (int) ($sla['feedback_pending_minutes'] ?? 0);
+        $policyMinutes = max(1, (int) ($sla['feedback_policy_minutes'] ?? self::FEEDBACK_POLICY_MINUTES));
+        $overtimeMinutes = max(0, $pendingMinutes - $policyMinutes);
+
+        $title = '异常反馈超时催办';
+        $content = "任务 {$taskNo} 距离上次反馈已 {$pendingMinutes} 分钟，超出反馈 SLA {$overtimeMinutes} 分钟，请尽快同步处理进展。";
+
+        $recipientIds = collect([
+            (int) ($exception['assigned_handler_id'] ?? 0),
+        ])
+            ->merge(
+                User::query()
+                    ->where('status', 'active')
+                    ->whereIn('role', ['admin', 'dispatcher'])
+                    ->pluck('id')
+                    ->map(fn ($id) => (int) $id)
+                    ->all()
+            )
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        foreach ($recipientIds as $userId) {
+            SystemMessage::query()->create([
+                'user_id' => $userId,
+                'message_type' => 'dispatch_notice',
+                'title' => $title,
+                'content' => $content,
+                'meta' => [
+                    'task_id' => (int) $task->id,
+                    'task_no' => $taskNo,
+                    'exception_type' => $exception['type'] ?? null,
+                    'feedback_policy_minutes' => $policyMinutes,
+                    'feedback_pending_minutes' => $pendingMinutes,
+                    'feedback_overtime_minutes' => $overtimeMinutes,
+                    'notice_type' => 'exception_feedback_sla',
+                ],
+            ]);
+        }
+    }
+
+    /**
      * @return array{code:string,label:string,type:string}
      */
     private function resolveLevelByMinutes(int $pendingMinutes, array $alertLevels): array
@@ -464,6 +584,33 @@ class ExceptionSlaService
     }
 
     /**
+     * @param  array<string, mixed>  $exception
+     */
+    private function shouldSendFeedbackReminder(array $exception, CarbonImmutable $now): bool
+    {
+        if (($exception['status'] ?? null) !== 'pending') {
+            return false;
+        }
+
+        $sla = is_array($exception['sla'] ?? null) ? $exception['sla'] : [];
+        $feedbackPendingMinutes = $sla['feedback_pending_minutes'] ?? null;
+        if (! is_numeric($feedbackPendingMinutes)) {
+            return false;
+        }
+        if (! (bool) ($sla['feedback_is_overtime'] ?? false)) {
+            return false;
+        }
+
+        $interval = max(5, $this->resolveFeedbackReminderIntervalMinutes((string) ($exception['type'] ?? '')));
+        $lastNoticeAt = $this->parseTime($sla['feedback_last_notice_at'] ?? null);
+        if (! $lastNoticeAt) {
+            return true;
+        }
+
+        return $lastNoticeAt->diffInMinutes($now) >= $interval;
+    }
+
+    /**
      * @param  array<string, mixed>  $sla
      */
     private function resolveNextReminderMinutes(
@@ -478,6 +625,33 @@ class ExceptionSlaService
         }
 
         $lastNoticeAt = $this->parseTime($sla['last_notice_at'] ?? null);
+        if (! $lastNoticeAt) {
+            return $interval;
+        }
+
+        $elapsed = max(0, $lastNoticeAt->diffInMinutes($now));
+        if ($elapsed >= $interval) {
+            return 0;
+        }
+
+        return $interval - $elapsed;
+    }
+
+    /**
+     * @param  array<string, mixed>  $sla
+     */
+    private function resolveFeedbackNextReminderMinutes(
+        string $status,
+        bool $feedbackIsOvertime,
+        array $sla,
+        CarbonImmutable $now,
+        int $interval
+    ): ?int {
+        if ($status !== 'pending' || ! $feedbackIsOvertime) {
+            return null;
+        }
+
+        $lastNoticeAt = $this->parseTime($sla['feedback_last_notice_at'] ?? null);
         if (! $lastNoticeAt) {
             return $interval;
         }
@@ -551,6 +725,22 @@ class ExceptionSlaService
     {
         $default = (int) config('dispatch.exception_sla.default.reminder_interval_minutes', 30);
         $typed = (int) config("dispatch.exception_sla.by_type.{$exceptionType}.reminder_interval_minutes", 0);
+
+        return max(5, $typed > 0 ? $typed : $default);
+    }
+
+    private function resolveFeedbackPolicyMinutes(string $exceptionType): int
+    {
+        $default = (int) config('dispatch.exception_sla.default.feedback_policy_minutes', self::FEEDBACK_POLICY_MINUTES);
+        $typed = (int) config("dispatch.exception_sla.by_type.{$exceptionType}.feedback_policy_minutes", 0);
+
+        return max(1, $typed > 0 ? $typed : $default);
+    }
+
+    private function resolveFeedbackReminderIntervalMinutes(string $exceptionType): int
+    {
+        $default = (int) config('dispatch.exception_sla.default.feedback_reminder_interval_minutes', self::FEEDBACK_REMINDER_INTERVAL_MINUTES);
+        $typed = (int) config("dispatch.exception_sla.by_type.{$exceptionType}.feedback_reminder_interval_minutes", 0);
 
         return max(5, $typed > 0 ? $typed : $default);
     }

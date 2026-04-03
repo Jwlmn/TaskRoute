@@ -875,6 +875,145 @@ class DispatchExceptionApiTest extends TestCase
         $this->assertSame(1, $noticeCount);
     }
 
+    public function test_exception_list_contains_feedback_sla_fields(): void
+    {
+        Config::set('dispatch.exception_sla.default.feedback_policy_minutes', 30);
+
+        $this->seed(DatabaseSeeder::class);
+
+        $admin = User::query()->where('role', 'admin')->firstOrFail();
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $vehicle = Vehicle::query()->where('status', 'idle')->firstOrFail();
+        $order = PrePlanOrder::query()->where('status', 'pending')->firstOrFail();
+
+        Sanctum::actingAs($admin);
+        $createResponse = $this->postJson('/api/v1/dispatch/manual-create-tasks', [
+            'assignments' => [[
+                'vehicle_id' => $vehicle->id,
+                'order_ids' => [$order->id],
+            ]],
+        ]);
+        $createResponse->assertCreated();
+        $taskId = (int) $createResponse->json('created_task_ids.0');
+
+        $task = \App\Models\DispatchTask::query()->findOrFail($taskId);
+        $task->status = 'in_progress';
+        $task->route_meta = array_merge(is_array($task->route_meta) ? $task->route_meta : [], [
+            'exception' => [
+                'status' => 'pending',
+                'type' => 'traffic_jam',
+                'description' => '反馈 SLA 字段测试',
+                'reported_at' => now()->subMinutes(10)->toDateTimeString(),
+                'assigned_handler_id' => $dispatcher->id,
+                'assigned_handler_account' => $dispatcher->account,
+                'assigned_handler_name' => $dispatcher->name,
+                'last_feedback_at' => now()->subMinutes(35)->toDateTimeString(),
+                'history' => [],
+            ],
+        ]);
+        $task->save();
+
+        $this->postJson('/api/v1/dispatch-task/exception-list', [
+            'status' => 'pending',
+            'task_no' => $task->task_no,
+        ])->assertOk()
+            ->assertJsonPath('data.0.route_meta.exception.sla.feedback_policy_minutes', 30)
+            ->assertJsonPath('data.0.route_meta.exception.sla.feedback_pending_minutes', 35)
+            ->assertJsonPath('data.0.route_meta.exception.sla.feedback_remaining_minutes', 0)
+            ->assertJsonPath('data.0.route_meta.exception.sla.feedback_is_overtime', true)
+            ->assertJsonPath('summary.feedback_timeout', 1)
+            ->assertJsonPath('assignee_stats.0.feedback_timeout_count', 1);
+    }
+
+    public function test_feedback_sla_reminder_will_respect_interval_config(): void
+    {
+        Config::set('dispatch.exception_sla.default.feedback_policy_minutes', 20);
+        Config::set('dispatch.exception_sla.default.feedback_reminder_interval_minutes', 15);
+
+        $this->seed(DatabaseSeeder::class);
+
+        $admin = User::query()->where('role', 'admin')->firstOrFail();
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $vehicle = Vehicle::query()->where('status', 'idle')->firstOrFail();
+        $order = PrePlanOrder::query()->where('status', 'pending')->firstOrFail();
+
+        Sanctum::actingAs($admin);
+        $createResponse = $this->postJson('/api/v1/dispatch/manual-create-tasks', [
+            'assignments' => [[
+                'vehicle_id' => $vehicle->id,
+                'order_ids' => [$order->id],
+            ]],
+        ]);
+        $createResponse->assertCreated();
+        $taskId = (int) $createResponse->json('created_task_ids.0');
+
+        $task = \App\Models\DispatchTask::query()->findOrFail($taskId);
+        $task->status = 'in_progress';
+        $task->route_meta = array_merge(is_array($task->route_meta) ? $task->route_meta : [], [
+            'exception' => [
+                'status' => 'pending',
+                'type' => 'traffic_jam',
+                'description' => '反馈 SLA 催办频控测试',
+                'reported_at' => now()->subMinutes(5)->toDateTimeString(),
+                'assigned_handler_id' => $dispatcher->id,
+                'assigned_handler_account' => $dispatcher->account,
+                'assigned_handler_name' => $dispatcher->name,
+                'last_feedback_at' => now()->subMinutes(40)->toDateTimeString(),
+                'history' => [],
+            ],
+        ]);
+        $task->save();
+
+        $response = $this->postJson('/api/v1/dispatch-task/exception-list', [
+            'status' => 'pending',
+            'task_no' => $task->task_no,
+        ])->assertOk()
+            ->assertJsonPath('data.0.route_meta.exception.sla.feedback_reminder_interval_minutes', 15)
+            ->assertJsonPath('data.0.route_meta.exception.sla.feedback_is_overtime', true);
+        $feedbackNextReminder = (int) $response->json('data.0.route_meta.exception.sla.feedback_next_reminder_minutes');
+        $this->assertGreaterThanOrEqual(0, $feedbackNextReminder);
+        $this->assertLessThanOrEqual(15, $feedbackNextReminder);
+
+        $firstNoticeCount = SystemMessage::query()
+            ->where('meta->notice_type', 'exception_feedback_sla')
+            ->count();
+        $this->assertGreaterThan(0, $firstNoticeCount);
+
+        $task->refresh();
+        $history = data_get($task->route_meta, 'exception.history', []);
+        $this->assertTrue(collect($history)->contains(fn ($item) => data_get($item, 'event') === 'feedback_sla_reminder'));
+
+        // 冷却期内不重复提醒
+        $this->postJson('/api/v1/dispatch-task/exception-list', [
+            'status' => 'pending',
+            'task_no' => $task->task_no,
+        ])->assertOk();
+        $secondNoticeCount = SystemMessage::query()
+            ->where('meta->notice_type', 'exception_feedback_sla')
+            ->count();
+        $this->assertSame($firstNoticeCount, $secondNoticeCount);
+
+        // 超过冷却窗口后允许再次提醒
+        $task->refresh();
+        $routeMeta = is_array($task->route_meta) ? $task->route_meta : [];
+        $exception = is_array($routeMeta['exception'] ?? null) ? $routeMeta['exception'] : [];
+        $sla = is_array($exception['sla'] ?? null) ? $exception['sla'] : [];
+        $sla['feedback_last_notice_at'] = now()->subMinutes(16)->toDateTimeString();
+        $exception['sla'] = $sla;
+        $routeMeta['exception'] = $exception;
+        $task->route_meta = $routeMeta;
+        $task->save();
+
+        $this->postJson('/api/v1/dispatch-task/exception-list', [
+            'status' => 'pending',
+            'task_no' => $task->task_no,
+        ])->assertOk();
+        $thirdNoticeCount = SystemMessage::query()
+            ->where('meta->notice_type', 'exception_feedback_sla')
+            ->count();
+        $this->assertGreaterThan($secondNoticeCount, $thirdNoticeCount);
+    }
+
     public function test_assignee_stats_contains_feedback_timeout_metrics(): void
     {
         $this->seed(DatabaseSeeder::class);

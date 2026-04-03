@@ -184,9 +184,63 @@ const getLastFeedbackAt = (task) => {
   return date
 }
 const getLastFeedbackGapMinutes = (task) => {
+  const sla = getExceptionSla(task)
+  if (sla && Number.isFinite(Number(sla.feedback_pending_minutes))) {
+    return Math.max(0, Number(sla.feedback_pending_minutes))
+  }
   const feedbackAt = getLastFeedbackAt(task)
   if (!feedbackAt) return null
   return Math.max(0, Math.floor((Date.now() - feedbackAt.getTime()) / 60000))
+}
+const getFeedbackPolicyMinutes = (task) => {
+  const sla = getExceptionSla(task)
+  if (sla && Number.isFinite(Number(sla.feedback_policy_minutes))) {
+    return Math.max(1, Number(sla.feedback_policy_minutes))
+  }
+  return Number(exceptionSummary.value?.feedback_timeout_threshold_minutes || 30)
+}
+const isFeedbackTimeoutTask = (task, thresholdMinutes = null) => {
+  const exception = task?.route_meta?.exception
+  if (!exception || exception.status !== 'pending') return false
+  if (!exception.last_feedback_at) return false
+  const gap = getLastFeedbackGapMinutes(task)
+  if (gap === null) return false
+  const threshold = Number(thresholdMinutes)
+  if (Number.isFinite(threshold) && threshold > 0) {
+    return gap >= threshold
+  }
+  const sla = getExceptionSla(task)
+  if (sla && typeof sla.feedback_is_overtime === 'boolean') {
+    return sla.feedback_is_overtime
+  }
+  return gap >= getFeedbackPolicyMinutes(task)
+}
+const getFeedbackSlaTag = (task) => {
+  const exception = task?.route_meta?.exception
+  if (!exception || exception.status !== 'pending') {
+    return { label: '-', type: 'info' }
+  }
+  if (!exception.last_feedback_at) {
+    return { label: '暂无反馈', type: 'info' }
+  }
+  if (isFeedbackTimeoutTask(task)) {
+    return { label: '反馈已超时', type: 'danger' }
+  }
+  return { label: '反馈正常', type: 'success' }
+}
+const formatFeedbackSlaRemaining = (task) => {
+  const exception = task?.route_meta?.exception
+  if (!exception || exception.status !== 'pending') return '-'
+  if (!exception.last_feedback_at) return '待首次反馈'
+  const sla = getExceptionSla(task)
+  if (sla && Number.isFinite(Number(sla.feedback_remaining_minutes))) {
+    const remaining = Math.max(0, Number(sla.feedback_remaining_minutes))
+    return remaining === 0 ? '已超时' : `${remaining} 分钟`
+  }
+  const gap = getLastFeedbackGapMinutes(task)
+  if (gap === null) return '-'
+  const remaining = Math.max(0, getFeedbackPolicyMinutes(task) - gap)
+  return remaining === 0 ? '已超时' : `${remaining} 分钟`
 }
 const formatLastReminderOperator = (task) => {
   const exception = task?.route_meta?.exception
@@ -205,6 +259,7 @@ const getHistoryEventLabel = (event) => {
   if (event === 'sla_reminder') return 'SLA 超时催办'
   if (event === 'manual_reminder') return '人工催办'
   if (event === 'manual_feedback') return '人工反馈'
+  if (event === 'feedback_sla_reminder') return '反馈超时催办'
   if (event === 'sla_assign') return 'SLA 自动指派'
   if (event === 'manual_assign') return '人工改派责任人'
   return '系统事件'
@@ -381,8 +436,7 @@ const displayedExceptionTasks = computed(() => {
     }
     if (filterForm.value.feedback_filter === 'feedback_timeout') {
       const threshold = Number(filterForm.value.feedback_timeout_minutes || 30)
-      const gap = getLastFeedbackGapMinutes(task)
-      if (gap === null || gap < threshold) return false
+      if (!isFeedbackTimeoutTask(task, threshold)) return false
     }
     return isTaskMatchedOvertimeLevel(task)
   }).sort((a, b) => {
@@ -429,8 +483,7 @@ const pendingFeedbackTimeoutCount = computed(() => {
   if (Number.isFinite(Number(exceptionSummary.value?.feedback_timeout))) return Number(exceptionSummary.value.feedback_timeout)
   const threshold = Number(exceptionSummary.value?.feedback_timeout_threshold_minutes || 30)
   return exceptionTasks.value.filter((task) => {
-    const gap = getLastFeedbackGapMinutes(task)
-    return gap !== null && gap >= threshold
+    return isFeedbackTimeoutTask(task, threshold)
   }).length
 })
 const feedbackTimeoutThresholdMinutes = computed(() => Number(exceptionSummary.value?.feedback_timeout_threshold_minutes || 30))
@@ -481,8 +534,7 @@ const assigneeFeedbackTimeoutRanking = computed(() => {
           .filter((task) => task?.route_meta?.exception?.status === 'pending')
           .filter((task) => Number(task?.route_meta?.exception?.assigned_handler_id || 0) === assigneeId)
           .filter((task) => {
-            const feedbackGap = getLastFeedbackGapMinutes(task)
-            return feedbackGap !== null && feedbackGap >= feedbackTimeoutThresholdMinutes.value
+            return isFeedbackTimeoutTask(task, feedbackTimeoutThresholdMinutes.value)
           })
           .filter((task) => !isTaskInReminderCooldown(task))
           .length
@@ -508,8 +560,7 @@ const assigneeFeedbackTimeoutRanking = computed(() => {
       timeout_rate: 0,
     }
     current.pending_count += 1
-    const feedbackGap = getLastFeedbackGapMinutes(task)
-    if (feedbackGap !== null && feedbackGap >= threshold) {
+    if (isFeedbackTimeoutTask(task, threshold)) {
       current.feedback_timeout_count += 1
       if (!isTaskInReminderCooldown(task)) {
         current.remindable_count += 1
@@ -546,10 +597,7 @@ const feedbackTimeoutTypeStats = computed(() => {
     label,
     count: exceptionTasks.value.filter((task) => task?.route_meta?.exception?.status === 'pending')
       .filter((task) => task?.route_meta?.exception?.type === value)
-      .filter((task) => {
-        const gap = getLastFeedbackGapMinutes(task)
-        return gap !== null && gap >= threshold
-      })
+      .filter((task) => isFeedbackTimeoutTask(task, threshold))
       .length,
   })).filter((item) => item.count > 0)
 })
@@ -747,10 +795,7 @@ const remindFeedbackTimeoutByType = async (item) => {
   const taskIds = exceptionTasks.value
     .filter((task) => task?.route_meta?.exception?.status === 'pending')
     .filter((task) => task?.route_meta?.exception?.type === item.value)
-    .filter((task) => {
-      const gap = getLastFeedbackGapMinutes(task)
-      return gap !== null && gap >= threshold
-    })
+    .filter((task) => isFeedbackTimeoutTask(task, threshold))
     .filter((task) => !isTaskInReminderCooldown(task))
     .map((task) => Number(task.id))
     .filter((id) => id > 0)
@@ -782,10 +827,7 @@ const remindAssigneeFeedbackTimeout = async (item) => {
   const taskIds = exceptionTasks.value
     .filter((task) => task?.route_meta?.exception?.status === 'pending')
     .filter((task) => Number(task?.route_meta?.exception?.assigned_handler_id || 0) === assigneeId)
-    .filter((task) => {
-      const feedbackGap = getLastFeedbackGapMinutes(task)
-      return feedbackGap !== null && feedbackGap >= threshold
-    })
+    .filter((task) => isFeedbackTimeoutTask(task, threshold))
     .filter((task) => !isTaskInReminderCooldown(task))
     .map((task) => Number(task.id))
     .filter((id) => id > 0)
@@ -1595,6 +1637,25 @@ watch(displayedExceptionTasks, (list) => {
           <span v-else>-</span>
         </template>
       </el-table-column>
+      <el-table-column label="反馈 SLA" min-width="120">
+        <template #default="{ row }">
+          <el-tag v-if="row.route_meta?.exception?.status === 'pending'" :type="getFeedbackSlaTag(row).type">
+            {{ getFeedbackSlaTag(row).label }}
+          </el-tag>
+          <span v-else>-</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="反馈 SLA 剩余" min-width="130">
+        <template #default="{ row }">
+          <el-tag
+            v-if="row.route_meta?.exception?.status === 'pending'"
+            :type="isFeedbackTimeoutTask(row) ? 'danger' : 'info'"
+          >
+            {{ formatFeedbackSlaRemaining(row) }}
+          </el-tag>
+          <span v-else>-</span>
+        </template>
+      </el-table-column>
       <el-table-column label="最近催办时间" min-width="180">
         <template #default="{ row }">
           {{ formatLastReminder(row) }}
@@ -1841,6 +1902,18 @@ watch(displayedExceptionTasks, (list) => {
         <el-descriptions-item label="最近反馈时间">{{ formatDateTime(currentException.last_feedback_at) }}</el-descriptions-item>
         <el-descriptions-item label="最近反馈人">
           {{ formatOperator(currentException.last_feedback_by_name, currentException.last_feedback_by_account, currentException.last_feedback_by) }}
+        </el-descriptions-item>
+        <el-descriptions-item label="反馈 SLA 阈值">
+          {{ Number.isFinite(Number(currentException.sla?.feedback_policy_minutes)) ? `${currentException.sla.feedback_policy_minutes} 分钟` : '-' }}
+        </el-descriptions-item>
+        <el-descriptions-item label="距上次反馈">
+          {{ Number.isFinite(Number(currentException.sla?.feedback_pending_minutes)) ? formatPendingDurationMinutes(Number(currentException.sla.feedback_pending_minutes)) : '-' }}
+        </el-descriptions-item>
+        <el-descriptions-item label="反馈 SLA 剩余">{{ formatFeedbackSlaRemaining(selectedExceptionTask) }}</el-descriptions-item>
+        <el-descriptions-item label="反馈 SLA 状态">
+          <el-tag :type="getFeedbackSlaTag(selectedExceptionTask).type">
+            {{ getFeedbackSlaTag(selectedExceptionTask).label }}
+          </el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="最近反馈内容" :span="2">{{ currentException.last_feedback_content || '-' }}</el-descriptions-item>
         <el-descriptions-item label="处理动作">
