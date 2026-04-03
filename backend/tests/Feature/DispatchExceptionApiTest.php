@@ -1113,6 +1113,10 @@ class DispatchExceptionApiTest extends TestCase
             ->assertJsonPath('assignee_stats.0.assigned_handler_id', $dispatcher->id)
             ->assertJsonPath('assignee_stats.0.pending_count', 1)
             ->assertJsonPath('assignee_stats.0.feedback_timeout_count', 1)
-            ->assertJsonPath('assignee_stats.0.feedback_timeout_rate', 1);
+            ->assertJsonPath('assignee_stats.0.feedback_timeout_rate', 1)
+            ->assertJsonPath('assignee_stats.0.recent_feedback_7d_count', 1)
+            ->assertJsonPath('assignee_stats.0.recent_feedback_7d_timely_rate', 0)
+            ->assertJsonPath('assignee_stats.0.recent_feedback_30d_count', 1)
+            ->assertJsonPath('assignee_stats.0.recent_feedback_30d_timely_rate', 0);
     }
 }

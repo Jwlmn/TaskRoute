@@ -758,6 +758,14 @@ const assigneeRanking = computed(() => {
 })
 const getAssigneeRankingName = (item) => formatOperator(item?.assigned_handler_name, item?.assigned_handler_account, item?.assigned_handler_id)
 const formatRatioPercent = (value) => `${(Number(value || 0) * 100).toFixed(0)}%`
+const formatAssigneeRecentTimelyStats = (item) => {
+  const feedback7dCount = Number(item?.recent_feedback_7d_count || 0)
+  const feedback30dCount = Number(item?.recent_feedback_30d_count || 0)
+  if (feedback7dCount <= 0 && feedback30dCount <= 0) return '近30天暂无反馈样本'
+  const rate7d = formatRatioPercent(Number(item?.recent_feedback_7d_timely_rate || 0))
+  const rate30d = formatRatioPercent(Number(item?.recent_feedback_30d_timely_rate || 0))
+  return `近7天及时率 ${rate7d}（${feedback7dCount}）｜近30天及时率 ${rate30d}（${feedback30dCount}）`
+}
 const focusMatchedTask = (matcher) => {
   const matchedTask = displayedExceptionTasks.value.find(matcher)
   if (matchedTask) {
@@ -1411,6 +1419,7 @@ watch(displayedExceptionTasks, (list) => {
               <span class="text-secondary">
                 （超时 {{ Number(item.overtime_count || 0) }}，严重 {{ Number(item.severe_count || 0) }}）
               </span>
+              <div class="text-secondary">{{ formatAssigneeRecentTimelyStats(item) }}</div>
               <el-button
                 size="small"
                 link

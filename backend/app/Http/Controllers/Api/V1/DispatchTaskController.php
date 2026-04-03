@@ -1114,6 +1114,9 @@ class DispatchTaskController extends Controller
     private function buildAssigneeStats(Collection $tasks): array
     {
         $feedbackTimeoutThreshold = max(1, (int) config('dispatch.exception_sla.default.feedback_policy_minutes', 30));
+        $now = now();
+        $window7Start = $now->copy()->subDays(7);
+        $window30Start = $now->copy()->subDays(30);
         $stats = [];
         foreach ($tasks as $task) {
             if (! $task instanceof DispatchTask) {
@@ -1138,6 +1141,12 @@ class DispatchTaskController extends Controller
                     'severe_count' => 0,
                     'feedback_timeout_count' => 0,
                     'feedback_timeout_rate' => 0,
+                    'recent_feedback_7d_count' => 0,
+                    'recent_feedback_7d_timely_count' => 0,
+                    'recent_feedback_7d_timely_rate' => 0,
+                    'recent_feedback_30d_count' => 0,
+                    'recent_feedback_30d_timely_count' => 0,
+                    'recent_feedback_30d_timely_rate' => 0,
                 ];
             }
 
@@ -1166,6 +1175,31 @@ class DispatchTaskController extends Controller
                     }
                 }
             }
+
+            $feedbackAt = trim((string) ($exception['last_feedback_at'] ?? ''));
+            if ($feedbackAt !== '') {
+                try {
+                    $feedbackAtDate = \Illuminate\Support\Carbon::parse($feedbackAt);
+                    $isTimely = array_key_exists('feedback_is_overtime', $sla)
+                        ? ! (bool) ($sla['feedback_is_overtime'] ?? false)
+                        : $feedbackAtDate->diffInMinutes($now) < $feedbackTimeoutThreshold;
+
+                    if ($feedbackAtDate->greaterThanOrEqualTo($window30Start)) {
+                        $stats[$key]['recent_feedback_30d_count']++;
+                        if ($isTimely) {
+                            $stats[$key]['recent_feedback_30d_timely_count']++;
+                        }
+                    }
+                    if ($feedbackAtDate->greaterThanOrEqualTo($window7Start)) {
+                        $stats[$key]['recent_feedback_7d_count']++;
+                        if ($isTimely) {
+                            $stats[$key]['recent_feedback_7d_timely_count']++;
+                        }
+                    }
+                } catch (\Throwable) {
+                    // ignore invalid feedback time format
+                }
+            }
         }
 
         $normalizedStats = collect(array_values($stats))
@@ -1173,6 +1207,14 @@ class DispatchTaskController extends Controller
                 $pendingCount = max(1, (int) ($item['pending_count'] ?? 0));
                 $feedbackTimeoutCount = (int) ($item['feedback_timeout_count'] ?? 0);
                 $item['feedback_timeout_rate'] = round($feedbackTimeoutCount / $pendingCount, 4);
+                $recentFeedback7dCount = max(0, (int) ($item['recent_feedback_7d_count'] ?? 0));
+                $recentFeedback30dCount = max(0, (int) ($item['recent_feedback_30d_count'] ?? 0));
+                $item['recent_feedback_7d_timely_rate'] = $recentFeedback7dCount > 0
+                    ? round(((int) ($item['recent_feedback_7d_timely_count'] ?? 0)) / $recentFeedback7dCount, 4)
+                    : 0;
+                $item['recent_feedback_30d_timely_rate'] = $recentFeedback30dCount > 0
+                    ? round(((int) ($item['recent_feedback_30d_timely_count'] ?? 0)) / $recentFeedback30dCount, 4)
+                    : 0;
 
                 return $item;
             })
