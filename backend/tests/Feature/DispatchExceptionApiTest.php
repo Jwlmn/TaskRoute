@@ -806,4 +806,66 @@ class DispatchExceptionApiTest extends TestCase
             ->count();
         $this->assertSame(0, $noticeCount);
     }
+
+    public function test_admin_can_submit_exception_feedback(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+
+        $admin = User::query()->where('role', 'admin')->firstOrFail();
+        $dispatcher = User::query()->where('role', 'dispatcher')->firstOrFail();
+        $vehicle = Vehicle::query()->where('status', 'idle')->firstOrFail();
+        $order = PrePlanOrder::query()->where('status', 'pending')->firstOrFail();
+
+        Sanctum::actingAs($admin);
+        $createResponse = $this->postJson('/api/v1/dispatch/manual-create-tasks', [
+            'assignments' => [[
+                'vehicle_id' => $vehicle->id,
+                'order_ids' => [$order->id],
+            ]],
+        ]);
+        $createResponse->assertCreated();
+        $taskId = (int) $createResponse->json('created_task_ids.0');
+
+        $task = \App\Models\DispatchTask::query()->findOrFail($taskId);
+        $task->status = 'in_progress';
+        $task->route_meta = array_merge(is_array($task->route_meta) ? $task->route_meta : [], [
+            'exception' => [
+                'status' => 'pending',
+                'type' => 'traffic_jam',
+                'description' => '反馈闭环测试',
+                'reported_at' => now()->toDateTimeString(),
+                'assigned_handler_id' => $dispatcher->id,
+                'assigned_handler_account' => $dispatcher->account,
+                'assigned_handler_name' => $dispatcher->name,
+                'history' => [],
+            ],
+        ]);
+        $task->save();
+
+        $feedbackContent = '已联系司机确认现场情况，预计 15 分钟内恢复通行。';
+        $this->postJson('/api/v1/dispatch-task/exception-feedback', [
+            'task_id' => $taskId,
+            'feedback_content' => $feedbackContent,
+        ])->assertOk()
+            ->assertJsonPath('route_meta.exception.last_feedback_content', $feedbackContent)
+            ->assertJsonPath('route_meta.exception.last_feedback_by', $admin->id);
+
+        $task->refresh();
+        $history = data_get($task->route_meta, 'exception.history', []);
+        $this->assertTrue(collect($history)->contains(function ($item) use ($feedbackContent, $admin): bool {
+            return data_get($item, 'event') === 'manual_feedback'
+                && data_get($item, 'operator_id') === $admin->id
+                && data_get($item, 'feedback_content') === $feedbackContent;
+        }));
+
+        $this->assertDatabaseHas('system_messages', [
+            'user_id' => $dispatcher->id,
+            'message_type' => 'dispatch_notice',
+        ]);
+        $noticeCount = SystemMessage::query()
+            ->where('user_id', $dispatcher->id)
+            ->where('meta->notice_type', 'exception_manual_feedback')
+            ->count();
+        $this->assertSame(1, $noticeCount);
+    }
 }

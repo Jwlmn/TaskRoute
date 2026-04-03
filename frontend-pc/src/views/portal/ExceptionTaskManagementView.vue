@@ -21,12 +21,15 @@ const detailOrderCurrentPage = ref(1)
 const detailOrderPageSize = ref(10)
 const exceptionHandleDialogVisible = ref(false)
 const exceptionAssignDialogVisible = ref(false)
+const exceptionFeedbackDialogVisible = ref(false)
 const exceptionDetailDialogVisible = ref(false)
 const handlingTask = ref(null)
 const assigningTask = ref(null)
+const feedbackTask = ref(null)
 const selectedExceptionTask = ref(null)
 const assigningExceptionHandler = ref(false)
 const remindingException = ref(false)
+const submittingFeedback = ref(false)
 const assignCandidates = ref([])
 const exceptionHandleForm = ref({
   action: 'continue',
@@ -36,6 +39,9 @@ const exceptionHandleForm = ref({
 const exceptionAssignForm = ref({
   assigned_handler_id: null,
   assign_note: '',
+})
+const exceptionFeedbackForm = ref({
+  feedback_content: '',
 })
 const filterForm = ref({
   status: 'pending',
@@ -177,6 +183,7 @@ const getHistoryEventLabel = (event) => {
   if (event === 'sla_alert') return 'SLA 升级预警'
   if (event === 'sla_reminder') return 'SLA 超时催办'
   if (event === 'manual_reminder') return '人工催办'
+  if (event === 'manual_feedback') return '人工反馈'
   if (event === 'sla_assign') return 'SLA 自动指派'
   if (event === 'manual_assign') return '人工改派责任人'
   return '系统事件'
@@ -577,6 +584,43 @@ const remindSingleTask = async (task) => {
     return
   }
   await remindExceptionsByTaskIds([taskId], `任务 ${task?.task_no || ''} 存在待处理异常，请尽快跟进。`)
+}
+const openFeedbackDialog = (task) => {
+  feedbackTask.value = task
+  exceptionFeedbackForm.value = {
+    feedback_content: '',
+  }
+  exceptionFeedbackDialogVisible.value = true
+}
+const submitExceptionFeedback = async () => {
+  const taskId = Number(feedbackTask.value?.id || 0)
+  if (taskId <= 0) return
+  const content = String(exceptionFeedbackForm.value.feedback_content || '').trim()
+  if (!content) {
+    ElMessage.warning('请填写反馈内容')
+    return
+  }
+
+  submittingFeedback.value = true
+  try {
+    await api.post('/dispatch-task/exception-feedback', {
+      task_id: taskId,
+      feedback_content: content,
+    })
+    ElMessage.success('反馈已提交')
+    exceptionFeedbackDialogVisible.value = false
+    await loadExceptionTasks()
+    if (selectedExceptionTask.value?.id) {
+      const nextTask = exceptionTasks.value.find((item) => item.id === selectedExceptionTask.value.id)
+      if (nextTask) {
+        selectedExceptionTask.value = nextTask
+      }
+    }
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '提交反馈失败')
+  } finally {
+    submittingFeedback.value = false
+  }
 }
 
 watch(() => filterForm.value.status, (status) => {
@@ -1279,12 +1323,13 @@ watch(displayedExceptionTasks, (list) => {
           }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="300" fixed="right">
+      <el-table-column label="操作" width="340" fixed="right">
         <template #default="{ row }">
           <el-button link type="info" @click="openDetailDialog(row)">详情</el-button>
           <el-button link type="warning" :disabled="row.route_meta?.exception?.status !== 'pending'" @click="openAssignDialog(row)">指派</el-button>
           <el-button link type="success" :disabled="row.route_meta?.exception?.status !== 'pending'" @click="assignToMe(row)">接管</el-button>
           <el-button link type="warning" :disabled="row.route_meta?.exception?.status !== 'pending' || isTaskInReminderCooldown(row)" @click="remindSingleTask(row)">催办</el-button>
+          <el-button link type="primary" :disabled="row.route_meta?.exception?.status !== 'pending'" @click="openFeedbackDialog(row)">反馈</el-button>
           <el-button link type="primary" :disabled="row.route_meta?.exception?.status !== 'pending'" @click="openHandleDialog(row)">处理</el-button>
         </template>
       </el-table-column>
@@ -1410,6 +1455,33 @@ watch(displayedExceptionTasks, (list) => {
     </template>
   </el-dialog>
 
+  <el-dialog
+    v-model="exceptionFeedbackDialogVisible"
+    title="提交异常反馈"
+    width="560px"
+    destroy-on-close
+  >
+    <el-form label-width="90px">
+      <el-form-item label="任务编号">
+        <span>{{ feedbackTask?.task_no || '-' }}</span>
+      </el-form-item>
+      <el-form-item label="反馈内容">
+        <el-input
+          v-model="exceptionFeedbackForm.feedback_content"
+          type="textarea"
+          :rows="4"
+          maxlength="500"
+          show-word-limit
+          placeholder="请填写处理进展或下一步计划"
+        />
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="exceptionFeedbackDialogVisible = false">取消</el-button>
+      <el-button type="primary" :loading="submittingFeedback" @click="submitExceptionFeedback">确认提交</el-button>
+    </template>
+  </el-dialog>
+
   <el-drawer
     v-model="exceptionDetailDialogVisible"
     title="异常处理详情"
@@ -1443,6 +1515,11 @@ watch(displayedExceptionTasks, (list) => {
         <el-descriptions-item label="最近催办人">
           {{ formatOperator(currentException.last_reminded_by_name, currentException.last_reminded_by_account, currentException.last_reminded_by) }}
         </el-descriptions-item>
+        <el-descriptions-item label="最近反馈时间">{{ formatDateTime(currentException.last_feedback_at) }}</el-descriptions-item>
+        <el-descriptions-item label="最近反馈人">
+          {{ formatOperator(currentException.last_feedback_by_name, currentException.last_feedback_by_account, currentException.last_feedback_by) }}
+        </el-descriptions-item>
+        <el-descriptions-item label="最近反馈内容" :span="2">{{ currentException.last_feedback_content || '-' }}</el-descriptions-item>
         <el-descriptions-item label="处理动作">
           {{ getLabel(exceptionActionLabelMap, currentException.handle_action) }}
         </el-descriptions-item>
@@ -1479,6 +1556,14 @@ watch(displayedExceptionTasks, (list) => {
           @click="assignToMe(selectedExceptionTask)"
         >
           我来接管
+        </el-button>
+        <el-button
+          v-if="currentException.status === 'pending'"
+          type="primary"
+          plain
+          @click="openFeedbackDialog(selectedExceptionTask)"
+        >
+          提交反馈
         </el-button>
       </el-space>
 
@@ -1566,6 +1651,7 @@ watch(displayedExceptionTasks, (list) => {
             <div v-if="item.action">处理动作：{{ getLabel(exceptionActionLabelMap, item.action) }}</div>
             <div v-if="item.handle_note">处理备注：{{ item.handle_note }}</div>
             <div v-if="item.remind_note">催办说明：{{ item.remind_note }}</div>
+            <div v-if="item.feedback_content">反馈内容：{{ item.feedback_content }}</div>
             <div v-if="item.level_label">预警等级：{{ item.level_label }}</div>
             <div v-if="item.threshold_minutes">触发阈值：{{ item.threshold_minutes }} 分钟</div>
             <div v-if="item.assigned_handler_name || item.assigned_handler_account">

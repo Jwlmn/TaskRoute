@@ -741,6 +741,81 @@ class DispatchTaskController extends Controller
         });
     }
 
+    public function feedbackException(Request $request): JsonResponse
+    {
+        if (! $request->user()?->hasAnyRole(['admin', 'dispatcher'])) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $payload = $request->validate([
+            'task_id' => ['required', 'integer', 'exists:dispatch_tasks,id'],
+            'feedback_content' => ['required', 'string', 'max:500'],
+        ]);
+
+        return DB::transaction(function () use ($payload, $request): JsonResponse {
+            $operator = $request->user();
+            $task = $this->dataScopeService->applyDispatchTaskScope(DispatchTask::query(), $operator)
+                ->lockForUpdate()
+                ->findOrFail((int) $payload['task_id']);
+            $task = $this->exceptionSlaService->syncTaskExceptionSla($task, true);
+
+            $routeMeta = is_array($task->route_meta) ? $task->route_meta : [];
+            $exception = is_array($routeMeta['exception'] ?? null) ? $routeMeta['exception'] : null;
+            if (! $exception) {
+                return response()->json(['message' => '当前任务没有异常记录'], 422);
+            }
+            if (($exception['status'] ?? null) !== 'pending') {
+                return response()->json(['message' => '仅待处理异常可提交反馈'], 422);
+            }
+
+            $feedbackContent = trim((string) $payload['feedback_content']);
+            if ($feedbackContent === '') {
+                return response()->json(['message' => '反馈内容不能为空'], 422);
+            }
+
+            $occurredAt = now()->toDateTimeString();
+            $history = is_array($exception['history'] ?? null) ? $exception['history'] : [];
+            $history[] = [
+                'event' => 'manual_feedback',
+                'operator_id' => (int) $operator->id,
+                'operator_account' => $operator->account,
+                'operator_name' => $operator->name,
+                'feedback_content' => $feedbackContent,
+                'occurred_at' => $occurredAt,
+            ];
+
+            $routeMeta['exception'] = array_merge($exception, [
+                'last_feedback_at' => $occurredAt,
+                'last_feedback_by' => (int) $operator->id,
+                'last_feedback_by_account' => $operator->account,
+                'last_feedback_by_name' => $operator->name,
+                'last_feedback_content' => $feedbackContent,
+                'history' => $history,
+            ]);
+            $task->route_meta = $routeMeta;
+            $task->save();
+
+            $assignedHandlerId = (int) ($exception['assigned_handler_id'] ?? 0);
+            if ($assignedHandlerId > 0 && $assignedHandlerId !== (int) $operator->id) {
+                SystemMessage::query()->create([
+                    'user_id' => $assignedHandlerId,
+                    'message_type' => 'dispatch_notice',
+                    'title' => '异常任务收到新的处理反馈',
+                    'content' => "任务 {$task->task_no} 收到反馈：{$feedbackContent}",
+                    'meta' => [
+                        'task_id' => (int) $task->id,
+                        'task_no' => (string) $task->task_no,
+                        'exception_type' => $exception['type'] ?? null,
+                        'notice_type' => 'exception_manual_feedback',
+                        'feedback_content' => $feedbackContent,
+                    ],
+                ]);
+            }
+
+            return response()->json($task->fresh(['vehicle:id,plate_number,name', 'driver:id,account,name']));
+        });
+    }
+
     private function applyManualExceptionAssignment(
         DispatchTask $task,
         User $operator,
